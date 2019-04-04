@@ -1,0 +1,70 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="src\detail">
+      <UniqueIdentifier>{de85b713-ea50-4b09-9fdc-62fbe02cd321}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\xlua\xlua.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\xlua\xlua_obj.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\xlua\xlua_state.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\xlua\detail\global.cpp">
+      <Filter>src\detail</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\xlua\detail\type_desc.cpp">
+      <Filter>src\detail</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\xlua\xlua.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\xlua_config.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\xlua_def.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\xlua_export.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\xlua_obj.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\xlua_state.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\detail\export.h">
+      <Filter>src\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\detail\extractor.h">
+      <Filter>src\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\detail\global.h">
+      <Filter>src\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\detail\serial_alloc.h">
+      <Filter>src\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\detail\state.h">
+      <Filter>src\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\detail\traits.h">
+      <Filter>src\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xlua\detail\type_desc.h">
+      <Filter>src\detail</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
