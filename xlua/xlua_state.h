@@ -362,85 +362,36 @@ private:
         return true;
     }
 
-    detail::FullUserData* PushUserData(const detail::FullUserData& val) {
-        using DataType = detail::FullUserData;
-        void* mem = lua_newuserdata(state_, sizeof(DataType));
-        auto* data = new (mem)DataType(val);
+    template <typename Ty, typename... Args>
+    inline Ty* NewUserData(const TypeInfo* info, Args&&... args) {
+        void* mem = lua_newuserdata(state_, sizeof(Ty));
 
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, meta_table_ref_);    // type metatable table
-        lua_rawgeti(state_, -1, val.info_->index);   // metatable
-        lua_remove(state_, -2);     // remove type table
-        lua_setmetatable(state_, -2);
-        return data;
-    }
-
-    template <typename Ty>
-    detail::FullUserData* PushUserData(const Ty& val, const TypeInfo* info) {
-        using DataType = detail::ValueUserData<Ty>;
-        void* mem = lua_newuserdata(state_, sizeof(DataType));
-        auto* data = new (mem)DataType(val, info);
-
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, meta_table_ref_);    // type metatable table
-        lua_rawgeti(state_, -1, info->index);   // metatable
+        int ty = 0;
+        ty = lua_rawgeti(state_, LUA_REGISTRYINDEX, meta_table_ref_);    // type metatable table
+        assert(ty == LUA_TTABLE);
+        ty = lua_rawgeti(state_, -1, info->index);   // metatable
+        assert(ty == LUA_TTABLE);
         lua_remove(state_, -2);                 // remove type table
         lua_setmetatable(state_, -2);
-        return data;
+        return new (mem) Ty(std::forward<Args>(args)...);
     }
 
-    void PushUserDataPtr(const detail::FullUserData& ud);
-
-    //void PushWeakObjPtr(const detail::FullUserData& ud) {
-    //    assert(ud.type_ == detail::UserDataCategory::kObjPtr);
-    //    if ((int)weak_obj_ptrs_.size() < ud.index_) {
-    //        weak_obj_ptrs_.resize((1 + ud.index_ / 1024) * 1024, UdCache{0, nullptr});
-    //    }
-
-    //    auto& udc = lua_obj_ptrs_[ud.index_];
-    //    if (udc.user_data_ != nullptr && udc.user_data_->serial_ == ud.serial_) {
-    //        UpdateCahce(udc, ud.obj_, ud.info_);
-    //        PushUd(udc);
-    //    } else {
-    //        udc = RefCache(PushUserData(ud));
-    //    }
-    //}
-
-    //void PushLuaObjPtr(const detail::FullUserData& ud) {
-    //    assert(ud.type_ == detail::UserDataCategory::kObjPtr);
-    //    if ((int)lua_obj_ptrs_.size() < ud.index_) {
-    //        lua_obj_ptrs_.resize((1 + ud.index_ / 1024) * 1024, UdCache{0, nullptr});
-    //    }
-
-    //    auto& udc = lua_obj_ptrs_[ud.index_];
-    //    if (udc.user_data_ != nullptr && udc.user_data_->serial_ == ud.serial_) {
-    //        UpdateCahce(udc, ud.obj_, ud.info_);
-    //        PushUd(udc);
-    //    } else {
-    //        udc = RefCache(PushUserData(ud));
-    //    }
-    //}
-
-    //void PushRawPtr(const detail::FullUserData& ud) {
-    //    assert(ud.type_ == detail::UserDataCategory::kRawPtr);
-    //    void* root = detail::GetRootPtr(ud.obj_, ud.info_);
-    //    auto it = raw_ptrs_.find(root);
-    //    if (it != raw_ptrs_.cend()) {
-    //        UpdateCahce(it->second, ud.obj_, ud.info_);
-    //        PushUd(it->second);
-    //    } else {
-    //        UdCache udc = RefCache(PushUserData(ud));
-    //        raw_ptrs_.insert(std::make_pair(root, udc));
-    //    }
-    //}
+    void PushPtrUserData(const detail::FullUserData& ud);
 
     template <typename Ty>
-    void PushSharedPtr(const std::shared_ptr<Ty>& ptr, const TypeInfo* info) {
+    void PushValueData(const Ty& val, const TypeInfo* info) {
+        NewUserData<detail::ValueUserData<Ty>>(info, val, info);
+    }
+
+    template <typename Ty>
+    inline void PushSharedPtr(const std::shared_ptr<Ty>& ptr, const TypeInfo* info) {
         void* root = detail::GetRootPtr(ptr.get(), info);
         auto it = shared_ptrs_.find(root);
         if (it != shared_ptrs_.cend()) {
             UpdateCahce(it->second, ptr.get(), info);
             PushUd(it->second);
         } else {
-            UdCache udc = RefCache(PushUserData(ptr, info));
+            UdCache udc = RefCache(NewUserData<detail::ValueUserData<std::shared_ptr<Ty>>>(info, ptr, info));
             shared_ptrs_.insert(std::make_pair(root, udc));
         }
     }
@@ -538,7 +489,7 @@ namespace detail {
 
         template <typename U>
         static inline void PushValue(xLuaState* l, const U& val, tag_declared) {
-            l->PushUserData(val, GetTypeInfoImpl<U>());
+            l->PushValueData(val, GetTypeInfoImpl<U>());
         }
     };
 
@@ -554,7 +505,7 @@ namespace detail {
                 auto ud = MakeLightUserData(val, info);
                 lua_pushlightuserdata(l->GetState(), ud.Ptr());
 #else // XLUA_USE_LIGHT_USER_DATA
-                l->PushUserDataPtr(MakeFullUserData(val, info));
+                l->PushPtrUserData(MakeFullUserData(val, info));
 #endif // XLUA_USE_LIGHT_USER_DATA
             }
         }

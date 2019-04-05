@@ -28,7 +28,14 @@ public:
     virtual const char* Name() const = 0;
 };
 
-class Quard : public IName, public ObjectBase {
+class ExtType {
+public:
+    void DoExtWork(int) { printf("do extern work\n"); }
+
+    int type_ = 0;
+};
+
+class Quard : public IName, public ObjectBase, public ExtType {
 public:
     const char* Name() const override { return "MultyInherit"; }
     XLUA_DECLARE_CLASS(Quard, ObjectBase);

@@ -23,6 +23,11 @@ namespace detail {
 
             ++level;
         }
+
+        // remove the last '\n'
+        int write = (int)size - len - 1;
+        if (write > 0 && buf[write] == '\n')
+            buf[write] = 0;
     };
 
     static void LogCallStack(lua_State* l) {
@@ -166,6 +171,10 @@ namespace detail {
                 return 0;
             }
 
+            //int st = lua_getfield(l, -2, "__name");
+            //const char* name = lua_tostring(l, -1);
+            //lua_pop(l, 1);
+
             if (ty != LUA_TLIGHTUSERDATA) {
                 LogError("type:[%s] member:[%s] is not exist", obj.info->type_name, lua_tostring(l, 2));
                 LogCallStack(l);
@@ -284,7 +293,7 @@ namespace detail {
             lua_rawgeti(l, -1, obj.info->index);
             lua_pushvalue(l, 2);    // copy key to top
             if (lua_rawget(l, -2) != LUA_TLIGHTUSERDATA) {
-                LogError("type:[%s] member:[%s] can not been modify", obj.info->type_name, lua_tostring(l, 2));
+                LogError("type:[%s] member:[%s] is not exist", obj.info->type_name, lua_tostring(l, 2));
                 LogCallStack(l);
                 return 0;
             }
@@ -349,7 +358,7 @@ namespace detail {
             if (mem->setter == nullptr) {
                 lua_pushstring(l, "__name");
                 lua_rawget(l, 4);
-                LogError("type:[%s] member:[%s] can not been write", lua_tostring(l, -1), lua_tostring(l, 2));
+                LogError("type:[%s] member:[%s] is ready only", lua_tostring(l, -1), lua_tostring(l, 2));
                 LogCallStack(l);
                 return 0;
             }
@@ -374,7 +383,7 @@ namespace detail {
             if (lua_rawget(l, 1) != LUA_TSTRING)
                 return 0;
 
-            LogError("const Type:[%s] member:[%s] can not been modify", lua_tostring(l, 2), lua_tostring(l, -1));
+            LogError("const Type:[%s] member:[%s] is ready only", lua_tostring(l, 2), lua_tostring(l, -1));
             LogCallStack(l);
             return 0;
         }
@@ -400,6 +409,11 @@ namespace detail {
                     return 1;
                 }
 
+                //if (IsBaseOf(dst_info, ud->info_)) {
+                //    lua_pushvalue(l, 1);
+                //    return 1;   // not nessasery
+                //}
+
                 if (!dst_info->caster->ToDerived(&ud)) {
                     LogCallStack(l);
                     lua_pushnil(l);
@@ -423,13 +437,23 @@ namespace detail {
                     return 1;
                 }
 
+                if (IsBaseOf(dst_info, ud->info_)) {
+                    lua_pushvalue(l, 1);
+                    return 1;   // not nessasery
+                }
+
                 if (!dst_info->caster->ToDerived(ud)) {
                     LogCallStack(l);
                     lua_pushnil(l);
                     return 1;
                 }
 
-                lua_pushvalue(l, 1);
+                xLuaState* xl = static_cast<xLuaState*>(lua_touserdata(l, lua_upvalueindex(1)));
+                lua_rawgeti(l, LUA_REGISTRYINDEX, xl->meta_table_ref_);
+                lua_rawgeti(l, -1, dst_info->index);
+                lua_remove(l, -2);
+                lua_setmetatable(l, 1);
+                lua_pushvalue(l, 1);        // copy object to stack top
                 return 1;
             } else {
                 LogError("can not cast unknown value");
@@ -683,7 +707,7 @@ bool xLuaState::SetGlobal(const char* path) {
     return true;
 }
 
-void xLuaState::PushUserDataPtr(const detail::FullUserData& ud) {
+void xLuaState::PushPtrUserData(const detail::FullUserData& ud) {
     if (ud.type_ == detail::UserDataCategory::kRawPtr) {
         void* root = detail::GetRootPtr(ud.obj_, ud.info_);
         auto it = raw_ptrs_.find(root);
@@ -691,13 +715,13 @@ void xLuaState::PushUserDataPtr(const detail::FullUserData& ud) {
             UpdateCahce(it->second, ud.obj_, ud.info_);
             PushUd(it->second);
         } else {
-            UdCache udc = RefCache(PushUserData(ud));
+            UdCache udc = RefCache(NewUserData<detail::FullUserData>(ud.info_, ud));
             raw_ptrs_.insert(std::make_pair(root, udc));
         }
     } else if (ud.type_ == detail::UserDataCategory::kObjPtr) {
         if (ud.info_->is_weak_obj) {
-            if ((int)weak_obj_ptrs_.size() < ud.index_) {
-                weak_obj_ptrs_.resize((1 + ud.index_ / 1024) * 1024, UdCache{0, nullptr});
+            if ((int)weak_obj_ptrs_.size() <= ud.index_) {
+                weak_obj_ptrs_.resize((1 + ud.index_ / XLUA_CONTAINER_INCREMENTAL) * XLUA_CONTAINER_INCREMENTAL, UdCache{0, nullptr});
             }
 
             auto& udc = lua_obj_ptrs_[ud.index_];
@@ -705,11 +729,11 @@ void xLuaState::PushUserDataPtr(const detail::FullUserData& ud) {
                 UpdateCahce(udc, ud.obj_, ud.info_);
                 PushUd(udc);
             } else {
-                udc = RefCache(PushUserData(ud));
+                udc = RefCache(NewUserData<detail::FullUserData>(ud.info_, ud));
             }
         } else {
-            if ((int)lua_obj_ptrs_.size() < ud.index_) {
-                lua_obj_ptrs_.resize((1 + ud.index_ / 1024) * 1024, UdCache{0, nullptr});
+            if ((int)lua_obj_ptrs_.size() <= ud.index_) {
+                lua_obj_ptrs_.resize((1 + ud.index_ / XLUA_CONTAINER_INCREMENTAL) * XLUA_CONTAINER_INCREMENTAL, UdCache{0, nullptr});
             }
 
             auto& udc = lua_obj_ptrs_[ud.index_];
@@ -717,7 +741,7 @@ void xLuaState::PushUserDataPtr(const detail::FullUserData& ud) {
                 UpdateCahce(udc, ud.obj_, ud.info_);
                 PushUd(udc);
             } else {
-                udc = RefCache(PushUserData(ud));
+                udc = RefCache(NewUserData<detail::FullUserData>(ud.info_, ud));
             }
         }
     } else {
@@ -726,8 +750,7 @@ void xLuaState::PushUserDataPtr(const detail::FullUserData& ud) {
 }
 
 void xLuaState::Gc(detail::FullUserData* ud) {
-    switch (ud->type_)
-    {
+    switch (ud->type_) {
     case detail::UserDataCategory::kValue:
         break;
     case detail::UserDataCategory::kRawPtr:
@@ -935,8 +958,8 @@ void xLuaState::SetGlobalMember(const TypeInfo* info, bool func, bool var) {
 void xLuaState::CreateTypeMeta(const TypeInfo* info) {
     lua_rawgeti(state_, LUA_REGISTRYINDEX, meta_table_ref_);
     lua_newtable(state_);
-    lua_rawseti(state_, -2, info->index);
-    lua_rawgeti(state_, -1, info->index);
+    lua_pushvalue(state_, -1);
+    lua_rawseti(state_, -3, info->index);
     lua_remove(state_, -2);
 
     SetTypeMember(info);

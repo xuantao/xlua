@@ -15,7 +15,7 @@
 #define _EXTRACT_METHOD(Func, ...)  xlua::detail::Extractor<__VA_ARGS__>::extract(xlua::detail::ConstTag(), Func)
 
 // 导出实现
-#define _XLUA_EXPORT_FUNC_(Name, Func, Meta, IsGlobal)                                   \
+#define _XLUA_EXPORT_FUNC_(Name, Func, Meta, IsGlobal)                                  \
     static_assert(!std::is_null_pointer<decltype(Func)>::value,                         \
         "can not export func:"#Name" with null pointer"                                 \
     );                                                                                  \

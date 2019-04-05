@@ -105,23 +105,6 @@ namespace detail
         return dynamic_cast<Ty*>((XLUA_WEAK_OBJ_BASE_TYPE*)obj);
     }
 
-    template <typename Ty, typename std::enable_if<!IsWeakObjPtr<Ty>::value, int>::type = 0>
-    inline Ty* ToDerivedWeakPtr(void*) {
-        assert(false);
-        return nullptr;
-    }
-
-    template <typename Ty, typename std::enable_if<IsWeakObjPtr<Ty>::value, int>::type = 0>
-    inline Ty* ToWeakPtrImpl(void* obj) {
-        return static_cast<Ty*>((XLUA_WEAK_OBJ_BASE_TYPE*)obj);
-    }
-
-    template <typename Ty, typename std::enable_if<!IsWeakObjPtr<Ty>::value, int>::type = 0>
-    inline Ty* ToWeakPtrImpl(void*) {
-        assert(false);
-        return nullptr;
-    }
-
     template <typename Ty, typename By>
     struct TypeCasterImpl : ITypeCaster {
         virtual ~TypeCasterImpl() { }
@@ -299,7 +282,7 @@ namespace detail
                 auto ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                 if (ary_obj->serial_num_ != ud->serial_)
                     return nullptr;
-                return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_));
+                return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ary_obj->obj_, ary_obj->info_));
             }
         }
         return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_));
@@ -687,7 +670,7 @@ namespace detail
     }
 
     template <typename... Args>
-    inline int MetaCall(xLuaState* l, void (*func)(Args...)) {
+    inline int MetaCall(xLuaState* l, void(*func)(Args...)) {
         if (!CheckParams<Args...>(l, 1))
             return 0;
         int index = 0;
@@ -711,7 +694,7 @@ namespace detail
     }
 
     template <typename Ty, typename... Args>
-    inline int MetaCall(xLuaState* l, Ty* obj, void (*func)(Ty*, Args...)) {
+    inline int MetaCall(xLuaState* l, Ty* obj, void(*func)(Ty*, Args...)) {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
@@ -720,8 +703,8 @@ namespace detail
     }
 
     /* normal member function */
-    template <typename Ty, typename Ry, typename... Args>
-    inline int MetaCall(xLuaState* l, Ty* obj, Ry(Ty::*func)(Args...)) {
+    template <typename Obj, typename Ty, typename Ry, typename... Args>
+    inline int MetaCall(xLuaState* l, Obj* obj, Ry(Ty::*func)(Args...)) {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
@@ -729,8 +712,8 @@ namespace detail
         return 1;
     }
 
-    template <typename Ty, typename Ry, typename... Args>
-    inline int MetaCall(xLuaState* l, Ty* obj, Ry(Ty::*func)(Args...) const) {
+    template <typename Obj, typename Ty, typename Ry, typename... Args>
+    inline int MetaCall(xLuaState* l, Obj* obj, Ry(Ty::*func)(Args...) const) {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
@@ -738,8 +721,8 @@ namespace detail
         return 1;
     }
 
-    template <typename Ty, typename... Args>
-    inline int MetaCall(xLuaState* l, Ty* obj, void (Ty::*func)(Args...)) {
+    template <typename Obj, typename Ty, typename... Args>
+    inline int MetaCall(xLuaState* l, Obj* obj, void (Ty::*func)(Args...)) {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
@@ -747,8 +730,8 @@ namespace detail
         return 0;
     }
 
-    template <typename Ty, typename... Args>
-    inline int MetaCall(xLuaState* l, Ty* obj, void (Ty::*func)(Args...) const) {
+    template <typename Obj, typename Ty, typename... Args>
+    inline int MetaCall(xLuaState* l, Obj* obj, void (Ty::*func)(Args...) const) {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
@@ -756,13 +739,13 @@ namespace detail
         return 0;
     }
 
-    template <typename Ty>
-    inline int MetaCall(xLuaState* l, Ty* obj, int (Ty::*func)(xLuaState*)) {
+    template <typename Obj, typename Ty>
+    inline int MetaCall(xLuaState* l, Obj* obj, int (Ty::*func)(xLuaState*)) {
         return (obj->*func)(l);
     }
 
-    template <typename Ty>
-    inline int MetaCall(xLuaState* l, Ty* obj, int (Ty::*func)(xLuaState*) const) {
+    template <typename Obj, typename Ty>
+    inline int MetaCall(xLuaState* l, Obj* obj, int (Ty::*func)(xLuaState*) const) {
         return (obj->*func)(l);
     }
 
@@ -794,7 +777,7 @@ namespace detail
 
     template <typename Ry>
     inline void MetaSet_(xLuaState* l, Ry* data, std::false_type) {
-        *data = l->Load<typename std::decay<Ry>::type>(1);
+        *data = l->Load<typename std::decay<Ry>::type>(3);
     }
 
     template <typename Ry>
@@ -812,8 +795,8 @@ namespace detail
         data(l->Load<typename std::decay<Ry>::type>(1));
     }
 
-    template <typename Ty, typename Ry>
-    inline void MetaGet(xLuaState* l, Ty* obj, Ry Ty::* data) {
+    template <typename Obj, typename Ty, typename Ry>
+    inline void MetaGet(xLuaState* l, Obj* obj, Ry Ty::* data) {
         l->Push(static_cast<Ry>(obj->*data));
     }
 
@@ -825,21 +808,21 @@ namespace detail
 
     template <typename Ty, typename Ry>
     inline void MetaSet_(xLuaState* l, Ty* obj, Ry Ty::*data, std::false_type) {
-        obj->*data = l->Load<typename std::decay<Ry>::type>(1);
+        obj->*data = l->Load<typename std::decay<Ry>::type>(3);
     }
 
-    template <typename Ty, typename Ry>
-    inline void MetaSet(xLuaState* l, Ty* obj, Ry Ty::*data) {
-        MetaSet_(l, obj, data, std::is_array<Ry>());
+    template <typename Obj, typename Ty, typename Ry>
+    inline void MetaSet(xLuaState* l, Obj* obj, Ry Ty::*data) {
+        MetaSet_(l, static_cast<Ty*>(obj), data, std::is_array<Ry>());
     }
 
-    template <typename Ty, typename Ry>
-    inline void MetaGet(xLuaState* l, Ty* obj, Ry(Ty::*func)()) {
+    template <typename Obj, typename Ty, typename Ry>
+    inline void MetaGet(xLuaState* l, Obj* obj, Ry(Ty::*func)()) {
         l->Push((obj->*func)());
     }
 
-    template <typename Ty, typename Ry>
-    inline void MetaSet(xLuaState* l, Ty* obj, void(Ty::*func)(Ry)) {
+    template <typename Obj, typename Ty, typename Ry>
+    inline void MetaSet(xLuaState* l, Obj* obj, void(Ty::*func)(Ry)) {
         (obj->*func)(l->Load<typename std::decay<Ry>::type>(1));
     }
 

@@ -165,11 +165,3 @@ XLUA_NAMESPACE_END
 /* 声明导出外部类 */
 #define XLUA_DECLARE_EXTERNAL(ClassName)                                \
     const xlua::TypeInfo* xLuaGetTypeInfo(xlua::Identity<ClassName>)
-
-#if XLUA_ENABLE_MULTIPLE_INHERITANCE
-#define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, SrcInfo)   SrcInfo->caster->ToSuper(Ptr, DstInfo)
-#define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          DstInfo->caster->ToWeakPtr(Ptr)
-#else
-#define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, Info)      Ptr
-#define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          Ptr
-#endif // XLUA_ENABLE_MULTIPLE_INHERITANCE

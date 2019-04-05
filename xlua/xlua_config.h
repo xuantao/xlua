@@ -61,6 +61,15 @@ inline void xLuaLogError(const char* err) {
 /* 支持多继承
  * 当存在多继承时，子类指针转向基类指针时指针可能会发生偏移，每次访问对象时指针需要做对应转换。
  * 如果明确约定不存在多继承情况可以关闭功能提升部分效率。
- * TODO: 默认开启，暂未实现关闭功能
 */
-#define XLUA_ENABLE_MULTIPLE_INHERITANCE    1
+#ifndef XLUA_ENABLE_MULTIPLE_INHERITANCE
+    #define XLUA_ENABLE_MULTIPLE_INHERITANCE    1
+#endif
+
+#if XLUA_ENABLE_MULTIPLE_INHERITANCE
+    #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, SrcInfo)   SrcInfo->caster->ToSuper(Ptr, DstInfo)
+    #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          DstInfo->caster->ToWeakPtr(Ptr)
+#else // XLUA_ENABLE_MULTIPLE_INHERITANCE
+    #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, Info)      Ptr
+    #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          Ptr
+#endif // XLUA_ENABLE_MULTIPLE_INHERITANCE
