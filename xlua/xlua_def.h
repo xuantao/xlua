@@ -33,14 +33,9 @@ struct TypeInfo;
 typedef int (*LuaFunction)(lua_State* L);
 typedef void (*LuaIndexer)(xLuaState* L, void* obj, const TypeInfo* info);
 
-/* convert to weak_obj_ptr */
-typedef void* (*ToWeakPtr)(void* obj);
-typedef void* (*PtrCast)(void* obj, const TypeInfo* src, const TypeInfo* dst);
-#if XLUA_USE_LIGHT_USER_DATA
-typedef bool (*ToDerivedL)(detail::LightUserData* ud, const TypeInfo* dst);
-#endif // XLUA_USE_LIGHT_USER_DATA
-typedef bool (*ToDerivedF)(detail::FullUserData* ud, const TypeInfo* dst);
-
+/* 类型转换器
+ * 基础类型可以子类->基类，基类->子类
+*/
 struct ITypeCaster {
     virtual ~ITypeCaster() {}
 
@@ -51,6 +46,15 @@ struct ITypeCaster {
     virtual bool ToDerived(detail::LightUserData* ud) = 0;
 #endif // XLUA_USE_LIGHT_USER_DATA
     virtual bool ToDerived(detail::FullUserData* ud) = 0;
+};
+
+/* 类型描述, 用于构建导出类型信息 */
+struct ITypeDesc {
+    virtual ~ITypeDesc() { }
+    virtual void SetCaster(ITypeCaster* caster) = 0;
+    virtual void AddMember(const char* name, LuaFunction func, bool global) = 0;
+    virtual void AddMember(const char* name, LuaIndexer getter, LuaIndexer setter, bool global) = 0;
+    virtual const TypeInfo* Finalize() = 0;
 };
 
 template <typename Ty, typename By>
@@ -102,15 +106,6 @@ struct MemberVar {
     LuaIndexer setter;
 };
 
-/* 类型转换器
- * 基础类型可以子类->基类，基类->子类
-*/
-struct TypeCaster {
-    PtrCast to_super;       // 转为基类指针, static_cast
-    PtrCast to_derived;     // 转为派生类指针, dynamic_cast
-    ToWeakPtr to_weak_ptr;  // 弱对象指针
-};
-
 /* 类型枚举 */
 enum class TypeCategory {
     kInternal,
@@ -126,21 +121,11 @@ struct TypeInfo {
     bool is_weak_obj;
     int8_t external_type_index; // 外部类型编号, 用于lightuserdata索引类型
     const TypeInfo* super;      // 父类信息
-    TypeCaster caster;          // 类型转换器
+    ITypeCaster* caster;        // 类型转换器
     MemberVar* vars;            // 成员变量
     MemberFunc* funcs;          // 成员函数
     MemberVar* global_vars;     // 全局(静态)变量
     MemberFunc* global_funcs;   // 全局(静态)函数
-    ITypeCaster* caster_;
-};
-
-/* 类型描述, 用于构建导出类型信息 */
-struct ITypeDesc {
-    virtual ~ITypeDesc() { }
-    virtual void SetCaster(TypeCaster caster) = 0;
-    virtual void AddMember(const char* name, LuaFunction func, bool global) = 0;
-    virtual void AddMember(const char* name, LuaIndexer getter, LuaIndexer setter, bool global) = 0;
-    virtual const TypeInfo* Finalize() = 0;
 };
 
 /* xlua弱引用编号
@@ -155,6 +140,9 @@ public:
 public:
     xLuaIndex(const xLuaIndex&) { }
     xLuaIndex& operator = (const xLuaIndex&) { }
+
+public:
+    inline int GetIndex() const { return index_; }
 
 private:
     int index_ = -1;
@@ -177,3 +165,11 @@ XLUA_NAMESPACE_END
 /* 声明导出外部类 */
 #define XLUA_DECLARE_EXTERNAL(ClassName)                                \
     const xlua::TypeInfo* xLuaGetTypeInfo(xlua::Identity<ClassName>)
+
+#if XLUA_ENABLE_MULTIPLE_INHERITANCE
+#define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, SrcInfo)   SrcInfo->caster->ToSuper(Ptr, DstInfo)
+#define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          DstInfo->caster->ToWeakPtr(Ptr)
+#else
+#define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, Info)      Ptr
+#define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          Ptr
+#endif // XLUA_ENABLE_MULTIPLE_INHERITANCE

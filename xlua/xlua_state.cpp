@@ -67,9 +67,9 @@ namespace detail {
                     if (info->is_weak_obj) {
                         if (ud.serial_ != ::xLuaGetWeakObjSerialNum(ud.index_))
                             break;
-                        obj.ptr = info->caster.to_weak_ptr(::xLuaGetWeakObjPtr(ud.index_));
+                        obj.ptr = _XLUA_TO_WEAKOBJ_PTR(info, ::xLuaGetWeakObjPtr(ud.index_));
                     } else {
-                        obj.ptr = ud.ToRawPtr();
+                        obj.ptr = ud.RawPtr();
                     }
 
                     obj.info = info;
@@ -86,7 +86,7 @@ namespace detail {
                     if (ud->info_->is_weak_obj) {
                         if (ud->index_ != ::xLuaGetWeakObjSerialNum(ud->index_))
                             break;
-                        obj.ptr = ud->info_->caster.to_weak_ptr(::xLuaGetWeakObjPtr(ud->index_));
+                        obj.ptr = _XLUA_TO_WEAKOBJ_PTR(ud->info_, ::xLuaGetWeakObjPtr(ud->index_));
                     } else {
                         auto ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                         if (ary_obj == nullptr || ary_obj->serial_num_ != ud->serial_)
@@ -103,160 +103,6 @@ namespace detail {
         }
 
         return obj;
-    }
-
-    static bool CastDerived(lua_State* l) {
-        const char* dst_name = lua_tostring(l, 2);
-        const TypeInfo* dst_info = GlobalVar::GetInstance()->GetTypeInfo(dst_name);
-        if (dst_info == nullptr) {
-            LogError("can not find dest type info[%s]", dst_name ? dst_name : "");
-            return false;
-        }
-
-        int l_ty = lua_type(l, 1);
-        if (l_ty == LUA_TLIGHTUSERDATA) {
-#if XLUA_USE_LIGHT_USER_DATA
-            auto ud = MakeLightPtr(lua_touserdata(l, 1));
-            if (ud.ptr_ == nullptr) {
-                LogError("unknown obj");
-                return false;
-            }
-
-            if (ud.type_ == 0) {
-                auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
-                if (ary_obj == nullptr || ary_obj->serial_num_ != ud.serial_) {
-                    LogError("current obj is nil");
-                    return false;
-                }
-
-                if (IsBaseOf(dst_info, ary_obj->info_)) {
-                    lua_pushlightuserdata(l, ud.ptr_);
-                    return true; // 不需要向基类转换
-                }
-
-                if (!IsBaseOf(ary_obj->info_, dst_info)) {
-                    LogError("can not cast obj from:[%s] to type:[%s]", ary_obj->info_->type_name, dst_info->type_name);
-                    return false;
-                }
-
-                void* d = ary_obj->info_->caster.to_derived(ary_obj->obj_, ary_obj->info_, dst_info);
-                if (d == nullptr) {
-                    LogError("can not cast obj from:[%s] to type:[%s]", ary_obj->info_->type_name, dst_info->type_name);
-                    return false;
-                }
-
-                ary_obj->obj_ = d;
-                ary_obj->info_ = dst_info;
-                lua_pushlightuserdata(l, ud.ptr_);
-            } else {
-                const auto* src_info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
-                if (src_info == nullptr) {
-                    LogError("unknown obj type");
-                    return false;
-                }
-                if (IsBaseOf(dst_info, src_info)) {
-                    lua_pushlightuserdata(l, ud.ptr_);
-                    return true; // 不需要向基类转换
-                }
-                if (!IsBaseOf(src_info, dst_info)) {
-                    LogError("can not cast obj from:[%s] to type:[%s]", src_info->type_name, dst_info->type_name);
-                    return false;
-                }
-
-                if (src_info->is_weak_obj) {
-                    if (ud.serial_ != xLuaGetWeakObjSerialNum(ud.index_)) {
-                        LogError("current obj is nil");
-                        return false;
-                    }
-
-                    void* d = src_info->caster.to_derived(xLuaGetWeakObjPtr(ud.index_), src_info, dst_info);
-                    if (d == nullptr) {
-                        LogError("can not cast obj from:[%s] to type:[%s]", src_info->type_name, dst_info->type_name);
-                        return false;
-                    }
-
-                    ud.type_ = dst_info->external_type_index;
-                    lua_pushlightuserdata(l, ud.ptr_);
-                    return true;
-                } else {
-                    void* d = src_info->caster.to_derived(ud.RawPtr(), src_info, dst_info);
-                    if (d == nullptr) {
-                        LogError("can not cast obj from:[%s] to type:[%s]", src_info->type_name, dst_info->type_name);
-                        return false;
-                    }
-
-                    ud = MakeLightPtr(dst_info->external_type_index, d);
-                    lua_pushlightuserdata(l, ud.ptr_);
-                    return true;
-                }
-            }
-#endif // XLUA_USE_LIGHT_USER_DATA
-        } else if (l_ty == LUA_TUSERDATA) {
-            auto* ud = static_cast<FullUserData*>(lua_touserdata(l, 1));
-            if (ud == nullptr) {
-                LogError("unknown obj");
-                return false;
-            }
-
-            if (ud->type_ == UserDataCategory::kObjPtr) {
-                LogError("can not cast value obj");
-                return false;
-            }
-
-            if (IsBaseOf(dst_info, ud->info_)) {
-                lua_pushvalue(l, 1);
-                return true; // 不需要向基类转换
-            }
-
-            if (!IsBaseOf(ud->info_, dst_info)) {
-                LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, dst_info->type_name);
-                return false;
-            }
-
-            if (ud->type_ == UserDataCategory::kRawPtr || ud->type_ == UserDataCategory::kSharedPtr) {
-                void* d = ud->info_->caster.to_derived(ud->obj_, ud->info_, dst_info);
-                if (d == nullptr) {
-                    LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, dst_info->type_name);
-                    return false;
-                }
-
-                ud->obj_ = d;
-                ud->info_ = dst_info;
-                lua_pushvalue(l, 1);
-                return true;
-            } else if (ud->type_ == UserDataCategory::kObjPtr) {
-                if (ud->info_->is_weak_obj) {
-                    if (ud->serial_ != xLuaGetWeakObjSerialNum(ud->index_))
-                        return false;
-
-                    void* d = ud->info_->caster.to_derived(ud->obj_, ud->info_, dst_info);
-                    if (d == nullptr) {
-                        LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, dst_info->type_name);
-                        return false;
-                    }
-
-                    ud->info_ = dst_info;
-                    lua_pushvalue(l, 1);
-                    return true;
-                } else {
-                    auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
-                    if (ary_obj == nullptr || ary_obj->serial_num_ != ud->serial_)
-                        return false;
-
-                    void* d = ud->info_->caster.to_derived(ary_obj->obj_, ud->info_, dst_info);
-                    if (d == nullptr) {
-                        LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, dst_info->type_name);
-                        return false;
-                    }
-
-                    ary_obj->obj_ = d;
-                    ary_obj->info_ = dst_info;
-                    ud->info_ = dst_info;
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     static bool IsObjValid(lua_State* l) {
@@ -534,11 +380,63 @@ namespace detail {
         }
 
         static int LuaCast(lua_State* l) {
-            if (!CastDerived(l)) {
-                lua_pushnil(l);
+            const char* dst_name = lua_tostring(l, 2);
+            const TypeInfo* dst_info = GlobalVar::GetInstance()->GetTypeInfo(dst_name);
+            if (dst_info == nullptr) {
+                LogError("can not find dest type info[%s]", dst_name ? dst_name : "");
                 LogCallStack(l);
+                lua_pushnil(l);
+                return 1;
             }
-            return 1;
+
+            int l_ty = lua_type(l, 1);
+            if (l_ty == LUA_TLIGHTUSERDATA) {
+#if XLUA_USE_LIGHT_USER_DATA
+                auto ud = MakeLightPtr(lua_touserdata(l, 1));
+                if (ud.Ptr() == nullptr) {
+                    LogError("unknown obj");
+                    LogCallStack(l);
+                    lua_pushnil(l);
+                    return 1;
+                }
+
+                if (!dst_info->caster->ToDerived(&ud)) {
+                    LogCallStack(l);
+                    lua_pushnil(l);
+                    return 1;
+                }
+
+                lua_pushlightuserdata(l, ud.Ptr());
+                return 1;
+#else
+                LogError("unknown obj");
+                LogCallStack(l);
+                lua_pushnil(l);
+                return 1;
+#endif // XLUA_USE_LIGHT_USER_DATA
+            } else if (l_ty == LUA_TUSERDATA) {
+                auto* ud = static_cast<FullUserData*>(lua_touserdata(l, 1));
+                if (ud == nullptr || ud->info_ == nullptr) {
+                    LogError("unknown obj");
+                    LogCallStack(l);
+                    lua_pushnil(l);
+                    return 1;
+                }
+
+                if (!dst_info->caster->ToDerived(ud)) {
+                    LogCallStack(l);
+                    lua_pushnil(l);
+                    return 1;
+                }
+
+                lua_pushvalue(l, 1);
+                return 1;
+            } else {
+                LogError("can not cast unknown value");
+                LogCallStack(l);
+                lua_pushnil(l);
+                return 1;
+            }
         }
 
         static int LuaIsValid(lua_State* l) {
@@ -783,6 +681,48 @@ bool xLuaState::SetGlobal(const char* path) {
 
     lua_pop(state_, 2); // [1]:value, [2]: table
     return true;
+}
+
+void xLuaState::PushUserDataPtr(const detail::FullUserData& ud) {
+    if (ud.type_ == detail::UserDataCategory::kRawPtr) {
+        void* root = detail::GetRootPtr(ud.obj_, ud.info_);
+        auto it = raw_ptrs_.find(root);
+        if (it != raw_ptrs_.cend()) {
+            UpdateCahce(it->second, ud.obj_, ud.info_);
+            PushUd(it->second);
+        } else {
+            UdCache udc = RefCache(PushUserData(ud));
+            raw_ptrs_.insert(std::make_pair(root, udc));
+        }
+    } else if (ud.type_ == detail::UserDataCategory::kObjPtr) {
+        if (ud.info_->is_weak_obj) {
+            if ((int)weak_obj_ptrs_.size() < ud.index_) {
+                weak_obj_ptrs_.resize((1 + ud.index_ / 1024) * 1024, UdCache{0, nullptr});
+            }
+
+            auto& udc = lua_obj_ptrs_[ud.index_];
+            if (udc.user_data_ != nullptr && udc.user_data_->serial_ == ud.serial_) {
+                UpdateCahce(udc, ud.obj_, ud.info_);
+                PushUd(udc);
+            } else {
+                udc = RefCache(PushUserData(ud));
+            }
+        } else {
+            if ((int)lua_obj_ptrs_.size() < ud.index_) {
+                lua_obj_ptrs_.resize((1 + ud.index_ / 1024) * 1024, UdCache{0, nullptr});
+            }
+
+            auto& udc = lua_obj_ptrs_[ud.index_];
+            if (udc.user_data_ != nullptr && udc.user_data_->serial_ == ud.serial_) {
+                UpdateCahce(udc, ud.obj_, ud.info_);
+                PushUd(udc);
+            } else {
+                udc = RefCache(PushUserData(ud));
+            }
+        }
+    } else {
+        assert(false);
+    }
 }
 
 void xLuaState::Gc(detail::FullUserData* ud) {

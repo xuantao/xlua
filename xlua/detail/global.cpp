@@ -155,7 +155,7 @@ namespace detail {
         return external_types_[index];
     }
 
-    int GlobalVar::AllocObjIndex(xLuaIndex& obj_index, void* obj, const TypeInfo* info) {
+    ArrayObj* GlobalVar::AllocObjIndex(xLuaIndex& obj_index, void* obj, const TypeInfo* info) {
         if (obj_index.index_ != -1) {
             // 总是存储子类指针
             auto& ary_obj = obj_array_[obj_index.index_];
@@ -163,7 +163,7 @@ namespace detail {
                 ary_obj.obj_ = obj;
                 ary_obj.info_ = info;
             }
-            return obj_index.index_;
+            return &ary_obj;
         } else {
             // 无可用元素，增加数组容量
             if (free_index_.empty()) {
@@ -187,7 +187,7 @@ namespace detail {
             ary_obj.serial_num_ = ++serial_num_gener_;
 
             obj_index.index_ = index;
-            return index;
+            return &ary_obj;
         }
     }
 
@@ -217,7 +217,7 @@ namespace detail {
         else
             info->index = 0;
 
-        if (info->category == TypeCategory::kExternal) {
+        if (info->is_weak_obj || info->category == TypeCategory::kExternal) {
             info->external_type_index = (int8_t)external_types_.size();
             external_types_.push_back(info);
         } else {

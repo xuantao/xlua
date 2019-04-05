@@ -25,7 +25,9 @@
 
 /* 支持弱对象指针必要的一些实现 */
 #if !XLUA_ENABLE_WEAKOBJ
-    #define XLUA_WEAK_OBJ_BASE_TYPE void
+    struct WeakObjBase {};
+    #define XLUA_WEAK_OBJ_BASE_TYPE WeakObjBase
+
     template <typename Ty> struct xLuaWeakObjPtr {
         xLuaWeakObjPtr(Ty*) {}
     };

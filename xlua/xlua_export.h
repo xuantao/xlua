@@ -73,18 +73,20 @@
         auto* global = xlua::detail::GlobalVar::GetInstance();                          \
         if (global == nullptr)                                                          \
             return nullptr;                                                             \
-        auto* desc = global->AllocType(xlua::TypeCategory::kInternal, false, #ClassName,\
+        auto* desc = global->AllocType(xlua::TypeCategory::kInternal,                   \
+            xlua::detail::IsWeakObjPtr<ClassName>::value, #ClassName,                   \
             xlua::detail::GetTypeInfoImpl<LuaDeclare::super>()                          \
         );                                                                              \
         if (desc == nullptr)                                                            \
             return nullptr;                                                             \
-        desc->SetCaster(                                                                \
-            xlua::detail::MakePtrCaster<ClassName, LuaDeclare::super>()                 \
-        );
+        static xlua::detail::TypeCasterImpl<ClassName, LuaDeclare::super> s_caster;     \
+        desc->SetCaster(&s_caster);
+
 
 /* 导出lua类结束 */
 #define XLUA_EXPORT_CLASS_END()                                                         \
         s_type_info = desc->Finalize();                                                 \
+        s_caster.info_ = s_type_info;                                                   \
         return s_type_info;                                                             \
     }
 
@@ -119,9 +121,8 @@
         );                                                                              \
         if (desc == nullptr)                                                            \
             return nullptr;                                                             \
-        desc->SetCaster(                                                                \
-            xlua::detail::MakePtrCaster<ClassName, super_type>()                        \
-        );
+        static xlua::detail::TypeCasterImpl<ClassName, super_type> s_caster;            \
+        desc->SetCaster(&s_caster);
 
 #define XLUA_EXPORT_EXTERNAL_END()    XLUA_EXPORT_CLASS_END()
 

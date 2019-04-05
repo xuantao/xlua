@@ -100,149 +100,187 @@ namespace detail
         static constexpr bool is_member = (is_get_member || is_set_member);
     };
 
-    template <typename Ty>
-    struct WeakObjPtrCast
-    {
-        static void* ToWeakObjPtr(void* obj) {
-            return static_cast<Ty*>(static_cast<XLUA_WEAK_OBJ_BASE_TYPE*>(obj));
-        }
-    };
+    template <typename Ty, typename std::enable_if<IsWeakObjPtr<Ty>::value, int>::type = 0>
+    inline Ty* ToDerivedWeakPtr(void* obj) {
+        return dynamic_cast<Ty*>((XLUA_WEAK_OBJ_BASE_TYPE*)obj);
+    }
 
-    /* 多继承指针偏移, 这里一步步的执行转换 */
+    template <typename Ty, typename std::enable_if<!IsWeakObjPtr<Ty>::value, int>::type = 0>
+    inline Ty* ToDerivedWeakPtr(void*) {
+        assert(false);
+        return nullptr;
+    }
+
+    template <typename Ty, typename std::enable_if<IsWeakObjPtr<Ty>::value, int>::type = 0>
+    inline Ty* ToWeakPtrImpl(void* obj) {
+        return static_cast<Ty*>((XLUA_WEAK_OBJ_BASE_TYPE*)obj);
+    }
+
+    template <typename Ty, typename std::enable_if<!IsWeakObjPtr<Ty>::value, int>::type = 0>
+    inline Ty* ToWeakPtrImpl(void*) {
+        assert(false);
+        return nullptr;
+    }
+
     template <typename Ty, typename By>
-    struct RawPtrCast {
-        static_assert(sizeof(std::shared_ptr<Ty>) == sizeof(std::shared_ptr<By>), "must be same size");
-        static_assert(sizeof(std::unique_ptr<Ty>) == sizeof(std::unique_ptr<By>), "must be same size");
+    struct TypeCasterImpl : ITypeCaster {
+        virtual ~TypeCasterImpl() { }
 
-        static void* ToBase(void* obj, const TypeInfo* src, const TypeInfo* dst) {
-            if (src == dst)
-                return obj;
-            return src->super->caster.to_super(static_cast<By*>((Ty*)obj), src->super, dst);
+        void* ToWeakPtr(void* obj) override {
+            return ToWeakPtrImpl<Ty>(obj);
         }
 
-        static void* ToDerived(void* obj, const TypeInfo* src, const TypeInfo* dst) {
-            if (src == dst)
+        void* ToSuper(void* obj, const TypeInfo* dst) override {
+            if (info_ == dst)
                 return obj;
-            obj = dst->super->caster.to_derived(obj, src, dst->super);
+            return info_->super->caster->ToSuper(static_cast<By*>((Ty*)obj), dst);
+        }
+
+        void* ToDerived(void* obj, const TypeInfo* src) override {
+            if (info_ == src)
+                return obj;
+            obj = info_->super->caster->ToDerived(obj, src);
             return obj ? dynamic_cast<Ty*>(static_cast<By*>(obj)) : nullptr;
         }
 
 #if XLUA_USE_LIGHT_USER_DATA
-        static bool ToDerivedL(LightUserData* ud, const TypeInfo* dst) {
-            if (ud.ptr_ == nullptr) {
+        bool ToDerived(detail::LightUserData* ud) override {
+            if (ud->Ptr() == nullptr) {
                 LogError("unknown obj");
                 return false;
             }
 
-            if (ud.type_ == 0) {
-                auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
-                if (ary_obj == nullptr || ary_obj->serial_num_ != ud.serial_) {
+            const TypeInfo* src = nullptr;
+            void* src_ptr = nullptr;
+            if (ud->type_ == 0) {
+                auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
+                if (ary_obj == nullptr || ary_obj->serial_num_ != ud->serial_) {
                     LogError("current obj is nil");
                     return false;
                 }
 
-                if (IsBaseOf(dst, ary_obj->info_)) {
-                    return true; // 不需要向基类转换
-                }
-
-                if (!IsBaseOf(ary_obj->info_, dst)) {
-                    LogError("can not cast obj from:[%s] to type:[%s]", ary_obj->info_->type_name, dst->type_name);
-                    return false;
-                }
-
-                void* d = ary_obj->info_->caster.to_derived(ary_obj->obj_, ary_obj->info_, dst);
-                if (d == nullptr) {
-                    LogError("can not cast obj from:[%s] to type:[%s]", ary_obj->info_->type_name, dst->type_name);
-                    return false;
-                }
-
-                ary_obj->obj_ = d;
-                ary_obj->info_ = dst;
-                return true;
+                 src_ptr = ary_obj->obj_;
+                 src = ary_obj->info_;
             } else {
-                const auto* src_info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
+                const TypeInfo* src_info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud->type_);
                 if (src_info == nullptr) {
                     LogError("unknown obj type");
                     return false;
                 }
-                if (IsBaseOf(dst, src_info)) {
-                    return true; // 不需要向基类转换
-                }
-
-                if (!IsBaseOf(src_info, dst)) {
-                    LogError("can not cast obj from:[%s] to type:[%s]", src_info->type_name, dst->type_name);
-                    return false;
-                }
-
                 if (src_info->is_weak_obj) {
-                    if (ud.serial_ != xLuaGetWeakObjSerialNum(ud.index_)) {
+                    if (ud->serial_ != ::xLuaGetWeakObjSerialNum(ud->index_)) {
                         LogError("current obj is nil");
                         return false;
                     }
 
-                    void* d = src_info->caster.to_derived(xLuaGetWeakObjPtr(ud.index_), src_info, dst);
-                    if (d == nullptr) {
-                        LogError("can not cast obj from:[%s] to type:[%s]", src_info->type_name, dst->type_name);
-                        return false;
-                    }
-
-                    if (dst->category == TypeCategory::kInternal) {
-                        //auto& lua_index = GetRootObjIndex()
-                    } else {
-                        assert(dst->external_type_index);
-                        ud.type_ = dst->external_type_index;
-                    }
-                    //ud.type_ = dst->external_type_index;
-                    //lua_pushlightuserdata(l, ud.ptr_);
-                    return true;
+                    src_ptr = ::xLuaGetWeakObjPtr(ud->index_);
                 } else {
-                    void* d = src_info->caster.to_derived(ud.RawPtr(), src_info, dst);
-                    if (d == nullptr) {
-                        LogError("can not cast obj from:[%s] to type:[%s]", src_info->type_name, dst->type_name);
-                        return false;
-                    }
-
-                    ud = MakeLightPtr(dst->external_type_index, d);
-                    return true;
+                    src_ptr = ud->RawPtr();
                 }
+
+                src = src_info;
             }
+
+            if (IsBaseOf(info_, src))
+                return true; // 不需要向基类转换
+
+            if (!IsBaseOf(src, info_)) {
+                LogError("can not cast obj from:[%s] to type:[%s]", src->type_name, info_->type_name);
+                return false;
+            }
+
+            Ty* d = nullptr;
+            if (src->is_weak_obj) {
+                d = ToDerivedWeakPtr<Ty>(::xLuaGetWeakObjPtr(ud->index_));
+            } else {
+                d = (Ty*)ToDerived(src_ptr, src);
+            }
+
+            if (d == nullptr) {
+                LogError("can not cast obj from:[%s] to type:[%s]", src->type_name, info_->type_name);
+                return false;
+            }
+
+            *ud = MakeLightUserData(d, info_);
+            return true;
         }
 #endif // XLUA_USE_LIGHT_USER_DATA
 
-        static bool ToDerivedF(FullUserData* ud, const TypeInfo* dst) {
+        bool ToDerived(detail::FullUserData* ud) override {
+            if (ud->type_ == UserDataCategory::kValue) {
+                LogError("can not cast value obj");
+                return false;
+            }
+            if (IsBaseOf(info_, ud->info_)) {
+                return true; // 不需要向基类转换
+            }
+            if (!IsBaseOf(ud->info_, info_)) {
+                LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, info_->type_name);
+                return false;
+            }
+
+            Ty* d = nullptr;
+            if (ud->type_ == UserDataCategory::kSharedPtr) {
+                d = (Ty*)ToDerived(ud->obj_, ud->info_);
+                if (d == nullptr) {
+                    LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, info_->type_name);
+                    return false;
+                }
+
+                ud->obj_ = d;
+                ud->info_ = info_;
+                return true;
+            }
+
+            if (ud->type_ == UserDataCategory::kRawPtr) {
+                d = (Ty*)ToDerived(ud->obj_, ud->info_);
+            } else if (ud->type_ == UserDataCategory::kObjPtr) {
+                if (ud->info_->is_weak_obj) {
+                    if (ud->serial_ != ::xLuaGetWeakObjSerialNum(ud->index_)) {
+                        LogError("obj is nil");
+                        return false;
+                    }
+
+                    d = ToDerivedWeakPtr<Ty>(::xLuaGetWeakObjPtr(ud->index_));
+                } else {
+                    auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
+                    if (ary_obj == nullptr|| ary_obj->serial_num_ != ud->serial_) {
+                        LogError("obj is nil");
+                        return false;
+                    }
+
+                    d = (Ty*)ToDerived(ary_obj->obj_, ary_obj->info_);
+                }
+            }
+
+            if (d == nullptr) {
+                LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, info_->type_name);
+                return false;
+            }
+
+            *ud = MakeFullUserData(d, info_);
             return true;
         }
+
+    public:
+        const TypeInfo* info_ = nullptr;
     };
 
     template <typename Ty>
-    struct RawPtrCast<Ty, void> {
-        static void* ToBase(void* obj, const TypeInfo* src, const TypeInfo* dst) {
-            return obj;
-        }
+    struct TypeCasterImpl<Ty, void> : ITypeCaster {
+        virtual ~TypeCasterImpl() { }
 
-        static void* ToDerived(void* obj, const TypeInfo* src, const TypeInfo* dst) {
-            return obj;
-        }
-
+        void* ToWeakPtr(void* obj) override { return obj; }
+        void* ToSuper(void* obj, const TypeInfo* dst) override { return obj; }
+        void* ToDerived(void* obj, const TypeInfo* src) override { return obj; }
 #if XLUA_USE_LIGHT_USER_DATA
-        static bool ToDerivedL(LightUserData* ud, const TypeInfo* dst) {
-            return true;
-        }
+        bool ToDerived(detail::LightUserData* ud) override { return true; }
 #endif // XLUA_USE_LIGHT_USER_DATA
+        bool ToDerived(detail::FullUserData* ud) override { return true; }
 
-        static bool ToDerivedF(FullUserData* ud, const TypeInfo* dst) {
-            return true;
-        }
+    public:
+        const TypeInfo* info_ = nullptr;
     };
-
-    template <typename Ty, typename By>
-    inline TypeCaster MakePtrCaster() {
-        return TypeCaster{
-            &RawPtrCast<Ty, By>::ToBase,
-            &RawPtrCast<Ty, By>::ToDerived,
-            &WeakObjPtrCast<Ty>::ToWeakObjPtr,
-        };
-    }
 
     template <typename Ty>
     inline Ty* GetMetaCallFullUserDataPtr(void* user_data, const TypeInfo* info) {
@@ -254,17 +292,17 @@ namespace detail
 
         if (ud->type_ == UserDataCategory::kObjPtr) {
             if (ud->info_->is_weak_obj) {
-                if (ud->serial_ != xLuaGetWeakObjSerialNum(ud->index_))
+                if (ud->serial_ != ::xLuaGetWeakObjSerialNum(ud->index_))
                     return nullptr;
-                return static_cast<Ty*>(xLuaGetWeakObjPtr(ud->index_));
+                return (Ty*)_XLUA_TO_WEAKOBJ_PTR(ud->info_, ::xLuaGetWeakObjPtr(ud->index_));
             } else {
                 auto ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                 if (ary_obj->serial_num_ != ud->serial_)
                     return nullptr;
-                return static_cast<Ty*>(ud->info_->caster.to_super(ud->obj_, ud->info_, info));
+                return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_));
             }
         }
-        return static_cast<Ty*>(ud->info_->caster.to_super(ud->obj_, ud->info_, info));
+        return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_));
     }
 
     template <typename Ty>
@@ -519,15 +557,15 @@ namespace detail
                 FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
                 if (ud->type_ == UserDataCategory::kObjPtr) {
                     if (ud->info_->is_weak_obj) {
-                        if (ud->serial_ == xLuaGetWeakObjSerialNum(ud->index_))
-                            return info->caster.to_weak_ptr(xLuaGetWeakObjPtr(ud->index_));
+                        if (ud->serial_ == ::xLuaGetWeakObjSerialNum(ud->index_))
+                            return _XLUA_TO_WEAKOBJ_PTR(info, ::xLuaGetWeakObjPtr(ud->index_));
                     } else {
                         ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                         if (obj && obj->serial_num_ == ud->serial_)
-                            return obj->info_->caster.to_super(obj->obj_, obj->info_, info);
+                            return _XLUA_TO_SUPER_PTR(info, obj->obj_, obj->info_);
                     }
                 } else if (ud->type_ == UserDataCategory::kValue) {
-                    return ud->info_->caster.to_super(ud->obj_, ud->info_, info);
+                    return _XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_);
                 }
             } else if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
@@ -535,14 +573,14 @@ namespace detail
                 if (ud.type_ == 0) {
                     ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
                     if (obj && obj->serial_num_ == ud.serial_)
-                        return obj->info_->caster.to_super(obj->obj_, obj->info_, info);
+                        return _XLUA_TO_SUPER_PTR(info, obj->obj_, obj->info_);
                 } else {
                     const TypeInfo* src = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
                     if (src->is_weak_obj) {
-                        if (ud.serial_ == xLuaGetWeakObjSerialNum(ud.index_))
-                            return info->caster.to_weak_ptr(xLuaGetWeakObjPtr(ud.index_));
+                        if (ud.serial_ == ::xLuaGetWeakObjSerialNum(ud.index_))
+                            return _XLUA_TO_WEAKOBJ_PTR(info, ::xLuaGetWeakObjPtr(ud.index_));
                     } else {
-                        return src->caster.to_super(ud.ToRawPtr(), src, info);
+                        return _XLUA_TO_SUPER_PTR(info, ud.RawPtr(), src);
                     }
                 }
 #endif // XLUA_USE_LIGHT_USER_DATA
@@ -886,12 +924,12 @@ namespace detail
     struct MetaVar {
         template <typename Fy, typename EnableIfT<IsMember<Fy>::value, int> = 0>
         static inline void Get(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, Fy f) {
-            MetaGet(l, static_cast<Ty*>(src->caster.to_super(obj, src, dst)), f);
+            MetaGet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
         }
 
         template <typename Fy, typename EnableIfT<IsMember<Fy>::value, int> = 0>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, Fy f) {
-            MetaSet(l, static_cast<Ty*>(src->caster.to_super(obj, src, dst)), f);
+            MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
         }
 
         template <typename Fy, typename EnableIfT<!IsMember<Fy>::value, int> = 0>
@@ -917,12 +955,12 @@ namespace detail
     struct MetaVarEx {
         template <typename Fy>
         static inline void Get(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, Fy f) {
-            MetaGet(l, static_cast<Ty*>(src->caster.to_super(obj, src, dst)), f);
+            MetaGet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
         }
 
         template <typename Fy>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, Fy f) {
-            MetaSet(l, static_cast<Ty*>(src->caster.to_super(obj, src, dst)), f);
+            MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
         }
 
         static inline void Get(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, std::nullptr_t) {

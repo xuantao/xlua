@@ -42,7 +42,7 @@ namespace detail
         const TypeInfo* GetTypeInfo(const char* name) const;
         const TypeInfo* GetExternalTypeInfo(int index) const;
 
-        int AllocObjIndex(xLuaIndex& obj_index, void* obj, const TypeInfo* info);
+        ArrayObj* AllocObjIndex(xLuaIndex& obj_index, void* obj, const TypeInfo* info);
         ArrayObj* GetArrayObj(int index);
 
     private:
