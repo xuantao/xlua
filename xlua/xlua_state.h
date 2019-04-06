@@ -363,7 +363,7 @@ private:
     }
 
     template <typename Ty, typename... Args>
-    inline Ty* NewUserData(const TypeInfo* info, Args&&... args) {
+    inline Ty* NewUserData(const detail::TypeInfo* info, Args&&... args) {
         void* mem = lua_newuserdata(state_, sizeof(Ty));
 
         int ty = 0;
@@ -379,12 +379,12 @@ private:
     void PushPtrUserData(const detail::FullUserData& ud);
 
     template <typename Ty>
-    void PushValueData(const Ty& val, const TypeInfo* info) {
+    void PushValueData(const Ty& val, const detail::TypeInfo* info) {
         NewUserData<detail::ValueUserData<Ty>>(info, val, info);
     }
 
     template <typename Ty>
-    inline void PushSharedPtr(const std::shared_ptr<Ty>& ptr, const TypeInfo* info) {
+    inline void PushSharedPtr(const std::shared_ptr<Ty>& ptr, const detail::TypeInfo* info) {
         void* root = detail::GetRootPtr(ptr.get(), info);
         auto it = shared_ptrs_.find(root);
         if (it != shared_ptrs_.cend()) {
@@ -396,7 +396,7 @@ private:
         }
     }
 
-    inline void UpdateCahce(UdCache& cache, void* ptr, const TypeInfo* info) {
+    inline void UpdateCahce(UdCache& cache, void* ptr, const detail::TypeInfo* info) {
         if (!detail::IsBaseOf(info, cache.user_data_->info_)) {
             cache.user_data_->obj_ = ptr;
             cache.user_data_->info_ = info;
@@ -429,15 +429,15 @@ private:
     void Gc(detail::FullUserData* user_data);
 
     bool InitEnv(const char* export_module,
-        const std::vector<const ConstInfo*>& consts,
-        const std::vector<TypeInfo*>& types,
+        const std::vector<const detail::ConstInfo*>& consts,
+        const std::vector<detail::TypeInfo*>& types,
         const std::vector<const char*>& scripts
     );
-    void InitConsts(const char* export_module, const std::vector<const ConstInfo*>& consts);
-    void CreateTypeMeta(const TypeInfo* info);
-    void CreateTypeGlobal(const char* export_module, const TypeInfo* info);
-    void SetTypeMember(const TypeInfo* info);
-    void SetGlobalMember(const TypeInfo* info, bool func, bool var);
+    void InitConsts(const char* export_module, const std::vector<const detail::ConstInfo*>& consts);
+    void CreateTypeMeta(const detail::TypeInfo* info);
+    void CreateTypeGlobal(const char* export_module, const detail::TypeInfo* info);
+    void SetTypeMember(const detail::TypeInfo* info);
+    void SetGlobalMember(const detail::TypeInfo* info, bool func, bool var);
     void PushClosure(lua_CFunction func);
 
     int RefLuaObj(int index);
@@ -590,19 +590,24 @@ namespace detail {
     struct Loader<Ty*> {
         static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "only declared export to lua types");
         static Ty* Do(xLuaState* l, int index) {
-            const TypeInfo* info = GetTypeInfoImpl<Ty>();
-            void* p = lua_touserdata(l->GetState(), index);
-            if (p == nullptr)
+            UserDataInfo ud_info;
+            if (!GetUserDataInfo(l->GetState(), index, &ud_info))
                 return nullptr;
 
-            int ty = lua_type(l->GetState(), index);
-            if (ty == LUA_TLIGHTUSERDATA) {
-                return GetLightUserDataPtr<Ty>(p, info);
-            } else if (ty == LUA_TUSERDATA) {
-                return GetFullUserDataPtr<Ty>(p, info);
-            } else {
+            const TypeInfo* info = GetTypeInfoImpl<Ty>();
+            if (!IsBaseOf(info, ud_info.info))
                 return nullptr;
+
+            if (!ud_info.is_light) {
+                auto* ud = (FullUserData*)ud_info.ud;
+                if (ud->type_ != UserDataCategory::kObjPtr && ud->type_ != UserDataCategory::kRawPtr)
+                    return nullptr; // only (raw_ptr, obj_ptr) -> ptr
             }
+
+            if (info->is_weak_obj)
+                return static_cast<Ty*>(_XLUA_TO_WEAKOBJ_PTR(info, ud_info.obj));
+            else
+                return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info));
         }
     };
 
@@ -612,11 +617,9 @@ namespace detail {
         static inline std::shared_ptr<Ty> Do(xLuaState* l, int index) {
             if (lua_type(l->GetState(), index) != LUA_TUSERDATA)
                 return nullptr;
-
             FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
             if (ud == nullptr || ud->type_ != UserDataCategory::kSharedPtr)
                 return nullptr;
-
             const TypeInfo* info = GetTypeInfoImpl<Ty>();
             if (!IsBaseOf(info, ud->info_))
                 return nullptr;

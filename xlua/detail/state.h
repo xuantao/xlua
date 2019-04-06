@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include "../xlua_def.h"
+#include "common.h"
 #include "traits.h"
 #include "global.h"
 #include <memory>
@@ -8,74 +8,7 @@
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {
-    inline const TypeInfo* GetRootType(const TypeInfo* info) {
-        while (info->super)
-            info = info->super;
-        return info;
-    }
-
-    inline void* GetRootPtr(void* ptr, const TypeInfo* info) {
-        const TypeInfo* root = GetRootType(info);
-        if (info == root)
-            return ptr;
-        return _XLUA_TO_SUPER_PTR(root, ptr, info);
-    }
-
-    inline bool IsBaseOf(const TypeInfo* base, const TypeInfo* info) {
-        while (info && info != base)
-            info = info->super;
-        return info == base;
-    }
-
-    template <typename Ty>
-    inline xLuaIndex& GetRootObjIndex(Ty* obj) {
-        return static_cast<typename InternalRoot<Ty>::type*>(obj)->xlua_obj_index_;
-    }
-
-    template <typename Ty, typename std::enable_if<!IsWeakObjPtr<Ty>::value, int>::type = 0>
-    inline Ty* ToDerivedWeakPtr(void*) {
-        assert(false);
-        return nullptr;
-    }
-
-    template <typename Ty, typename std::enable_if<IsWeakObjPtr<Ty>::value, int>::type = 0>
-    inline Ty* ToWeakPtrImpl(void* obj) {
-        return static_cast<Ty*>((XLUA_WEAK_OBJ_BASE_TYPE*)obj);
-    }
-
-    template <typename Ty, typename std::enable_if<!IsWeakObjPtr<Ty>::value, int>::type = 0>
-    inline Ty* ToWeakPtrImpl(void*) {
-        assert(false);
-        return nullptr;
-    }
-
 #ifdef XLUA_USE_LIGHT_USER_DATA
-    struct LightUserData {
-        union {
-            struct {
-                void* ptr_;
-            };
-            struct {
-                uint32_t serial_;
-                uint32_t index_ : 24;
-                uint32_t type_ : 8;
-            };
-        };
-
-        inline void* Ptr() const {
-            return ptr_;
-        }
-
-        inline void* RawPtr() const {
-            return (void*)(reinterpret_cast<uint64_t>(ptr_) & 0x00ffffffffffffff);
-        }
-
-        inline void SetRawPtr(void* p) {
-            ptr_ = (void*)((reinterpret_cast<uint64_t>(ptr_) & 0xff000000000000)
-                | (reinterpret_cast<uint64_t>(p) & 0x00ffffffffffffff));
-        }
-    };
-
     inline LightUserData MakeLightPtr(void* ptr) {
         LightUserData ud;
         ud.ptr_ = ptr;
@@ -125,41 +58,6 @@ namespace detail {
         return MakeLightUserData(obj, info, tag());
     }
 #endif // XLUA_USE_LIGHT_USER_DATA
-
-    enum class UserDataCategory {
-        kValue,
-        kRawPtr,
-        kSharedPtr,
-        kObjPtr,
-    };
-
-    struct FullUserData {
-        FullUserData(UserDataCategory type, void* obj, const TypeInfo* info)
-            : type_(type)
-            , info_(info)
-            , obj_(obj) {
-        }
-
-        FullUserData(UserDataCategory type, int32_t index, int32_t serial, const TypeInfo* info)
-            : type_(type)
-            , info_(info)
-            , index_(index)
-            , serial_(serial) {
-        }
-
-        virtual ~FullUserData() {}
-        virtual void* GetDataPtr() { return nullptr; }
-
-        UserDataCategory type_;
-        const TypeInfo* info_;
-        union {
-            void* obj_;
-            struct {
-                int32_t index_;
-                int32_t serial_;
-            };
-        };
-    };
 
     template <typename Ty>
     inline FullUserData MakeFullUserData(Ty* obj, const TypeInfo* info, tag_weakobj) {
@@ -215,67 +113,75 @@ namespace detail {
         std::shared_ptr<Ty> val_;
     };
 
-    template <typename Ty>
-    Ty* GetLightUserDataPtr(void* user_data, const TypeInfo* info) {
+    struct UserDataInfo {
+        bool is_light;
+        void* ud;
+        void* obj;
+        const TypeInfo* info;
+    };
+
+    inline bool GetUserDataInfo(lua_State* l, int index, /*out*/UserDataInfo* ret) {
+        UserDataInfo ud_info{ false, nullptr, nullptr, nullptr };
+        int l_ty = lua_type(l, 1);
+        if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
-        LightUserData ud = MakeLightPtr(user_data);
-        if (ud.type_ == 0) {
-            ArrayObj* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
-            if (ary_obj == nullptr || ary_obj->serial_num_ != ud.serial_)
-                return nullptr;
+            ud_info.is_light = true;
+            ud_info.ud = lua_touserdata(l, 1);
+            if (ud_info.ud == nullptr)
+                return false;
 
-            if (!IsBaseOf(info, ary_obj->info_)) {
-                LogError("can not get obj of type:[%s] from:[%s]", info->type_name, ary_obj->info_->type_name);
-                return nullptr;
-            }
+            auto ud = MakeLightPtr(ud_info.ud);
+            if (ud.type_ != 0) {
+                const auto* info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
+                if (info->is_weak_obj) {
+                    if (ud.serial_ != ::xLuaGetWeakObjSerialNum(ud.index_))
+                        return false;
+                    ud_info.obj = _XLUA_TO_WEAKOBJ_PTR(info, ::xLuaGetWeakObjPtr(ud.index_));
+                } else {
+                    ud_info.obj = ud.RawPtr();
+                }
 
-            return (Ty*)_XLUA_TO_SUPER_PTR(info, ary_obj->obj_, ary_obj->info_);
-        } else {
-            const TypeInfo* dst_type = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
-            if (!IsBaseOf(info, dst_type)) {
-                LogError("can not get obj of type:[%s] from:[%s]", info->type_name, dst_type->type_name);
-                return nullptr;
-            }
-
-            if (dst_type->is_weak_obj) {
-                if (ud.serial_ != ::xLuaGetWeakObjSerialNum(ud.index_))
-                    return nullptr;
-                return (Ty*)_XLUA_TO_WEAKOBJ_PTR(dst_type, ::xLuaGetWeakObjPtr(ud.index_));
+                ud_info.info = info;
             } else {
-                return (Ty*)_XLUA_TO_SUPER_PTR(dst_type, ud.RawPtr(), info);
+                auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
+                if (ary_obj == nullptr || ary_obj->serial_num_ != ud.serial_)
+                    return false;
+
+                ud_info.obj = ary_obj->obj_;
+                ud_info.info = ary_obj->info_;
             }
-        }
+#else
+            return false;
 #endif // XLUA_USE_LIGHT_USER_DATA
-        return nullptr;
-    }
+        } else if (l_ty == LUA_TUSERDATA) {
+            ud_info.ud = lua_touserdata(l, 1);
+            if (ud_info.ud == nullptr)
+                return false;
 
-    template <typename Ty>
-    Ty* GetFullUserDataPtr(void* p, const TypeInfo* info) {
-        FullUserData* ud = static_cast<FullUserData*>(p);
-        if (ud->obj_ == nullptr)
-            return nullptr;
-        if (!IsBaseOf(info, ud->info_))
-            return nullptr;
-
-        if (ud->type_ == UserDataCategory::kRawPtr) {
-            return (Ty*)_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_);
-        }
-
-        if (ud->type_ == UserDataCategory::kObjPtr) {
-            if (ud->info_->is_weak_obj) {
-                if (ud->serial_ != ::xLuaGetWeakObjSerialNum(ud->index_))
-                    return nullptr;
-                return ToWeakPtrImpl<Ty>(::xLuaGetWeakObjPtr(ud->index_));
+            ud_info.is_light = false;
+            auto* ud = (FullUserData*)ud_info.ud;
+            if (ud->type_ == UserDataCategory::kObjPtr) {
+                if (ud->info_->is_weak_obj) {
+                    if (ud->index_ != ::xLuaGetWeakObjSerialNum(ud->index_))
+                        return false;
+                    ud_info.obj = _XLUA_TO_WEAKOBJ_PTR(ud->info_, ::xLuaGetWeakObjPtr(ud->index_));
+                } else {
+                    auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
+                    if (ary_obj == nullptr || ary_obj->serial_num_ != ud->serial_)
+                        return false;
+                    assert(ud->info_ == ary_obj->info_);
+                    ud_info.obj = ary_obj->obj_;
+                }
             } else {
-                ArrayObj* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
-                if (ary_obj == nullptr || ary_obj->obj_ == nullptr || ary_obj->serial_num_ != ud->serial_)
-                    return nullptr;
-                return (Ty*)_XLUA_TO_SUPER_PTR(info, ary_obj->obj_, ud->info_);
+                /* value or shared_ptr's obj ptr*/
+                ud_info.obj = ud->obj_;
             }
+
+            ud_info.info = ud->info_;
         }
 
-        //TODO: log unknown obj type
-        return nullptr;
+        if (ret) *ret = ud_info;
+        return true;
     }
 } // namespace detail
 

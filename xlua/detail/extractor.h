@@ -1,5 +1,5 @@
 #pragma once
-#include "../xlua_def.h"
+#include "common.h"
 
 XLUA_NAMESPACE_BEGIN
 

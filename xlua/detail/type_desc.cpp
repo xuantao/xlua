@@ -6,8 +6,7 @@
 
 XLUA_NAMESPACE_BEGIN
 
-namespace detail
-{
+namespace detail {
     std::string PerifyTypeName(const char* name) {
         char buf[XLUA_MAX_TYPE_NAME_LENGTH];
         snprintf(buf, XLUA_MAX_TYPE_NAME_LENGTH, name);

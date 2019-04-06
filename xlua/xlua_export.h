@@ -36,10 +36,10 @@
         "can not export var:"#Name" to lua"                                             \
     );                                                                                  \
     struct _XLUA_ANONYMOUS {                                                            \
-        static void Get(xlua::xLuaState* l, void* obj, const xlua::TypeInfo* info) {    \
+        static void Get(xlua::xLuaState* l, void* obj, const xlua::detail::TypeInfo* info) {    \
             xlua::detail::Meta<class_type>::Get(l, obj, info, s_type_info, GetOp);      \
         }                                                                               \
-        static void Set(xlua::xLuaState* l, void* obj, const xlua::TypeInfo* info) {    \
+        static void Set(xlua::xLuaState* l, void* obj, const xlua::detail::TypeInfo* info) {    \
             xlua::detail::Meta<class_type>::Set(l, obj, info, s_type_info, SetOp);      \
         }                                                                               \
     };                                                                                  \
@@ -48,6 +48,7 @@
         std::is_null_pointer<decltype(SetOp)>::value ? nullptr : &_XLUA_ANONYMOUS::Set, \
         IsGlobal                                                                        \
     );
+
 #define _XLUA_IS_STATIC_VAR(GetOp, SetOp)           !xlua::detail::IndexerTrait<decltype(GetOp), decltype(SetOp)>::is_member
 #define _XLUA_EXPORT_VAR(Name, GetOp, SetOp, Meta)  _XLUA_EXPORT_VAR_(Name, GetOp, SetOp, Meta, _XLUA_IS_STATIC_VAR(GetOp, SetOp))
 
@@ -65,15 +66,15 @@
     namespace {                                                                         \
         xlua::detail::TypeNode _XLUA_ANONYMOUS(&ClassName::xLuaGetTypeInfo);            \
     } /* end namespace */                                                               \
-    const xlua::TypeInfo* ClassName::xLuaGetTypeInfo() {                                \
+    const xlua::detail::TypeInfo* ClassName::xLuaGetTypeInfo() {                        \
         using class_type = ClassName;                                                   \
-        static const xlua::TypeInfo* s_type_info = nullptr;                             \
+        static const xlua::detail::TypeInfo* s_type_info = nullptr;                     \
         if (s_type_info)                                                                \
             return s_type_info;                                                         \
         auto* global = xlua::detail::GlobalVar::GetInstance();                          \
         if (global == nullptr)                                                          \
             return nullptr;                                                             \
-        auto* desc = global->AllocType(xlua::TypeCategory::kInternal,                   \
+        auto* desc = global->AllocType(xlua::detail::TypeCategory::kInternal,           \
             xlua::detail::IsWeakObjPtr<ClassName>::value, #ClassName,                   \
             xlua::detail::GetTypeInfoImpl<LuaDeclare::super>()                          \
         );                                                                              \
@@ -102,20 +103,20 @@
         "base type is not declare to export to lua"                                     \
     );                                                                                  \
     namespace {                                                                         \
-        xlua::detail::TypeNode _XLUA_ANONYMOUS([]() -> const xlua::TypeInfo* {          \
+        xlua::detail::TypeNode _XLUA_ANONYMOUS([]() -> const xlua::detail::TypeInfo* {  \
             return xLuaGetTypeInfo(xlua::Identity<ClassName>());                        \
         });                                                                             \
     } /* end namespace */                                                               \
-    const xlua::TypeInfo* xLuaGetTypeInfo(xlua::Identity<ClassName>) {                  \
+    const xlua::detail::TypeInfo* xLuaGetTypeInfo(xlua::Identity<ClassName>) {          \
         using class_type = ClassName;                                                   \
         using super_type = _XLUA_SUPER_CLASS(__VA_ARGS__);                              \
-        static const xlua::TypeInfo* s_type_info = nullptr;                             \
+        static const xlua::detail::TypeInfo* s_type_info = nullptr;                     \
         if (s_type_info)                                                                \
             return s_type_info;                                                         \
         auto* global = xlua::detail::GlobalVar::GetInstance();                          \
         if (global == nullptr)                                                          \
             return nullptr;                                                             \
-        auto* desc = global->AllocType(xlua::TypeCategory::kExternal,                   \
+        auto* desc = global->AllocType(xlua::detail::TypeCategory::kExternal,           \
             xlua::detail::IsWeakObjPtr<ClassName>::value, #ClassName,                   \
             xlua::detail::GetTypeInfoImpl<super_type>()                                 \
         );                                                                              \
@@ -129,15 +130,15 @@
 /* 导出全局表 */
 #define XLUA_EXPORT_GLOBAL_BEGIN(Name)                                                  \
     namespace {                                                                         \
-        xlua::detail::TypeNode _XLUA_ANONYMOUS([]() -> const xlua::TypeInfo* {          \
+        xlua::detail::TypeNode _XLUA_ANONYMOUS([]() -> const xlua::detail::TypeInfo* {  \
             using class_type = void;                                                    \
-            static const xlua::TypeInfo* s_type_info = nullptr;                         \
+            static const xlua::detail::TypeInfo* s_type_info = nullptr;                 \
             if (s_type_info)                                                            \
                 return s_type_info;                                                     \
             auto* global = xlua::detail::GlobalVar::GetInstance();                      \
             if (global == nullptr)                                                      \
                 return nullptr;                                                         \
-            auto* desc = global->AllocType(xlua::TypeCategory::kGlobal,                 \
+            auto* desc = global->AllocType(xlua::detail::TypeCategory::kGlobal,         \
                 false, #Name, nullptr);                                                 \
             if (desc == nullptr)                                                        \
                 return nullptr;                                                         \

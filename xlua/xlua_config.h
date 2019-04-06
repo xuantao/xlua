@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <cassert>
 
-/* 64位系统开启LIGGHT_USER_DATA
- * 导出对象指针使用LightUserData代替FullUserData
+/* 64位系统开启LIGHT_USER_DATA
+ * 导出对象指针使用LightUserData代替FullUserData, 避免Lua的GC以提升效率
 */
 #ifndef XLUA_USE_LIGHT_USER_DATA
     #define XLUA_USE_LIGHT_USER_DATA 1
@@ -60,14 +60,14 @@ inline void xLuaLogError(const char* err) {
 
 /* 支持多继承
  * 当存在多继承时，子类指针转向基类指针时指针可能会发生偏移，每次访问对象时指针需要做对应转换。
- * 如果明确约定不存在多继承情况可以关闭功能提升部分效率。
+ * 如果明确约定不存在多继承情况可以关闭此功能以优化效率。
 */
 #ifndef XLUA_ENABLE_MULTIPLE_INHERITANCE
     #define XLUA_ENABLE_MULTIPLE_INHERITANCE    1
 #endif
 
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
-    #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, SrcInfo)   SrcInfo->caster->ToSuper(Ptr, DstInfo)
+    #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, SrcInfo)   (SrcInfo == DstInfo ? Ptr : SrcInfo->caster->ToSuper(Ptr, DstInfo))
     #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          DstInfo->caster->ToWeakPtr(Ptr)
 #else // XLUA_ENABLE_MULTIPLE_INHERITANCE
     #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, Info)      Ptr

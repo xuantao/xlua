@@ -4,8 +4,7 @@
 
 XLUA_NAMESPACE_BEGIN
 
-namespace detail
-{
+namespace detail {
     class GlobalVar;
     typedef const TypeInfo* (*fnTypeInfo)();
     typedef const ConstInfo* (*fnConstInfo)();
@@ -101,8 +100,8 @@ namespace detail
     };
 
     template <typename Ty, typename std::enable_if<IsWeakObjPtr<Ty>::value, int>::type = 0>
-    inline Ty* ToDerivedWeakPtr(void* obj) {
-        return dynamic_cast<Ty*>((XLUA_WEAK_OBJ_BASE_TYPE*)obj);
+    inline Ty* ToDerivedWeakPtr(XLUA_WEAK_OBJ_BASE_TYPE* obj) {
+        return dynamic_cast<Ty*>(obj);
     }
 
     template <typename Ty, typename By>
@@ -290,18 +289,16 @@ namespace detail
 
     template <typename Ty>
     inline Ty* GetMetaCallObj(xLuaState* l, const TypeInfo* info) {
-        void* p = lua_touserdata(l->GetState(), 1);
-        if (p == nullptr)
+        UserDataInfo ud_info;
+        if (!GetUserDataInfo(l->GetState(), 1, &ud_info))
+            return nullptr;
+        if (!IsBaseOf(info, ud_info.info))
             return nullptr;
 
-        switch (l->GetType(1))
-        {
-        case LUA_TLIGHTUSERDATA:
-            return GetLightUserDataPtr<Ty>(p, info);
-        case LUA_TUSERDATA:
-            return GetMetaCallFullUserDataPtr<Ty>(p, info);
-        }
-        return nullptr;
+        if (info->is_weak_obj)
+            return static_cast<Ty*>(_XLUA_TO_WEAKOBJ_PTR(info, ud_info.obj));
+        else
+            return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info));
     }
 
     namespace param {
@@ -324,7 +321,7 @@ namespace detail
                 if (!check_nil) {
                     if (ud->type_ == UserDataCategory::kObjPtr) {
                         if (ud->info_->is_weak_obj) {
-                            ud_info.is_nil = (ud->serial_ == xLuaGetWeakObjSerialNum(ud->index_));
+                            ud_info.is_nil = (ud->serial_ == ::xLuaGetWeakObjSerialNum(ud->index_));
                         } else {
                             ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                             ud_info.is_nil = (obj == nullptr || obj->serial_num_ != obj->serial_num_);
@@ -345,7 +342,7 @@ namespace detail
                 } else {
                     ud_info.info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
                     if (check_nil)
-                        ud_info.is_nil = (ud.serial_ == xLuaGetWeakObjSerialNum(ud.index_));
+                        ud_info.is_nil = (ud.serial_ == ::xLuaGetWeakObjSerialNum(ud.index_));
                 }
 #endif // XLUA_USE_LIGHT_USER_DATA
             } else {

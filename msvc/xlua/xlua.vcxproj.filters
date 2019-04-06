@@ -66,5 +66,8 @@
     <ClInclude Include="..\..\xlua\detail\type_desc.h">
       <Filter>src\detail</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\xlua\detail\common.h">
+      <Filter>src\detail</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -26,6 +26,7 @@
     <ClCompile Include="..\..\xlua\xlua_state.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\xlua\detail\common.h" />
     <ClInclude Include="..\..\xlua\detail\export.h" />
     <ClInclude Include="..\..\xlua\detail\extractor.h" />
     <ClInclude Include="..\..\xlua\detail\global.h" />
