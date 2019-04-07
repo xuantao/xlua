@@ -86,8 +86,7 @@ namespace detail {
 
     /* 导出属性萃取 */
     template <typename GetTy, typename SetTy>
-    struct IndexerTrait
-    {
+    struct IndexerTrait {
     private:
         static constexpr bool all_nullptr = (std::is_null_pointer<GetTy>::value && std::is_null_pointer<SetTy>::value);
         static constexpr bool one_nullptr = (std::is_null_pointer<GetTy>::value || std::is_null_pointer<SetTy>::value);
@@ -287,8 +286,7 @@ namespace detail {
         return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_));
     }
 
-    template <typename Ty>
-    inline Ty* GetMetaCallObj(xLuaState* l, const TypeInfo* info) {
+    inline void* GetMetaCallObj(xLuaState* l, const TypeInfo* info) {
         UserDataInfo ud_info;
         if (!GetUserDataInfo(l->GetState(), 1, &ud_info))
             return nullptr;
@@ -296,40 +294,30 @@ namespace detail {
             return nullptr;
 
         if (info->is_weak_obj)
-            return static_cast<Ty*>(_XLUA_TO_WEAKOBJ_PTR(info, ud_info.obj));
+            return _XLUA_TO_WEAKOBJ_PTR(info, ud_info.obj);
         else
-            return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info));
+            return _XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info);
     }
 
     namespace param {
+        template <typename Ty>
+        struct Perify {
+            typedef typename std::decay<Ty>::type deacy_type;
+            typedef typename std::conditional<IsInternal<deacy_type>::value || IsExternal<deacy_type>::value, Ty,
+                typename std::remove_reference<Ty>::type>::type type;
+        };
+
         struct UdInfo {
-            bool is_ud;
             bool is_nil;
-            bool is_ptr;
             const TypeInfo* info;
         };
 
         inline UdInfo GetUdInfo(xLuaState* l, int index, bool check_nil) {
-            UdInfo  ud_info{true, false, true, nullptr};
+            UdInfo ud_info{ false, nullptr};
             int l_ty = l->GetType(index);
 
             if (l_ty == LUA_TNIL) {
                 ud_info.is_nil = true;
-            } else if (l_ty == LUA_TUSERDATA) {
-                FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
-                ud_info.info = ud->info_;
-                if (!check_nil) {
-                    if (ud->type_ == UserDataCategory::kObjPtr) {
-                        if (ud->info_->is_weak_obj) {
-                            ud_info.is_nil = (ud->serial_ == ::xLuaGetWeakObjSerialNum(ud->index_));
-                        } else {
-                            ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
-                            ud_info.is_nil = (obj == nullptr || obj->serial_num_ != obj->serial_num_);
-                        }
-                    } else if (ud->type_ == UserDataCategory::kValue) {
-                        ud_info.is_ptr = false;
-                    }
-                }
             } else if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
                 LightUserData ud = MakeLightPtr(lua_touserdata(l->GetState(), index));
@@ -341,15 +329,24 @@ namespace detail {
                         ud_info.is_nil = (obj == nullptr || obj->serial_num_ != ud.serial_);
                 } else {
                     ud_info.info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
-                    if (check_nil)
+                    if (ud_info.info->is_weak_obj && check_nil)
                         ud_info.is_nil = (ud.serial_ == ::xLuaGetWeakObjSerialNum(ud.index_));
                 }
 #endif // XLUA_USE_LIGHT_USER_DATA
-            } else {
-                ud_info.is_ud = false;
-                ud_info.is_ptr = false;
+            } else if (l_ty == LUA_TUSERDATA) {
+                FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
+                ud_info.info = ud->info_;
+                if (!check_nil) {
+                    if (ud->type_ == UserDataCategory::kObjPtr) {
+                        if (ud->info_->is_weak_obj) {
+                            ud_info.is_nil = (ud->serial_ == ::xLuaGetWeakObjSerialNum(ud->index_));
+                        } else {
+                            ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
+                            ud_info.is_nil = (obj == nullptr || obj->serial_num_ != obj->serial_num_);
+                        }
+                    }
+                }
             }
-
             return ud_info;
         }
 
@@ -378,7 +375,7 @@ namespace detail {
 
             static inline bool Do(xLuaState* l, int index, int param, tag_enum) {
                 if (l->GetType(index) != LUA_TNUMBER) {
-                    LogError("param(%d) error, need:enum(number) got:%s\n", param, l->GetTypeName(index));
+                    LogError("param(%d) error, need:enum(number) got:%s", param, l->GetTypeName(index));
                     return false;
                 }
                 return true;
@@ -392,11 +389,11 @@ namespace detail {
                 const TypeInfo* info = GetTypeInfoImpl<Ty>();
                 UdInfo ud = GetUdInfo(l, index, true);
                 if (ud.is_nil) {
-                    LogError("param(%d) error, need:%s got:nil\n", param, info->type_name);
+                    LogError("param(%d) error, need:%s got:nil", param, info->type_name);
                     return false;
                 }
                 if (!IsBaseOf(info, ud.info)) {
-                    LogError("param(%d) error, need:%s got:%s\n", param, info->type_name, l->GetTypeName(index));
+                    LogError("param(%d) error, need:%s got:%s", param, info->type_name, l->GetTypeName(index));
                     return false;
                 }
                 return true;
@@ -411,7 +408,7 @@ namespace detail {
                 UdInfo ud = GetUdInfo(l, index, false);
                 if (ud.is_nil || IsBaseOf(ud.info, info))
                     return true;
-                LogError("param(%d) error, need:%s* got:%s\n", param, info->type_name, l->GetTypeName(index));
+                LogError("param(%d) error, need:%s* got:%s", param, info->type_name, l->GetTypeName(index));
                 return false;
             }
         };
@@ -424,14 +421,13 @@ namespace detail {
                 const TypeInfo* info = GetTypeInfoImpl<Ty>();
                 if (l_ty == LUA_TUSERDATA) {
                     FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
-                    if (ud->type_ == UserDataCategory::kSharedPtr && IsBaseOf(info, ud->info_)) {
+                    if (ud->type_ == UserDataCategory::kSharedPtr && IsBaseOf(info, ud->info_))
                         return true;
-                    }
                 } else if (l_ty == LUA_TNIL) {
                     return true;
                 }
 
-                LogError("param(%d) error, need:std::shared_ptr<%s> got:%s\n", param, info->type_name, l->GetTypeName(index));
+                LogError("param(%d) error, need:std::shared_ptr<%s> got:%s", param, info->type_name, l->GetTypeName(index));
                 return false;
             }
         };
@@ -446,7 +442,7 @@ namespace detail {
         inline bool IsType_1(xLuaState* l, int index, int param, int ty, const char* need) {
             if (l->GetType(index) == ty)
                 return true;
-            LogError("param(%d) error, need:%s got:%s\n", param, need, l->GetTypeName(index));
+            LogError("param(%d) error, need:%s got:%s", param, need, l->GetTypeName(index));
             return false;
         }
 
@@ -454,7 +450,7 @@ namespace detail {
             int l_ty = l->GetType(index);
             if (l_ty == ty || l_ty == LUA_TNIL)
                 return true;
-            LogError("param(%d) error, need:%s got:%s\n", param, need, l->GetTypeName(index));
+            LogError("param(%d) error, need:%s got:%s", param, need, l->GetTypeName(index));
             return false;
         }
 
@@ -532,67 +528,39 @@ namespace detail {
         }
 
         inline void* GetUdPtr(xLuaState* l, int index, const TypeInfo* info) {
-            int l_ty = l->GetType(index);
-            if (l_ty == LUA_TUSERDATA) {
-                FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
-                if (ud->type_ == UserDataCategory::kObjPtr) {
-                    if (ud->info_->is_weak_obj) {
-                        if (ud->serial_ == ::xLuaGetWeakObjSerialNum(ud->index_))
-                            return _XLUA_TO_WEAKOBJ_PTR(info, ::xLuaGetWeakObjPtr(ud->index_));
-                    } else {
-                        ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
-                        if (obj && obj->serial_num_ == ud->serial_)
-                            return _XLUA_TO_SUPER_PTR(info, obj->obj_, obj->info_);
-                    }
-                } else if (ud->type_ == UserDataCategory::kValue) {
-                    return _XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_);
-                }
-            } else if (l_ty == LUA_TLIGHTUSERDATA) {
-#if XLUA_USE_LIGHT_USER_DATA
-                LightUserData ud = MakeLightPtr(lua_touserdata(l->GetState(), index));
-                if (ud.type_ == 0) {
-                    ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
-                    if (obj && obj->serial_num_ == ud.serial_)
-                        return _XLUA_TO_SUPER_PTR(info, obj->obj_, obj->info_);
-                } else {
-                    const TypeInfo* src = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
-                    if (src->is_weak_obj) {
-                        if (ud.serial_ == ::xLuaGetWeakObjSerialNum(ud.index_))
-                            return _XLUA_TO_WEAKOBJ_PTR(info, ::xLuaGetWeakObjPtr(ud.index_));
-                    } else {
-                        return _XLUA_TO_SUPER_PTR(info, ud.RawPtr(), src);
-                    }
-                }
-#endif // XLUA_USE_LIGHT_USER_DATA
-            }
-            return nullptr;
+            UserDataInfo ud_info;
+            if (!GetUserDataInfo(l->GetState(), index, &ud_info))
+                return nullptr;
+            if (!IsBaseOf(info, ud_info.info))
+                return nullptr;
+            return _XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info);
         }
 
         template <typename Ty, typename Ry>
-        struct Laoder {
-            static Ry Do(xLuaState* l, int index) {
-                Ty* ptr = GetUdPtr(l, index, GetTypeInfoImpl<Ty>());
+        struct Loader {
+            static Ry& Do(xLuaState* l, int index) {
+                Ty* ptr = static_cast<Ty*>(GetUdPtr(l, index, GetTypeInfoImpl<Ty>()));
                 assert(ptr);
                 return *ptr;
             }
         };
 
         template <typename Ty, typename Ry>
-        struct Laoder<Ty*, Ry> {
+        struct Loader<Ty*, Ry> {
             static Ry Do(xLuaState* l, int index) {
-                return GetUdPtr(l, index, GetTypeInfoImpl<Ty>());
+                return static_cast<Ty*>(GetUdPtr(l, index, GetTypeInfoImpl<Ty>()));
             }
         };
 
         template <typename Ty, typename Ry>
-        struct Laoder<std::shared_ptr<Ty>, Ry> {
+        struct Loader<std::shared_ptr<Ty>, Ry> {
             static Ry Do(xLuaState* l, int index) {
                 return l->Load<std::shared_ptr<Ty>>(index);
             }
         };
 
         template <typename Ty, typename Ry>
-        struct Laoder<xLuaWeakObjPtr<Ty>, Ry> {
+        struct Loader<xLuaWeakObjPtr<Ty>, Ry> {
             static Ry Do(xLuaState* l, int index) {
                 Ty* ptr = GetUdPtr(l, index, GetTypeInfoImpl<Ty>());
                 return xLuaWeakObjPtr<Ty>(ptr);
@@ -616,7 +584,8 @@ namespace detail {
         (void)els { 0, (count += CheckParam<Ty>(l, index++, ++param) ? 1 : 0, 0)... };
         if (count == sizeof...(Ty))
             return true;
-        l->LogCallStack();
+        //l->LogCallStack();
+        luaL_error(l->GetState(), "whtf");
         return false;
     }
 
@@ -632,12 +601,12 @@ namespace detail {
 
     template <typename Ty>
     inline Ty LoadParam(xLuaState* l, int index, tag_unknown) {
-        return LoadParam_Un<typename std::remove_reference<Ty>::type>(l, index);
+        return LoadParam_Un<Ty>(l, index);
     }
 
     template <typename Ty>
     inline Ty LoadParam(xLuaState* l, int index, tag_declared) {
-        return param::Loader<typename std::decay<Ty>::type, Ty>::Do(l, index);
+        return detail::param::Loader<typename std::decay<Ty>::type, Ty>::Do(l, index);
     }
 
     template <typename Ty>
@@ -662,7 +631,7 @@ namespace detail {
         if (!CheckParams<Args...>(l, 1))
             return 0;
         int index = 0;
-        l->Push(func(LoadParam<Args>(l, ++index)...));
+        l->Push(func(LoadParam<typename param::Perify<Args>::type>(l, ++index)...));
         return 1;
     }
 
@@ -671,7 +640,7 @@ namespace detail {
         if (!CheckParams<Args...>(l, 1))
             return 0;
         int index = 0;
-        func(LoadParam<Args>(l, ++index)...);
+        func(LoadParam<typename param::Perify<Args>::type>(l, ++index)...);
         return 0;
     }
 
@@ -681,7 +650,7 @@ namespace detail {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
-        l->Push(func(obj, LoadParam<Args>(l, ++index)...));
+        l->Push(func(obj, LoadParam<typename param::Perify<Args>::type>(l, ++index)...));
         return 1;
     }
 
@@ -695,7 +664,7 @@ namespace detail {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
-        func(obj, LoadParam<Args>(l, ++index)...);
+        func(obj, LoadParam<typename param::Perify<Args>::type>(l, ++index)...);
         return 0;
     }
 
@@ -705,7 +674,7 @@ namespace detail {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
-        l->Push((obj->*func)(LoadParam<Args>(l, ++index)...));
+        l->Push((obj->*func)(LoadParam<typename param::Perify<Args>::type>(l, ++index)...));
         return 1;
     }
 
@@ -714,7 +683,7 @@ namespace detail {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
-        l->Push((obj->*func)(LoadParam<Args>(l, ++index)...));
+        l->Push((obj->*func)(LoadParam<typename param::Perify<Args>::type>(l, ++index)...));
         return 1;
     }
 
@@ -723,7 +692,7 @@ namespace detail {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
-        (obj->*func)(LoadParam<Args>(l, ++index)...);
+        (obj->*func)(LoadParam<typename param::Perify<Args>::type>(l, ++index)...);
         return 0;
     }
 
@@ -732,7 +701,7 @@ namespace detail {
         if (!CheckParams<Args...>(l, 2))
             return 0;
         int index = 1;
-        (obj->*func)(LoadParam<Args>(l, ++index)...);
+        (obj->*func)(LoadParam<typename param::Perify<Args>::type>(l, ++index)...);
         return 0;
     }
 
@@ -873,7 +842,7 @@ namespace detail {
     struct MetaFunc {
         template <typename Fy, typename EnableIfT<std::is_member_function_pointer<Fy>::value> = 0>
         static inline int Call(xLuaState* l, const TypeInfo* info, Fy f) {
-            Ty* obj = GetMetaCallObj<Ty>(l, info);
+            Ty* obj = static_cast<Ty*>(GetMetaCallObj(l, info));
             if (obj)
                 return MetaCall(l, obj, f);
             LogError("call object is nill");
@@ -891,7 +860,7 @@ namespace detail {
     struct MetaFuncEx {
         template <typename Fy>
         static inline int Call(xLuaState* l, const TypeInfo* info, Fy f) {
-            Ty* obj = GetMetaCallObj<Ty>(l, info);
+            Ty* obj = static_cast<Ty*>(GetMetaCallObj(l, info));
             if (obj)
                 return MetaCall(l, obj, f);
             LogError("call object is nill");

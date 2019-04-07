@@ -122,11 +122,11 @@ namespace detail {
 
     inline bool GetUserDataInfo(lua_State* l, int index, /*out*/UserDataInfo* ret) {
         UserDataInfo ud_info{ false, nullptr, nullptr, nullptr };
-        int l_ty = lua_type(l, 1);
+        int l_ty = lua_type(l, index);
         if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
             ud_info.is_light = true;
-            ud_info.ud = lua_touserdata(l, 1);
+            ud_info.ud = lua_touserdata(l, index);
             if (ud_info.ud == nullptr)
                 return false;
 
@@ -154,7 +154,7 @@ namespace detail {
             return false;
 #endif // XLUA_USE_LIGHT_USER_DATA
         } else if (l_ty == LUA_TUSERDATA) {
-            ud_info.ud = lua_touserdata(l, 1);
+            ud_info.ud = lua_touserdata(l, index);
             if (ud_info.ud == nullptr)
                 return false;
 

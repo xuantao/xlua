@@ -17,11 +17,20 @@ XLUA_EXPORT_CLASS_END()
 XLUA_EXPORT_CLASS_BEGIN(Quard)
 XLUA_MEMBER_FUNC(Name)
 XLUA_MEMBER_FUNC(DoExtWork)
+XLUA_MEMBER_FUNC_AS(AddTriangle_1, AddTriangle, Triangle*)
+XLUA_MEMBER_FUNC_AS(AddTriangle_2, AddTriangle, Triangle&)
+XLUA_MEMBER_FUNC_AS(AddTriangle_3, AddTriangle, const Triangle&)
+XLUA_MEMBER_FUNC_AS(AddTriangle_4, AddTriangle, const std::shared_ptr<Triangle>&)
 XLUA_MEMBER_VAR_AS(type, type_)
 XLUA_MEMBER_VAR_AS(width, width_)
 XLUA_MEMBER_VAR_AS(height, height_)
 XLUA_EXPORT_CLASS_END()
 
+XLUA_EXPORT_CLASS_BEGIN(WeakObj)
+XLUA_MEMBER_VAR_AS(index, index_)
+XLUA_MEMBER_FUNC(SetArea)
+XLUA_MEMBER_FUNC(SetArea2)
+XLUA_EXPORT_CLASS_END();
 
 void xLuaPush(xlua::xLuaState* l, const Color& c) {
     l->NewTable();

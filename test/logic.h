@@ -1,5 +1,6 @@
 #pragma once
 #include <xlua_def.h>
+#include <memory>
 
 class ObjectBase {
 public:
@@ -43,6 +44,22 @@ public:
 public:
     int AreaSize() const override { return width_ * height_; }
 
+    void AddTriangle(Triangle*) {
+        printf("void AddTriangle(Triangle*)\n");
+    }
+
+    void AddTriangle(Triangle&) {
+        printf("void AddTriangle(Triangle)\n");
+    }
+
+    void AddTriangle(const Triangle&) {
+        printf("void AddTriangle(const Triangle&)\n");
+    }
+
+    void AddTriangle(const std::shared_ptr<Triangle>&) {
+        printf("void AddTriangle(std::shared_ptr<Triangle>)\n");
+    }
+
     int width_ = 0;
     int height_= 0;
 };
@@ -57,4 +74,19 @@ struct Color {
 struct Vec2 {
     float x = 0;
     float y = 0;
+};
+
+struct WeakObj : public WeakObjBase {
+    int index_ = 0;
+
+    void SetArea(ObjectBase* obj) {
+        printf("void SetArea(ObjectBase* obj)");
+    }
+
+    void SetArea2(ObjectBase& obj) {
+        printf("void SetArea(ObjectBase& obj)");
+    }
+
+public:
+    XLUA_DECLARE_CLASS(WeakObj);
 };

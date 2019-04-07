@@ -221,6 +221,7 @@ public:
 
     template <typename Ty>
     inline Ty Load(int index) {
+        static_assert(!std::is_reference<Ty>::value, "can not load reference value");
         return detail::Loader<typename std::decay<Ty>::type>::Do(this, index);
     }
 
