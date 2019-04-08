@@ -46,6 +46,13 @@ function TestTriangle(quard, triangle)
     quard:AddTriangle_4(triangle)
 end
 
+function TestTriangleNullptr(quard)
+    quard:AddTriangle_1(nil)
+    quard:AddTriangle_4(nil)
+    quard:AddTriangle_2(nil)
+    quard:AddTriangle_3(nil)
+end
+
 )V0G0N";
 
 void TestGlobal(xlua::xLuaState* l) {
@@ -104,7 +111,7 @@ void TestGlobal(xlua::xLuaState* l) {
         auto triangle_2 = std::make_shared<Triangle>();
 
         printf("test triangle nullptr\n");
-        l->Call("TestTriangle", std::tie(), &quard_1, nullptr);
+        l->Call("TestTriangleNullptr", std::tie(), &quard_1, nullptr);
 
         printf("test triangle ptr\n");
         l->Call("TestTriangle", std::tie(), &quard_1, &triangle_1);

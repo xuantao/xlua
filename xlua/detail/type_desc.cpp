@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "type_desc.h"
+#include "export.h"
 #include "global.h"
 #include <memory>
 #include <algorithm>
@@ -22,26 +23,6 @@ namespace detail {
             }
         }
         return std::string(buf);
-    }
-
-    static const char* PerifyMemberName(const char* name) {
-        while (const char* sub = ::strstr(name, "::"))
-            name = sub + 2;
-
-        // remove prefix: "m_"
-        if (name[0] == 'm' && name[1] == '_')
-            name += 2;
-
-        // remove prefix: "lua_"
-        if ((name[0] == 'l' || name[0] == 'L')
-            && (name[0] == 'u' || name[0] == 'U')
-            && (name[0] == 'a' || name[0] == 'A')
-            ) {
-            name += 3;
-            if (name[0] == '_')
-                ++name;
-        }
-        return name;
     }
 
     TypeDesc::TypeDesc(GlobalVar* mgr, TypeCategory category, bool is_wak_obj, const char* name, const TypeInfo* super)

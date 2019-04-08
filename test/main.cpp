@@ -54,6 +54,6 @@ int main(int argc, char* argvp[]) {
     TestGlobal(l);
 
     l->Release();
-    system("pause");
+    //system("pause");
     return 0;
 }

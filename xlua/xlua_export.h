@@ -23,7 +23,8 @@
         static int call(lua_State* l) {                                                 \
             auto* xl = (xlua::xLuaState*)(lua_touserdata(l, lua_upvalueindex(1)));      \
             assert(xl);                                                                 \
-            return xlua::detail::Meta<class_type>::Call(xl, s_type_info, Func);         \
+            return xlua::detail::Meta<class_type>::Call(xl, s_type_info,                \
+                xlua::detail::PerifyMemberName(#Name), Func);                           \
         }                                                                               \
     };                                                                                  \
     desc->AddMember(#Name, &_XLUA_ANONYMOUS::call, IsGlobal);
@@ -40,7 +41,8 @@
             xlua::detail::Meta<class_type>::Get(l, obj, info, s_type_info, GetOp);      \
         }                                                                               \
         static void Set(xlua::xLuaState* l, void* obj, const xlua::detail::TypeInfo* info) {    \
-            xlua::detail::Meta<class_type>::Set(l, obj, info, s_type_info, SetOp);      \
+            xlua::detail::Meta<class_type>::Set(l, obj, info, s_type_info,              \
+                xlua::detail::PerifyMemberName(#Name), SetOp);                          \
         }                                                                               \
     };                                                                                  \
     desc->AddMember(#Name,                                                              \
