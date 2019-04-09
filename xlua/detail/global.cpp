@@ -218,10 +218,12 @@ namespace detail {
             info->index = 0;
 
         if (info->is_weak_obj || info->category == TypeCategory::kExternal) {
-            info->external_type_index = (int8_t)external_types_.size();
+            info->light_index = (int8_t)external_types_.size();
             external_types_.push_back(info);
+        } else if (info->category == TypeCategory::kInternal) {
+            info->light_index = TypeInfo::kInternalLightIndex;
         } else {
-            info->external_type_index = 0;
+            info->light_index = 0;
         }
     }
 } // namespace detail

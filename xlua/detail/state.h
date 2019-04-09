@@ -9,6 +9,10 @@ XLUA_NAMESPACE_BEGIN
 
 namespace detail {
 #ifdef XLUA_USE_LIGHT_USER_DATA
+    inline bool IsValidRawPtr(const void* p) {
+        return ((0xff00000000000000 & reinterpret_cast<uint64_t>(p)) == 0);
+    }
+
     inline LightUserData MakeLightPtr(void* ptr) {
         LightUserData ud;
         ud.ptr_ = ptr;
@@ -25,7 +29,7 @@ namespace detail {
     }
 
     inline LightUserData MakeLightPtr(int type, void* p) {
-        assert((0xff00000000000000 & reinterpret_cast<uint64_t>(p)) == 0);
+        assert(IsValidRawPtr(p));
         LightUserData ptr;
         ptr.ptr_ = p;
         ptr.type_ = (unsigned char)type;
@@ -35,19 +39,19 @@ namespace detail {
     template <typename Ty>
     inline LightUserData MakeLightUserData(Ty* obj, const TypeInfo* info, tag_weakobj) {
         int index = ::xLuaAllocWeakObjIndex(obj);
-        return MakeLightPtr(info->external_type_index, index, ::xLuaGetWeakObjSerialNum(index));
+        return MakeLightPtr(info->light_index, index, ::xLuaGetWeakObjSerialNum(index));
     }
 
     template <typename Ty>
     inline LightUserData MakeLightUserData(Ty* obj, const TypeInfo* info, tag_internal) {
         auto& obj_index = GetRootObjIndex(obj);
         auto* ary_obj = GlobalVar::GetInstance()->AllocObjIndex(obj_index, obj, info);
-        return MakeLightPtr(0, obj_index.GetIndex(), ary_obj->serial_num_);
+        return MakeLightPtr(info->light_index, obj_index.GetIndex(), ary_obj->serial_num_);
     }
 
     template <typename Ty>
     inline LightUserData MakeLightUserData(Ty* obj, const TypeInfo* info, tag_external) {
-        return MakeLightPtr(info->external_type_index, obj);
+        return MakeLightPtr(info->light_index, obj);
     }
 
     template <typename Ty>
@@ -131,7 +135,17 @@ namespace detail {
                 return false;
 
             auto ud = MakeLightPtr(ud_info.ud);
-            if (ud.type_ != 0) {
+            if (!ud.IsLightData())
+                return false;
+
+            if (ud.IsInternalType()) {
+                auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
+                if (ary_obj == nullptr || ary_obj->serial_num_ != ud.serial_)
+                    return false;
+
+                ud_info.obj = ary_obj->obj_;
+                ud_info.info = ary_obj->info_;
+            } else {
                 const auto* info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
                 if (info->is_weak_obj) {
                     if (ud.serial_ != ::xLuaGetWeakObjSerialNum(ud.index_))
@@ -142,13 +156,6 @@ namespace detail {
                 }
 
                 ud_info.info = info;
-            } else {
-                auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
-                if (ary_obj == nullptr || ary_obj->serial_num_ != ud.serial_)
-                    return false;
-
-                ud_info.obj = ary_obj->obj_;
-                ud_info.info = ary_obj->info_;
             }
 #else
             return false;

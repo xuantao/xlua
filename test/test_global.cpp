@@ -56,71 +56,86 @@ end
 )V0G0N";
 
 void TestGlobal(xlua::xLuaState* l) {
-    //Triangle triangle;
-    //Quard quard;
-
     l->DoString(sLuaBuf, "test_global");
+    {
+        Triangle triangle;
+        Quard quard;
+        xlua::xLuaCaller call(l);
 
-    //l->Call("PrintTriangle", std::tie(), &triangle);
+        call("PrintTriangle", std::tie(), &triangle);
+        LOG_TOP_(l);
+        call("print", std::tie(), triangle, &triangle, quard, &quard);
+        LOG_TOP_(l);
+        l->NewTable();
+        l->SetGlobal("Scene.Info.OrignPos");
+        l->SetGlobal("Scene.Info.OrignPos", Vec2());
+        l->SetGlobal("Scene.Info.OrignPos.x", 10.f);
 
-    //l->Call("print", std::tie(), triangle, &triangle, quard, &quard);
+        call("PrintInfo", std::tie());
+        LOG_TOP_(l);
+        Vec2 v1;
+        v1.x = l->GetGlobal<float>("Scene.Info.OrignPos.x");
 
-    //l->NewTable();
-    //l->SetGlobal("Scene.Info.OrignPos");
-    //l->SetGlobal("Scene.Info.OrignPos", Vec2());
-    //l->SetGlobal("Scene.Info.OrignPos.x", 10.f);
+        Vec2 v2 = l->GetGlobal<Vec2>("Scene.Info.OrignPos");
 
-    //l->Call("PrintInfo", std::tie());
-
-    //Vec2 v1;
-    //v1.x = l->GetGlobal<float>("Scene.Info.OrignPos.x");
-
-    //Vec2 v2 = l->GetGlobal<Vec2>("Scene.Info.OrignPos");
-
-    //{
-    //    auto print = l->GetGlobal<xlua::xLuaFunction>("print");
-    //    auto table = l->GetGlobal<xlua::xLuaTable>("GlobalVar");
-    //    l->Call(print, std::tie(), triangle, &triangle, quard, &quard);
-    //    l->Call(table, "DoTest", std::tie());
-    //}
-
-    //{
-    //    l->Call("CastToTriangle", std::tie(), static_cast<ObjectBase*>(&triangle));
-    //    l->Call("CastToQuard", std::tie(), static_cast<ObjectBase*>(&quard));
-    //    l->Call("TestMultyInherit", std::tie(), &quard);
-
-    //    l->Push(&quard);
-    //    ObjectBase* base1 = l->Load<ObjectBase*>(-1);
-    //    ObjectBase* base2 = &quard;
-    //    assert(base1 == base2); // 关闭多继承时这里的断言会失败
-    //}
-
-    //{
-    //    WeakObj weak_obj;
-    //    l->Push(weak_obj);
-    //    l->Push(&weak_obj);
-    //    l->Push(xLuaWeakObjPtr<WeakObj>(nullptr));
-    //    l->Load<xLuaWeakObjPtr<WeakObj>>(-2);
-    //    l->Load<WeakObj*>(-2);
-    //    l->Load<WeakObj>(-2);
-    //}
+        printf("v1.x=%f, v2.x=%f, v2.y=%f\n", v1.x, v2.x, v2.y);
+    }
 
     {
+        xlua::xLuaCaller call(l);
+        Triangle triangle;
+        Quard quard;
+        LOG_TOP_(l);
+        auto print = l->GetGlobal<xlua::xLuaFunction>("print");
+        auto table = l->GetGlobal<xlua::xLuaTable>("GlobalVar");
+        LOG_TOP_(l);
+        call(print, std::tie(), triangle, &triangle, quard, &quard);
+        LOG_TOP_(l);
+        call(table, "DoTest", std::tie());
+        LOG_TOP_(l);
+    }
+
+    {
+        xlua::xLuaCaller call(l);
+        Triangle triangle;
+        Quard quard;
+        call("CastToTriangle", std::tie(), static_cast<ObjectBase*>(&triangle));
+        call("CastToQuard", std::tie(), static_cast<ObjectBase*>(&quard));
+        call("TestMultyInherit", std::tie(), &quard);
+
+        l->Push(&quard);
+        ObjectBase* base1 = l->Load<ObjectBase*>(-1);
+        ObjectBase* base2 = &quard;
+        assert(base1 == base2); // 关闭多继承时这里的断言会失败
+    }
+
+    {
+        WeakObj weak_obj;
+        l->Push(weak_obj);
+        l->Push(&weak_obj);
+        l->Push(xLuaWeakObjPtr<WeakObj>(nullptr));
+        l->Load<xLuaWeakObjPtr<WeakObj>>(-2);
+        l->Load<WeakObj*>(-2);
+        l->Load<WeakObj>(-2);
+    }
+
+    {
+        xlua::xLuaCaller call(l);
         Triangle triangle_1;
         Quard quard_1;
         auto triangle_2 = std::make_shared<Triangle>();
 
         printf("test triangle nullptr\n");
-        l->Call("TestTriangleNullptr", std::tie(), &quard_1, nullptr);
+        call("TestTriangleNullptr", std::tie(), &quard_1, nullptr);
 
         printf("test triangle ptr\n");
-        l->Call("TestTriangle", std::tie(), &quard_1, &triangle_1);
+        call("TestTriangle", std::tie(), &quard_1, &triangle_1);
 
         printf("test triangle value\n");
-        l->Call("TestTriangle", std::tie(), &quard_1, triangle_1);
+        call("TestTriangle", std::tie(), &quard_1, triangle_1);
 
         printf("test std::shared_ptr<triangle>\n");
-        l->Call("TestTriangle", std::tie(), &quard_1, triangle_2);
+        call("TestTriangle", std::tie(), &quard_1, triangle_2);
     }
 
     LOG_TOP_(l);

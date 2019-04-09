@@ -22,7 +22,6 @@
     <ClCompile Include="..\..\xlua\detail\global.cpp" />
     <ClCompile Include="..\..\xlua\detail\type_desc.cpp" />
     <ClCompile Include="..\..\xlua\xlua.cpp" />
-    <ClCompile Include="..\..\xlua\xlua_obj.cpp" />
     <ClCompile Include="..\..\xlua\xlua_state.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -38,7 +37,6 @@
     <ClInclude Include="..\..\xlua\xlua_config.h" />
     <ClInclude Include="..\..\xlua\xlua_def.h" />
     <ClInclude Include="..\..\xlua\xlua_export.h" />
-    <ClInclude Include="..\..\xlua\xlua_obj.h" />
     <ClInclude Include="..\..\xlua\xlua_state.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

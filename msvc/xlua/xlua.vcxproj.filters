@@ -13,9 +13,6 @@
     <ClCompile Include="..\..\xlua\xlua.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\xlua\xlua_obj.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\xlua\xlua_state.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -37,9 +34,6 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\xlua\xlua_export.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\xlua\xlua_obj.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\xlua\xlua_state.h">

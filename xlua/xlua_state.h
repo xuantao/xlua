@@ -1,9 +1,6 @@
 ﻿#pragma once
 #include "detail/traits.h"
 #include "detail/state.h"
-#include "xlua_def.h"
-#include "xlua_obj.h"
-#include <lua.hpp>
 #include <string>
 #include <unordered_map>
 
@@ -14,6 +11,95 @@ namespace detail {
     template <typename Ty> struct Loader;
     struct MetaFuncs;
 }
+
+/* 引用Lua对象基类
+ * Lua对象主要指Table, Function
+*/
+class xLuaObjBase {
+    friend class xLuaState;
+protected:
+    xLuaObjBase() : ary_index_(-1), lua_(nullptr) {}
+    xLuaObjBase(xLuaState* lua, int index) : lua_(lua), ary_index_(index) {}
+    ~xLuaObjBase() { UnRef(); }
+
+    xLuaObjBase(const xLuaObjBase& other)
+        : lua_(other.lua_)
+        , ary_index_(other.ary_index_) {
+    }
+
+    xLuaObjBase(xLuaObjBase&& other)
+        : lua_(other.lua_)
+        , ary_index_(other.ary_index_) {
+        other.ary_index_ = -1;
+    }
+
+public:
+    inline bool IsValid() const { return ary_index_ != -1; }
+
+    xLuaObjBase& operator = (const xLuaObjBase& other) {
+        UnRef();
+        ary_index_ = other.ary_index_;
+        lua_ = other.lua_;
+        AddRef();
+        return *this;
+    }
+
+    xLuaObjBase& operator = (xLuaObjBase&& other) {
+        UnRef();
+        lua_ = other.lua_;
+        ary_index_ = other.ary_index_;
+        other.ary_index_ = -1;
+        return *this;
+    }
+
+    bool operator == (const xLuaObjBase& other) const {
+        return ary_index_ == other.ary_index_;
+    }
+
+private:
+    void AddRef();
+    void UnRef();
+
+private:
+    xLuaState* lua_;
+    int ary_index_;
+};
+
+/* lua table*/
+class xLuaTable : private xLuaObjBase {
+    friend class xLuaState;
+    xLuaTable(xLuaState* l, int index) : xLuaObjBase(l, index) {}
+public:
+    xLuaTable() = default;
+    xLuaTable(const xLuaTable&) = default;
+    xLuaTable(xLuaTable&&) = default;
+
+public:
+    xLuaTable& operator = (const xLuaTable&) = default;
+    xLuaTable& operator = (xLuaTable&&) = default;
+
+public:
+    inline bool IsValid() const { return xLuaObjBase::IsValid(); }
+    inline operator bool() const { return IsValid(); }
+};
+
+/* lua function */
+class xLuaFunction : private xLuaObjBase {
+    friend class xLuaState;
+    xLuaFunction(xLuaState* l, int index) : xLuaObjBase(l, index) {}
+public:
+    xLuaFunction() = default;
+    xLuaFunction(const xLuaFunction&) = default;
+    xLuaFunction(xLuaFunction&&) = default;
+
+public:
+    xLuaFunction& operator = (const xLuaFunction&) = default;
+    xLuaFunction& operator = (xLuaFunction&&) = default;
+
+public:
+    inline bool IsValid() const { return xLuaObjBase::IsValid(); }
+    inline operator bool() const { return IsValid(); }
+};
 
 /* lua堆栈守卫 */
 class xLuaGuard {
@@ -57,11 +143,15 @@ private:
     ~xLuaState();
 
 public:
+    /* 销毁 */
     void Release();
 
 public:
     inline lua_State* GetState() const { return state_; }
     inline int GetTopIndex() const { return lua_gettop(state_); }
+    inline void SetTop(int top) { lua_settop(state_, top); }
+    inline void PopTop(int num) { lua_pop(state_, num); }
+
     inline int GetType(int index) const { return lua_type(state_, index); }
     const char* GetTypeName(int index);
 
@@ -252,6 +342,14 @@ public:
     inline void Push(char* val) { lua_pushstring(state_, val); }
     inline void Push(const char* val) { lua_pushstring(state_, val); }
     inline void Push(const std::string& val) { lua_pushstring(state_, val.c_str()); }
+    inline void Push(lua_CFunction func) { lua_pushcfunction(state_, func); }
+    inline void Push(const void* val) {
+#if XLUA_USE_LIGHT_USER_DATA
+        assert(detail::IsValidRawPtr(val));
+#endif
+        lua_pushlightuserdata(state_, const_cast<void*>(val));
+    }
+
     inline void Push(std::nullptr_t) { lua_pushnil(state_); }
 
     inline void Push(const xLuaTable& val) {
@@ -282,7 +380,12 @@ public:
     template<> inline float Load<float>(int index) { return (float)lua_tonumber(state_, index); }
     template<> inline double Load<double>(int index) { return (double)lua_tonumber(state_, index); }
     template<> inline const char* Load<const char*>(int index) { return lua_tostring(state_, index); }
+    template<> inline void* Load<void*>(int index) { return lua_touserdata(state_, index); }
+    template<> inline const void* Load<const void*>(int index) { return lua_touserdata(state_, index); }
     template<> inline std::string Load<std::string>(int index) { return std::string(lua_tostring(state_, index)); }
+    template<> inline lua_CFunction Load<lua_CFunction>(int index) { return lua_tocfunction(state_, index); }
+    /* not allow load char* */
+    template<> inline char* Load<char*>(int index);// { assert(false); return nullptr; }
 
     template<> inline xLuaTable Load<xLuaTable>(int index) {
         if (lua_type(state_, index) == LUA_TTABLE)
@@ -296,71 +399,11 @@ public:
         return xLuaFunction();
     }
 
-    /* 调用栈顶的Lua函数 */
-    template<typename... Rys, typename... Args>
-    inline bool Call(std::tuple<Rys&...> ret, Args&&... args) {
-        if (GetType(-1) != LUA_TFUNCTION) {
-            detail::LogError("attempt to call is not a function");
-            return false;
-        } else {
-            xLuaGuard guard(this, -1);
-            return DoCall(ret, std::forward<Args>(args)...);
-        }
-    }
-
-    /* 调用全局Lua函数 */
-    template <typename... Rys, typename... Args>
-    inline bool Call(const char* global, std::tuple<Rys&...> ret, Args&&... args) {
-        xLuaGuard guard(this);
-        if (LoadGlobal(global) != LUA_TFUNCTION) {
-            detail::LogError("global var:[%s] is not a function", global);
-            return false;
-        }
-        return DoCall(ret, std::forward<Args>(args)...);
-    }
-
-    /* 调用执行Lua函数 */
-    template <typename... Rys, typename... Args>
-    inline bool Call(const xLuaFunction& func, std::tuple<Rys&...> ret, Args&&... args) {
-        xLuaGuard guard(this);
-        Push(func);
-        if (GetType(-1) != LUA_TFUNCTION) {
-            detail::LogError("attempt to call is not a function");
-            return false;
-        }
-        return DoCall(ret, std::forward<Args>(args)...);
-    }
-
-    /* table call, table函数是冒号调用的 table:Call(xxx) */
-    template <typename... Rys, typename... Args>
-    inline bool Call(const xLuaTable& table, const char* func, std::tuple<Rys&...> ret, Args&&... args) {
-        xLuaGuard guard(this);
-        Push(table);
-        if (LoadTableField(-1, func) != LUA_TFUNCTION) {
-            detail::LogError("can not get table function:[%s]", func);
-            return false;
-        }
-        return DoCall(ret, table, std::forward<Args>(args)...);
-    }
-
 private:
     template <typename... Ty, size_t... Idxs>
-    inline void DoLoadMul(std::tuple<Ty&...>& ret, int index, detail::index_sequence<Idxs...>)
-    {
+    inline void DoLoadMul(std::tuple<Ty&...>& ret, int index, detail::index_sequence<Idxs...>) {
         using ints = int[];
         (void)ints { 0, (std::get<Idxs>(ret) = Load<Ty>(index++), 0)...};
-    }
-
-    template<typename... Rys, typename... Args>
-    inline bool DoCall(std::tuple<Rys&...>& ret, Args&&... args) {
-        int top = GetTopIndex();
-        PushMul(std::forward<Args>(args)...);
-        if (lua_pcall(state_, sizeof...(Args), sizeof...(Rys), 0) != LUA_OK) {
-            detail::LogError("excute lua function error:%s", lua_tostring(state_, -1));
-            return false;
-        }
-        DoLoadMul(ret, top, detail::make_index_sequence_t<sizeof...(Rys)>());
-        return true;
     }
 
     template <typename Ty, typename... Args>
@@ -459,6 +502,106 @@ private:
     std::unordered_map<void*, UdCache> raw_ptrs_;
     std::unordered_map<void*, UdCache> shared_ptrs_;
     char type_name_buf_[XLUA_MAX_TYPE_NAME_LENGTH];       // 输出类型名称缓存
+};
+
+/* Lua 函数调用器
+ * 保护lua栈
+*/
+class xLuaCaller {
+public:
+    xLuaCaller(xLuaState* l) : l_(l), top_(-1) {
+    }
+
+    ~xLuaCaller() {
+        RecoverTop();
+    }
+
+public:
+    xLuaCaller(const xLuaCaller&) = delete;
+    xLuaCaller& operator = (const xLuaCaller&) = delete;
+
+public:
+    /* 调用栈顶的Lua函数 */
+    template<typename... Rys, typename... Args>
+    bool operator () (std::tuple<Rys&...> ret, Args&&... args) {
+        RecordTop(-1);
+        if (l_->GetType(-1) != LUA_TFUNCTION) {
+            detail::LogError("attempt to call is not a function");
+            return false;
+        }
+        return DoCall(ret, std::forward<Args>(args)...);
+    }
+
+    /* 调用全局Lua函数 */
+    template <typename... Rys, typename... Args>
+    bool operator () (const char* global, std::tuple<Rys&...> ret, Args&&... args) {
+        RecordTop(0);
+        if (l_->LoadGlobal(global) != LUA_TFUNCTION) {
+            detail::LogError("global var:[%s] is not a function", global);
+            return false;
+        }
+        return DoCall(ret, std::forward<Args>(args)...);
+    }
+
+    /* 调用执行Lua函数 */
+    template <typename... Rys, typename... Args>
+    inline bool operator ()(lua_CFunction func, std::tuple<Rys&...> ret, Args&&... args) {
+        RecordTop(0);
+        l_->Push(func);
+        return DoCall(ret, std::forward<Args>(args)...);
+    }
+
+    template <typename... Rys, typename... Args>
+    inline bool operator ()(const xLuaFunction& func, std::tuple<Rys&...> ret, Args&&... args) {
+        RecordTop(0);
+        l_->Push(func);
+        if (l_->GetType(-1) != LUA_TFUNCTION) {
+            detail::LogError("attempt to call is not a function");
+            l_->PopTop(1);
+            return false;
+        }
+        return DoCall(ret, std::forward<Args>(args)...);
+    }
+
+    /* table call, table函数是冒号调用的 table:Call(xxx) */
+    template <typename... Rys, typename... Args>
+    inline bool operator ()(const xLuaTable& table, const char* func, std::tuple<Rys&...> ret, Args&&... args) {
+        RecordTop(0);
+        l_->Push(table);
+        if (l_->LoadTableField(-1, func) != LUA_TFUNCTION) {
+            detail::LogError("can not get table function:[%s]", func);
+            return false;
+        }
+        return DoCall(ret, table, std::forward<Args>(args)...);
+    }
+
+private:
+    template<typename... Rys, typename... Args>
+    inline bool DoCall(std::tuple<Rys&...>& ret, Args&&... args) {
+        int top = l_->GetTopIndex();
+        l_->PushMul(std::forward<Args>(args)...);
+        if (lua_pcall(l_->GetState(), sizeof...(Args), sizeof...(Rys), 0) != LUA_OK) {
+            detail::LogError("excute lua function error!\n%s", lua_tostring(l_->GetState() , -1));
+            l_->PopTop(1); // pop error message
+            return false;
+        }
+        l_->LoadMul(ret, top);
+        return true;
+    }
+
+    inline void RecordTop(int off) {
+        RecoverTop();
+        top_ = l_->GetTopIndex() + off;
+    }
+
+    inline void RecoverTop() {
+        if (top_ >= 0)
+            l_->SetTop(top_);
+    }
+
+private:
+    xLuaState* l_;
+    int top_;
 };
 
 namespace detail {
@@ -565,25 +708,18 @@ namespace detail {
         template <typename U>
         static inline U LoadValue(xLuaState* l, int index, tag_declared) {
             const TypeInfo* info = GetTypeInfoImpl<U>();
+            UserDataInfo ud_info;
+            if (!GetUserDataInfo(l->GetState(), index, &ud_info) || ud_info.obj == nullptr) {
+                LogError("can not load [%s] value, target is nil", info->type_name);
+                return U();
+            }
 
-            do {
-                if (lua_type(l->GetState(), index) != LUA_TUSERDATA)
-                    break;
+            if (!IsBaseOf(info, ud_info.info)) {
+                LogError("can not load [%s] value from:[%s]", info->type_name, ud_info.info->type_name);
+                return U();
+            }
 
-                FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
-                if (ud == nullptr)
-                    break;
-                if (ud->type_ != UserDataCategory::kValue && !IsBaseOf(info, ud->info_))
-                    break;
-                if (!IsBaseOf(info, ud->info_))
-                    break;
-
-                // copy construct
-                return U(*static_cast<U*>(_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_)));
-            } while (false);
-
-            LogError("load value:[%s] failed from type:[%s]", info->type_name, l->GetTypeName(index));
-            return U();
+            return U(*static_cast<U*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info)));
         }
     };
 
@@ -599,16 +735,7 @@ namespace detail {
             if (!IsBaseOf(info, ud_info.info))
                 return nullptr;
 
-            if (!ud_info.is_light) {
-                auto* ud = (FullUserData*)ud_info.ud;
-                if (ud->type_ != UserDataCategory::kObjPtr && ud->type_ != UserDataCategory::kRawPtr)
-                    return nullptr; // only (raw_ptr, obj_ptr) -> ptr
-            }
-
-            if (info->is_weak_obj)
-                return static_cast<Ty*>(_XLUA_TO_WEAKOBJ_PTR(info, ud_info.obj));
-            else
-                return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info));
+            return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info));
         }
     };
 
@@ -618,7 +745,7 @@ namespace detail {
         static inline std::shared_ptr<Ty> Do(xLuaState* l, int index) {
             if (lua_type(l->GetState(), index) != LUA_TUSERDATA)
                 return nullptr;
-            FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
+            auto* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
             if (ud == nullptr || ud->type_ != UserDataCategory::kSharedPtr)
                 return nullptr;
             const TypeInfo* info = GetTypeInfoImpl<Ty>();

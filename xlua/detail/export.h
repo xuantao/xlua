@@ -126,14 +126,14 @@ namespace detail {
 
 #if XLUA_USE_LIGHT_USER_DATA
         bool ToDerived(detail::LightUserData* ud) override {
-            if (ud->Ptr() == nullptr) {
+            if (!ud->IsLightData()) {
                 LogError("unknown obj");
                 return false;
             }
 
             const TypeInfo* src = nullptr;
             void* src_ptr = nullptr;
-            if (ud->type_ == 0) {
+            if (ud->IsInternalType()) {
                 auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                 if (ary_obj == nullptr || ary_obj->serial_num_ != ud->serial_) {
                     LogError("current obj is nil");
@@ -321,7 +321,9 @@ namespace detail {
             } else if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
                 LightUserData ud = MakeLightPtr(lua_touserdata(l->GetState(), index));
-                if (ud.type_ == 0) {
+                if (!ud.IsLightData()) {
+                    // unknown val
+                } else if (ud.IsInternalType()) {
                     ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
                     if (obj)
                         ud_info.info = obj->info_;
@@ -866,11 +868,13 @@ namespace detail {
         static inline int Call(xLuaState* l, const TypeInfo* info, const char* func_name, Fy f) {
             Ty* obj = static_cast<Ty*>(GetMetaCallObj(l, info));
             if (obj == nullptr) {
-                luaL_error(l->GetState(), "attempt call function[%s:%s] failed, obj is nil", info->type_name, func_name);
+                LogError("attempt call function[%s:%s] failed, obj is nil", info->type_name, func_name);
+                luaL_error(l->GetState(), "object is nil");
                 return 0;
             }
             if (!param::Check(l, 2, f)) {
-                luaL_error(l->GetState(), "attempt call function[%s:%s] failed, parameter is not allow", info->type_name, func_name);
+                LogError("attempt call function[%s:%s] failed, parameter is not allow", info->type_name, func_name);
+                luaL_error(l->GetState(), "parameter error");
                 return 0;
             }
 
@@ -880,7 +884,8 @@ namespace detail {
         template <typename Fy, typename EnableIfT<!std::is_member_function_pointer<Fy>::value> = 0>
         static inline int Call(xLuaState* l, const TypeInfo* info, const char* func_name, Fy f) {
             if (!param::Check(l, 1, f)) {
-                luaL_error(l->GetState(), "attempt call function [%s.%s] failed, parameter is not allow", info->type_name, func_name);
+                LogError("attempt call function [%s.%s] failed, parameter is not allow", info->type_name, func_name);
+                luaL_error(l->GetState(), "parameter error");
                 return 0;
             }
 
@@ -894,11 +899,13 @@ namespace detail {
         static inline int Call(xLuaState* l, const TypeInfo* info, const char* func_name, Fy f) {
             Ty* obj = static_cast<Ty*>(GetMetaCallObj(l, info));
             if (obj == nullptr) {
-                luaL_error(l->GetState(), "attempt call function[%s:%s] failed, obj is nil", info->type_name, func_name);
+                LogError("attempt call function[%s:%s] failed, obj is nil", info->type_name, func_name);
+                luaL_error(l->GetState(), "object is nil");
                 return 0;
             }
             if (!param::CheckEx(l, 2, f)) {
-                luaL_error(l->GetState(), "attempt call function[%s:%s] failed, parameter is not allow", info->type_name, func_name);
+                LogError("attempt call function[%s:%s] failed, parameter is not allow", info->type_name, func_name);
+                luaL_error(l->GetState(), "parameter error");
                 return 0;
             }
 
@@ -916,7 +923,8 @@ namespace detail {
         template <typename Fy, typename EnableIfT<IsMember<Fy>::value, int> = 0>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
             if (!param::Check(l, 3, f)) {
-                luaL_error(l->GetState(), "attempt set var [%s.%s] failed, parameter is not allow", dst->type_name, var);
+                LogError("attempt set var [%s.%s] failed, parameter is not allow", dst->type_name, var);
+                luaL_error(l->GetState(), "parameter error");
             } else {
                 MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
             }
@@ -930,7 +938,8 @@ namespace detail {
         template <typename Fy, typename EnableIfT<!IsMember<Fy>::value, int> = 0>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
             if (!param::Check(l, 3, f)) {
-                luaL_error(l->GetState(), "attempt set var [%s.%s] failed, parameter is not allow", dst->type_name, var);
+                LogError("attempt set var [%s.%s] failed, parameter is not allow", dst->type_name, var);
+                luaL_error(l->GetState(), "parameter error");
             } else {
                 MetaSet(l, f);
             }

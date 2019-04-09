@@ -5,6 +5,10 @@
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {
+    struct ConstVals {
+        static constexpr uint8_t kInternalLightIndex = 0xff;
+    };
+
 #if XLUA_USE_LIGHT_USER_DATA
     struct LightUserData {
         union {
@@ -17,6 +21,14 @@ namespace detail {
                 uint32_t type_ : 8;
             };
         };
+
+        inline bool IsLightData() const {
+            return type_ != 0;
+        }
+
+        inline bool IsInternalType() const {
+            return type_ == ConstVals::kInternalLightIndex;
+        }
 
         inline void* Ptr() const {
             return ptr_;
@@ -146,11 +158,13 @@ namespace detail {
 
     /* 导出类型信息 */
     struct TypeInfo {
+        static constexpr uint8_t kInternalLightIndex = 0xff;
+
         int index;
         TypeCategory category;
         const char* type_name;
         bool is_weak_obj;
-        int8_t external_type_index; // 外部类型编号, 用于lightuserdata索引类型
+        uint8_t light_index;        // 外部类型编号, 用于lightuserdata索引类型
         const TypeInfo* super;      // 父类信息
         ITypeCaster* caster;        // 类型转换器
         MemberVar* vars;            // 成员变量

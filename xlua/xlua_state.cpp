@@ -50,12 +50,12 @@ namespace detail {
         if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
             auto ud = MakeLightPtr(lua_touserdata(l, 1));
-            if (ud.ptr_ == nullptr) {
+            if (!ud.IsLightData()) {
                 LogError("unknown obj");
                 return false;
             }
 
-            if (ud.type_ == 0) {
+            if (ud.IsInternalType()) {
                 auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
                 return (ary_obj != nullptr && ary_obj->serial_num_ == ud.serial_);
             } else {
@@ -411,11 +411,11 @@ namespace detail {
             if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
                 auto ud = MakeLightPtr(lua_touserdata(l, 1));
-                if (ud.ptr_ == nullptr) {
+                if (!ud.IsLightData()) {
                     lua_pushstring(l, "Unknown");
                     return 1;
                 }
-                if (ud.type_ == 0) {
+                if (ud.IsInternalType()) {
                     auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
                     if (ary_obj == nullptr || ary_obj->serial_num_ != ud.serial_)
                         lua_pushstring(l, "nil");
@@ -492,6 +492,18 @@ namespace detail {
     };
 }
 
+void xLuaObjBase::AddRef() {
+    if (ary_index_ != -1)
+        lua_->AddObjRef(ary_index_);
+}
+
+void xLuaObjBase::UnRef() {
+    if (ary_index_ != -1) {
+        lua_->UnRefObj(ary_index_);
+        ary_index_ = -1;
+    }
+}
+
 xLuaGuard::xLuaGuard(xLuaState* l) : l_(l) {
     top_ = l->GetTopIndex();
 }
@@ -535,7 +547,9 @@ const char* xLuaState::GetTypeName(int index) {
     if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
         detail::LightUserData ud = detail::MakeLightPtr(lua_touserdata(state_, index));
-        if (ud.type_ == 0) {
+        if (!ud.IsLightData()) {
+            snprintf(type_name_buf_, XLUA_MAX_TYPE_NAME_LENGTH, "light user data");
+        } else if (ud.IsInternalType()) {
             detail::ArrayObj* obj = detail::GlobalVar::GetInstance()->GetArrayObj(ud.index_);
             if (obj == nullptr)
                 snprintf(type_name_buf_, XLUA_MAX_TYPE_NAME_LENGTH, "nullptr");
@@ -1003,7 +1017,9 @@ void xLuaState::UnRefObj(int ary_index) {
     auto& ref = lua_objs_[ary_index];
     -- ref.ref_count_;
     if (ref.ref_count_ == 0) {
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
+        int ty = lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
+        assert(ty == LUA_TTABLE);
+        printf("top index %d\n", GetTopIndex());
         luaL_unref(state_, -1, ref.lua_ref_);
         lua_pop(state_, 1);
 
