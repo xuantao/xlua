@@ -303,8 +303,9 @@ namespace detail {
         template <typename Ty>
         struct Perify {
             typedef typename std::decay<Ty>::type deacy_type;
-            typedef typename std::conditional<IsInternal<deacy_type>::value || IsExternal<deacy_type>::value, Ty,
-                typename std::remove_reference<Ty>::type>::type type;
+            typedef typename std::remove_volatile<typename std::remove_reference<Ty>::type>::type rm_rf_type;
+            typedef typename std::conditional<IsInternal<deacy_type>::value || IsExternal<deacy_type>::value,
+                Ty, rm_rf_type>::type type;
         };
 
         struct UdInfo {
@@ -364,17 +365,20 @@ namespace detail {
 
         template <typename Ty>
         struct Checker {
+            typedef typename std::remove_cv<Ty>::type value_type;
             static inline bool Do(xLuaState* l, int index, int param) {
-                using tag = typename std::conditional<IsInternal<Ty>::value || IsExternal<Ty>::value, tag_declared,
-                    typename std::conditional<IsExtendLoad<Ty>::value, tag_extend,
-                    typename std::conditional<std::is_enum<Ty>::value, tag_enum, tag_unknown>::type>::type>::type;
-                return Do(l, index, param, tag());
+                using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
+                    typename std::conditional<IsExtendLoad<value_type>::value, tag_extend,
+                    typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_unknown>::type>::type>::type;
+                return Do<value_type>(l, index, param, tag());
             }
 
+            template <typename U>
             static inline bool Do(xLuaState* l, int index, int param, tag_unknown) {
                 return false;
             }
 
+            template <typename U>
             static inline bool Do(xLuaState* l, int index, int param, tag_enum) {
                 if (l->GetType(index) != LUA_TNUMBER) {
                     LogError("param(%d) error, need:enum(number) got:%s", param, l->GetTypeName(index));
@@ -383,12 +387,14 @@ namespace detail {
                 return true;
             }
 
+            template <typename U>
             static inline bool Do(xLuaState* l, int index, int param, tag_extend) {
-                return IsExtendTypeCheck<Ty>(l, index, std::integral_constant<bool, IsExtendType<Ty>::value>());
+                return IsExtendTypeCheck<U>(l, index, std::integral_constant<bool, IsExtendType<U>::value>());
             }
 
+            template <typename U>
             static inline bool Do(xLuaState* l, int index, int param, tag_declared) {
-                const TypeInfo* info = GetTypeInfoImpl<Ty>();
+                const TypeInfo* info = GetTypeInfoImpl<U>();
                 UdInfo ud = GetUdInfo(l, index, true);
                 if (ud.is_nil) {
                     LogError("param(%d) error, need:%s got:nil", param, info->type_name);
@@ -404,9 +410,11 @@ namespace detail {
 
         template <typename Ty>
         struct Checker<Ty*> {
-            static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "only declare export to lua types");
+            typedef typename std::remove_cv<Ty>::type value_type;
+            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+
             static inline bool Do(xLuaState* l, int index, int param) {
-                const TypeInfo* info = GetTypeInfoImpl<Ty>();
+                const TypeInfo* info = GetTypeInfoImpl<value_type>();
                 UdInfo ud = GetUdInfo(l, index, false);
                 if (ud.is_nil || IsBaseOf(ud.info, info))
                     return true;
@@ -417,10 +425,12 @@ namespace detail {
 
         template <typename Ty>
         struct Checker<std::shared_ptr<Ty>> {
-            static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "only declare export to lua types");
+            typedef typename std::remove_cv<Ty>::type value_type;
+            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+
             static inline bool Do(xLuaState* l, int index, int param) {
                 int l_ty = l->GetType(index);
-                const TypeInfo* info = GetTypeInfoImpl<Ty>();
+                const TypeInfo* info = GetTypeInfoImpl<value_type>();
                 if (l_ty == LUA_TUSERDATA) {
                     FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
                     if (ud->type_ == UserDataCategory::kSharedPtr && IsBaseOf(info, ud->info_))
@@ -517,8 +527,20 @@ namespace detail {
             return IsType_2(l, index, param, LUA_TSTRING, "char*(number)");
         }
 
+        template <> inline bool IsType<const char*>(xLuaState* l, int index, int param) {
+            return IsType_2(l, index, param, LUA_TSTRING, "char*(number)");
+        }
+
         template <> inline bool IsType<std::string>(xLuaState* l, int index, int param) {
             return IsType_2(l, index, param, LUA_TSTRING, "std::string");
+        }
+
+        template <> inline bool IsType<void*>(xLuaState* l, int index, int param) {
+            return IsType_2(l, index, param, LUA_TLIGHTUSERDATA, "void*");
+        }
+
+        template <> inline bool IsType<const void*>(xLuaState* l, int index, int param) {
+            return IsType_2(l, index, param, LUA_TLIGHTUSERDATA, "void*");
         }
 
         template <> inline bool IsType<xLuaTable>(xLuaState* l, int index, int param) {
@@ -550,7 +572,7 @@ namespace detail {
         template <typename Ty, typename Ry>
         struct Loader<Ty*, Ry> {
             static Ry Do(xLuaState* l, int index) {
-                return static_cast<Ty*>(GetUdPtr(l, index, GetTypeInfoImpl<Ty>()));
+                return static_cast<Ty*>(GetUdPtr(l, index, GetTypeInfoImpl<typename std::remove_const<Ty>::type>()));
             }
         };
 
@@ -569,36 +591,36 @@ namespace detail {
             }
         };
 
-        template <typename Ty>
-        inline bool CheckParam(xLuaState* l, int index, int param) {
-            using decay_ty = typename std::decay<Ty>::type;
-            static_assert(!std::is_same<decay_ty, char*>::value || std::is_const<Ty>::value,
-                "only accept const char* paramenter");
-            return param::IsType<decay_ty>(l, index, param);
-        }
+        //template <typename Ty>
+        //inline bool DoCheckParam(xLuaState* l, int index, int param) {
+        //    //using decay_ty = typename std::decay<Ty>::type;
+        //    //static_assert(!std::is_same<decay_ty, char*>::value || std::is_const<Ty>::value,
+        //    //    "only accept const char* paramenter");
+        //    return param::IsType<typename std::decay<Ty>::type>(l, index, param);
+        //}
 
         template <typename... Ty>
-        inline bool CheckParams(xLuaState* l, int index) {
+        inline bool DoCheckParams(xLuaState* l, int index) {
             size_t count = 0;
             int param = 0;
             using els = int[];
-            (void)els { 0, (count += CheckParam<Ty>(l, index++, ++param) ? 1 : 0, 0)... };
+            (void)els { 0, (count += param::IsType<typename std::decay<Ty>::type>(l, index++, ++param) ? 1 : 0, 0)... };
             return count == sizeof...(Ty);
         }
 
         template <typename Ry, typename...Args>
         inline bool Check(xLuaState* l, int index, Ry(*func)(Args...)) {
-            return CheckParams<Args...>(l, index);
+            return DoCheckParams<Args...>(l, index);
         }
 
         template <typename Ty, typename Ry, typename...Args>
         inline bool Check(xLuaState* l, int index, Ry(Ty::*func)(Args...)) {
-            return CheckParams<Args...>(l, index);
+            return DoCheckParams<Args...>(l, index);
         }
 
         template <typename Ty, typename Ry, typename...Args>
         inline bool Check(xLuaState* l, int index, Ry(Ty::*func)(Args...) const) {
-            return CheckParams<Args...>(l, index);;
+            return DoCheckParams<Args...>(l, index);;
         }
 
         template <typename Ry>
@@ -622,7 +644,7 @@ namespace detail {
 
         template <typename Ty, typename Ry, typename...Args>
         inline bool CheckEx(xLuaState* l, int index, Ry(*func)(Ty*, Args...)) {
-            return CheckParams<Args...>(l, index);
+            return DoCheckParams<Args...>(l, index);
         }
 
         template <typename Ty, typename Ry>
@@ -633,6 +655,12 @@ namespace detail {
     inline Ty LoadParam_Un(xLuaState* l, int index) {
         return l->Load<typename std::decay<Ty>::type>(index);
     }
+
+    //template <>
+    //inline char* LoadParam_Un<char*>(xLuaState* l, int index) {
+    //    static_assert(false, "can not load char*, only const char* accepted");
+    //    return nullptr; // const char* is expecial
+    //}
 
     template <>
     inline const char* LoadParam_Un<const char*>(xLuaState* l, int index) {

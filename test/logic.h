@@ -90,3 +90,68 @@ struct WeakObj : public WeakObjBase {
 public:
     XLUA_DECLARE_CLASS(WeakObj);
 };
+
+#define _TEST_PARAM(Type)  Type Test(Type val) { printf("Test("#Type" val)\n"); return val; }
+
+struct NoneExport {};
+
+struct TestExportParams {
+    _TEST_PARAM(bool)
+    _TEST_PARAM(char)
+    _TEST_PARAM(unsigned char)
+    _TEST_PARAM(short)
+    _TEST_PARAM(unsigned short)
+    _TEST_PARAM(int)
+    _TEST_PARAM(unsigned int)
+    _TEST_PARAM(long long)
+    _TEST_PARAM(unsigned long long)
+    _TEST_PARAM(float)
+    _TEST_PARAM(double)
+    _TEST_PARAM(char*)  // error
+    _TEST_PARAM(const char*)
+    _TEST_PARAM(void*)
+    _TEST_PARAM(const void*)
+
+    void Test(Triangle*) {}
+    void Test(const Triangle*) {}
+    void Test(Triangle&) {}
+    void Test(const Triangle&) {}
+    void TestValue(Triangle) {}
+
+    void TestNoneExport(NoneExport) {}  // error
+    void TestNoneExport(NoneExport*) {} // error
+    void TestNoneExport(std::shared_ptr<NoneExport>) {} // error
+    void TestNoneExport(xLuaWeakObjPtr<NoneExport>) {}  // error
+};
+
+namespace Global {
+#define _TEST_STATIC_PARAM(Type) static Type Test(Type val) { printf("Test("#Type" val)\n"); return val; }
+    struct TestStaticParams {
+        _TEST_STATIC_PARAM(bool)
+        _TEST_STATIC_PARAM(char)
+        _TEST_STATIC_PARAM(unsigned char)
+        _TEST_STATIC_PARAM(short)
+        _TEST_STATIC_PARAM(unsigned short)
+        _TEST_STATIC_PARAM(int)
+        _TEST_STATIC_PARAM(unsigned int)
+        _TEST_STATIC_PARAM(long long)
+        _TEST_STATIC_PARAM(unsigned long long)
+        _TEST_STATIC_PARAM(float)
+        _TEST_STATIC_PARAM(double)
+        _TEST_STATIC_PARAM(char*)  // error
+        _TEST_STATIC_PARAM(const char*)
+        _TEST_STATIC_PARAM(void*)
+        _TEST_STATIC_PARAM(const void*)
+
+        static void Test(Triangle*) {}
+        static void Test(const Triangle*) {}
+        static void Test(Triangle&) {}
+        static void Test(const Triangle&) {}
+        static void TestValue(Triangle) {}
+
+        static void TestNoneExport(NoneExport) {}  // error
+        static void TestNoneExport(NoneExport*) {} // error
+        static void TestNoneExport(std::shared_ptr<NoneExport>) {} // error
+        static void TestNoneExport(xLuaWeakObjPtr<NoneExport>) {}  // error
+    };
+}

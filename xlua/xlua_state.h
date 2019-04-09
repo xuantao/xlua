@@ -343,11 +343,15 @@ public:
     inline void Push(const char* val) { lua_pushstring(state_, val); }
     inline void Push(const std::string& val) { lua_pushstring(state_, val.c_str()); }
     inline void Push(lua_CFunction func) { lua_pushcfunction(state_, func); }
-    inline void Push(const void* val) {
+    inline void Push(const void* val) { Push(const_cast<void*>(val)); }
+    inline void Push(void* val) {
 #if XLUA_USE_LIGHT_USER_DATA
         assert(detail::IsValidRawPtr(val));
 #endif
-        lua_pushlightuserdata(state_, const_cast<void*>(val));
+        if (val == nullptr)
+            lua_pushnil(state_);
+        else
+            lua_pushlightuserdata(state_, val);
     }
 
     inline void Push(std::nullptr_t) { lua_pushnil(state_); }
@@ -384,8 +388,6 @@ public:
     template<> inline const void* Load<const void*>(int index) { return lua_touserdata(state_, index); }
     template<> inline std::string Load<std::string>(int index) { return std::string(lua_tostring(state_, index)); }
     template<> inline lua_CFunction Load<lua_CFunction>(int index) { return lua_tocfunction(state_, index); }
-    /* not allow load char* */
-    template<> inline char* Load<char*>(int index);// { assert(false); return nullptr; }
 
     template<> inline xLuaTable Load<xLuaTable>(int index) {
         if (lua_type(state_, index) == LUA_TTABLE)
@@ -608,16 +610,16 @@ namespace detail {
     /* push operator */
     template <typename Ty>
     struct Pusher {
-        static_assert(IsInternal<Ty>::value
-            || IsExternal<Ty>::value
-            || IsExtendPush<Ty>::value
-            || std::is_enum<Ty>::value,
-            "not support to push type value to lua"
-            );
+        typedef typename std::remove_cv<Ty>::type value_type;
+        static_assert(IsInternal<value_type>::value
+            || IsExternal<value_type>::value
+            || IsExtendPush<value_type>::value
+            || std::is_enum<value_type>::value,
+            "only type has declared export to lua accept");
 
         static inline void Do(xLuaState* l, const Ty& val) {
-            using tag = typename std::conditional<IsInternal<Ty>::value || IsExternal<Ty>::value, tag_declared,
-                typename std::conditional<std::is_enum<Ty>::value, tag_enum, tag_extend>::type>::type;
+            using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
+                typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_extend>::type>::type;
             PushValue<Ty>(l, val, tag());
         }
 
@@ -639,12 +641,15 @@ namespace detail {
 
     template <typename Ty>
     struct Pusher<Ty*> {
-        static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "type has not declare export to lua");
+        typedef typename std::remove_cv<Ty>::type value_type;
+        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value,
+            "only type has declared export to lua accept");
+
         static inline void Do(xLuaState* l, Ty* val) {
             if (val == nullptr) {
                 l->Push(nullptr);
             } else {
-                const TypeInfo* info = GetTypeInfoImpl<Ty>();
+                const TypeInfo* info = GetTypeInfoImpl<value_type>();
 #if XLUA_USE_LIGHT_USER_DATA
                 auto ud = MakeLightUserData(val, info);
                 lua_pushlightuserdata(l->GetState(), ud.Ptr());
@@ -657,19 +662,23 @@ namespace detail {
 
     template <typename Ty>
     struct Pusher<std::shared_ptr<Ty>> {
-        static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "");
+        typedef typename std::remove_cv<Ty>::type value_type;
+        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+
         static inline void Do(xLuaState* l, const std::shared_ptr<Ty>& ptr) {
             if (!ptr) {
                 l->Push(nullptr);
             } else {
-                l->PushSharedPtr(ptr, GetTypeInfoImpl<Ty>());
+                l->PushSharedPtr(ptr, GetTypeInfoImpl<value_type>());
             }
         }
     };
 
     template <typename Ty>
     struct Pusher<xLuaWeakObjPtr<Ty>> {
-        static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "");
+        typedef typename std::remove_cv<Ty>::type value_type;
+        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+
         static inline void Do(xLuaState* l, const xLuaWeakObjPtr<Ty>& obj) {
             Ty* ptr = ::xLuaGetPtrByWeakObj(obj);
             if (ptr == nullptr) {
@@ -682,17 +691,18 @@ namespace detail {
 
     template <typename Ty>
     struct Loader {
-        static_assert(IsInternal<Ty>::value
-            || IsExternal<Ty>::value
-            || IsExtendLoad<Ty>::value
-            || std::is_enum<Ty>::value,
-            "not support load type value"
+        typedef typename std::remove_cv<Ty>::type value_type;
+        static_assert(IsInternal<value_type>::value
+            || IsExternal<value_type>::value
+            || IsExtendLoad<value_type>::value
+            || std::is_enum<value_type>::value,
+            "only type has declared export to lua accept"
         );
 
         static inline Ty Do(xLuaState* l, int index) {
-            using tag = typename std::conditional<IsInternal<Ty>::value || IsExternal<Ty>::value, tag_declared,
-                typename std::conditional<std::is_enum<Ty>::value, tag_enum, tag_extend>::type>::type;
-            return LoadValue<Ty>(l, index, tag());
+            using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
+                typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_extend>::type>::type;
+            return LoadValue<value_type>(l, index, tag());
         }
 
         template <typename U>
@@ -725,13 +735,16 @@ namespace detail {
 
     template <typename Ty>
     struct Loader<Ty*> {
-        static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "only declared export to lua types");
+        typedef typename std::remove_cv<Ty>::type value_type;
+        static_assert(!std::is_same<Ty, char>::value, "can not load value as char*, only const char* accept");
+        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+
         static Ty* Do(xLuaState* l, int index) {
             UserDataInfo ud_info;
-            if (!GetUserDataInfo(l->GetState(), index, &ud_info))
+            if (!GetUserDataInfo(l->GetState(), index, &ud_info) || ud_info.obj == nullptr)
                 return nullptr;
 
-            const TypeInfo* info = GetTypeInfoImpl<Ty>();
+            const TypeInfo* info = GetTypeInfoImpl<value_type>();
             if (!IsBaseOf(info, ud_info.info))
                 return nullptr;
 
@@ -741,14 +754,16 @@ namespace detail {
 
     template <typename Ty>
     struct Loader<std::shared_ptr<Ty>> {
-        static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "");
+        typedef typename std::remove_cv<Ty>::type value_type;
+        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+
         static inline std::shared_ptr<Ty> Do(xLuaState* l, int index) {
             if (lua_type(l->GetState(), index) != LUA_TUSERDATA)
                 return nullptr;
             auto* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
             if (ud == nullptr || ud->type_ != UserDataCategory::kSharedPtr)
                 return nullptr;
-            const TypeInfo* info = GetTypeInfoImpl<Ty>();
+            const TypeInfo* info = GetTypeInfoImpl<value_type>();
             if (!IsBaseOf(info, ud->info_))
                 return nullptr;
 
@@ -759,7 +774,8 @@ namespace detail {
 
     template <typename Ty>
     struct Loader<xLuaWeakObjPtr<Ty>> {
-        static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "");
+        static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "only type has declared export to lua accept");
+
         static inline xLuaWeakObjPtr<Ty> Do(xLuaState* l, int index) {
             return xLuaWeakObjPtr<Ty>(l->Load<Ty*>(index));
         }

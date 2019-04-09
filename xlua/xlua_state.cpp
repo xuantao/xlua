@@ -305,20 +305,20 @@ namespace detail {
 
         static int LuaConstIndex(lua_State* l) {
             lua_pushstring(l, "__name");
-            if (lua_rawget(l, 1) != LUA_TSTRING)
+            if (lua_rawget(l, 1) != LUA_TSTRING || lua_isstring(l, 2) == 0)
                 return 0;
 
-            LogError("const Type:[%s] member:[%s] does not exist", lua_tostring(l, 2), lua_tostring(l, -1));
+            LogError("const Type:[%s] member:[%s] does not exist", lua_tostring(l, -1), lua_tostring(l, 2));
             LogCallStack(l);
             return 0;
         }
 
         static int LuaConstNewIndex(lua_State* l) {
             lua_pushstring(l, "__name");
-            if (lua_rawget(l, 1) != LUA_TSTRING)
+            if (lua_rawget(l, 1) != LUA_TSTRING || lua_isstring(l, 2) == 0)
                 return 0;
 
-            LogError("const Type:[%s] member:[%s] is ready only", lua_tostring(l, 2), lua_tostring(l, -1));
+            LogError("const Type:[%s] can not add new member:[%s]", lua_tostring(l, -1), lua_tostring(l, 2));
             LogCallStack(l);
             return 0;
         }
@@ -623,12 +623,14 @@ int xLuaState::LoadGlobal(const char* path) {
 }
 
 bool xLuaState::SetGlobal(const char* path) {
-    if (path == nullptr || *path == 0)
-        return false;
-
     int top = GetTopIndex();
     if (top == 0)
-        return false;
+        return false;   // none value
+
+    if (path == nullptr || *path == 0) {
+        lua_pop(state_, 1);
+        return false;   // wrong name
+    }
 
     lua_pushglobaltable(state_);
     while (const char* sub = ::strchr(path, '.')) {
@@ -651,7 +653,6 @@ bool xLuaState::SetGlobal(const char* path) {
 
     lua_pushvalue(state_, top);
     lua_setfield(state_, -2, path);
-
     lua_pop(state_, 2); // [1]:value, [2]: table
     return true;
 }
@@ -747,7 +748,7 @@ bool xLuaState::InitEnv(const char* export_module,
     lua_setmetatable(state_, -2);
     user_data_table_ref_ = luaL_ref(state_, LUA_REGISTRYINDEX);
     assert(user_data_table_ref_);
-    assert(lua_gettop(state_) == 0);
+    assert(GetTopIndex() == 0);
 
     // table of type metatable
     lua_createtable(state_, (int)types.size(), 0);
@@ -789,7 +790,7 @@ bool xLuaState::InitEnv(const char* export_module,
 
     lua_setmetatable(state_, -2);   // set light user data metatable
     lua_pop(state_, 1);             // light user data
-    assert(lua_gettop(state_) == 0);
+    assert(GetTopIndex() == 0);
 #endif // XLUA_USE_LIGHT_USER_DATA
 
     InitConsts(export_module, consts);
@@ -809,33 +810,39 @@ bool xLuaState::InitEnv(const char* export_module,
 }
 
 void xLuaState::InitConsts(const char* export_module, const std::vector<const detail::ConstInfo*>& consts) {
-    lua_createtable(state_, 2, 0);  // const metatable
-
+    lua_createtable(state_, 0, 2);  // const metatable
     lua_pushcfunction(state_, &detail::MetaFuncs::LuaConstIndex);
     lua_setfield(state_, -2, "__index");
-
     lua_pushcfunction(state_, &detail::MetaFuncs::LuaConstNewIndex);
     lua_setfield(state_, -2, "__newindex");
+    lua_pushstring(state_, "const_meta_table");
+    lua_setfield(state_, -2, "__name");
 
     for (const detail::ConstInfo* info : consts) {
-        int num = 0;
-        while (info->values[num].name)
-            ++num;
+        char type_name[XLUA_MAX_TYPE_NAME_LENGTH];
+        if (*info->name == 0 || ::strcmp(info->name, "_G") == 0) {
+            snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, export_module);
+        } else if (export_module == nullptr || *export_module == 0) {
+            snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, info->name);
+        } else {
+            snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, "%s.%s", export_module, info->name);
+        }
 
-        char const_name[XLUA_MAX_TYPE_NAME_LENGTH];
-        if (export_module == nullptr || *export_module == 0)
-            snprintf(const_name, XLUA_MAX_TYPE_NAME_LENGTH, info->name);
-        else
-            snprintf(const_name, XLUA_MAX_TYPE_NAME_LENGTH, "%s.%s", export_module, info->name);
+        if (*type_name == 0) {
+            // global table
+            lua_pushglobaltable(state_);
+        } else {
+            int num = 0;
+            while (info->values[num].name)
+                ++num;
 
-        lua_createtable(state_, 0, num + 1);
-        SetGlobal(const_name);
-        LoadGlobal(const_name);
+            lua_createtable(state_, 0, num + 1);
+            lua_pushvalue(state_, -1);  // copy ref
+            bool ok = SetGlobal(type_name);
+            assert(ok);
+        }
 
-        lua_pushstring(state_, info->name);
-        lua_setfield(state_, -2, "__name");
-
-        for (int i = 0; i < num; ++i) {
+        for (int i = 0; info->values[i].name; ++i) {
             const auto& val = info->values[i];
             switch (val.category) {
             case detail::ConstCategory::kInteger:
@@ -855,13 +862,19 @@ void xLuaState::InitConsts(const char* export_module, const std::vector<const de
             lua_setfield(state_, -2, val.name);
         }
 
-        lua_pushvalue(state_, -3);          // copy meta table to top stack
-        lua_setmetatable(state_, -2);       // set metatable
-        lua_pop(state_, 1);                 // pop table
+        if (*type_name != 0) {
+            lua_pushstring(state_, info->name);
+            lua_setfield(state_, -2, "__name");
+
+            lua_pushvalue(state_, -2);      // copy meta table to top
+            lua_setmetatable(state_, -2);   // set metatable
+        }
+
+        lua_pop(state_, 1); // pop table
     }
 
     lua_pop(state_, 1); // pop const meta table
-    assert(lua_gettop(state_) == 0);
+    assert(GetTopIndex() == 0);
 }
 
 void xLuaState::SetTypeMember(const detail::TypeInfo* info) {
@@ -926,45 +939,63 @@ void xLuaState::CreateTypeMeta(const detail::TypeInfo* info) {
     lua_setfield(state_, -2, "__gc");
 
     lua_pop(state_, 1);
-    assert(lua_gettop(state_) == 0);
+    assert(GetTopIndex() == 0);
 }
 
 void xLuaState::CreateTypeGlobal(const char* export_module, const detail::TypeInfo* info) {
     char type_name[XLUA_MAX_TYPE_NAME_LENGTH];
-    if (export_module == nullptr || *export_module == 0)
+    if (*info->type_name == 0 || ::strcmp(info->type_name, "_G") == 0) {
+        snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, export_module);
+    } else if (export_module == nullptr || *export_module == 0) {
         snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, info->type_name);
-    else
+    } else {
         snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, "%s.%s", export_module, info->type_name);
+    }
 
-    lua_newtable(state_);
-    bool ok = SetGlobal(type_name);
-    assert(ok);
+    if (*type_name == 0) {
+        lua_pushglobaltable(state_);
+        SetGlobalMember(info, true, false);
 
-    int l_ty = LoadGlobal(type_name);
-    assert(l_ty == LUA_TTABLE);
+        int var_num = 0;
+        auto node = info;
+        while (node) {
+            for (int i = 0; node->global_vars[i].name; ++i)
+                ++var_num;
+            node = node->super;
+        }
 
-    lua_pushstring(state_, info->type_name);
-    lua_setfield(state_, -2, "__name");
+        if (var_num)
+            detail::LogError("global table can not add member var");
+        assert(var_num == 0 && "global table can not add member var");
+    } else {
+        lua_newtable(state_);
+        lua_pushvalue(state_, -1);  // copy ref
+        bool ok = SetGlobal(type_name);
+        assert(ok);
 
-    SetGlobalMember(info, true, false);
+        lua_pushstring(state_, info->type_name);
+        lua_setfield(state_, -2, "__name");
 
-    // meta table
-    lua_createtable(state_, 0, 0);
-    SetGlobalMember(info, false, true);
+        SetGlobalMember(info, true, false);
 
-    lua_pushstring(state_, info->type_name);
-    lua_setfield(state_, -2, "__name");
+        // meta table
+        lua_createtable(state_, 0, 0);
+        SetGlobalMember(info, false, true);
 
-    PushClosure(&detail::MetaFuncs::LuaGlobalIndex);
-    lua_setfield(state_, -2, "__index");
+        lua_pushstring(state_, info->type_name);
+        lua_setfield(state_, -2, "__name");
 
-    PushClosure(&detail::MetaFuncs::LuaGlobalNewIndex);
-    lua_setfield(state_, -2, "__newindex");
+        PushClosure(&detail::MetaFuncs::LuaGlobalIndex);
+        lua_setfield(state_, -2, "__index");
 
-    lua_setmetatable(state_, -2);   // set metatable
+        PushClosure(&detail::MetaFuncs::LuaGlobalNewIndex);
+        lua_setfield(state_, -2, "__newindex");
+
+        lua_setmetatable(state_, -2);   // set metatable
+    }
+
     lua_pop(state_, 1);
-
-    assert(lua_gettop(state_) == 0);
+    assert(GetTopIndex() == 0);
 }
 
 void xLuaState::PushClosure(lua_CFunction func) {

@@ -185,13 +185,13 @@
 /* 导出常量表 */
 #define _XLUA_EXPORT_CONST_BEGIN(Name)                                                  \
     namespace {                                                                         \
-        xlua::detail::ConstNode _XLUA_ANONYMOUS([]() -> const xlua::ConstInfo* {        \
-            static xlua::ConstInfo info;                                                \
+        xlua::detail::ConstNode _XLUA_ANONYMOUS([]() -> const xlua::detail::ConstInfo* {\
+            static xlua::detail::ConstInfo info;                                        \
             info.name = #Name;
 
 #define XLUA_EXPORT_CONST_BEGIN(Name)                                                   \
     _XLUA_EXPORT_CONST_BEGIN(Name)                                                      \
-            static xlua::ConstValue values[] = {
+            static xlua::detail::ConstValue values[] = {
 
 #define XLUA_EXPORT_CONST_END()                                                         \
                 xlua::detail::MakeConstValue()                                          \

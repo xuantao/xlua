@@ -53,11 +53,34 @@ function TestTriangleNullptr(quard)
     quard:AddTriangle_3(nil)
 end
 
+function TestExportGlobal()
+    TestGlobal()
+    Global.TestGlobal()
+    Global.global_name = "xuantao"
+    print("Global.global_name", Global.global_name)
+    print("Version", Version)
+    print("Name", Name)
+    print("Const.Version", Const.Version)
+    print("Const.Name", Const.Name)
+
+
+    print(getmetatable(Const).__name)
+    print(getmetatable(Const).__index)
+    print(getmetatable(Const).__newindex)
+
+    Const.Name = "xxxx"
+    Const.XXxx = "xuantao"
+    print("Const.XXxx", Const.XXxx)
+    print("Const.__name", Const.__name)
+    print("Const.Name", Const.Name)
+end
+
 )V0G0N";
 
 void TestGlobal(xlua::xLuaState* l) {
     l->DoString(sLuaBuf, "test_global");
     {
+        xlua::xLuaGuard guard(l);
         Triangle triangle;
         Quard quard;
         xlua::xLuaCaller call(l);
@@ -110,6 +133,7 @@ void TestGlobal(xlua::xLuaState* l) {
     }
 
     {
+        xlua::xLuaGuard guard(l);
         WeakObj weak_obj;
         l->Push(weak_obj);
         l->Push(&weak_obj);
@@ -136,6 +160,9 @@ void TestGlobal(xlua::xLuaState* l) {
 
         printf("test std::shared_ptr<triangle>\n");
         call("TestTriangle", std::tie(), &quard_1, triangle_2);
+
+        printf("test export global\n");
+        call("TestExportGlobal", std::tie());
     }
 
     LOG_TOP_(l);

@@ -102,7 +102,7 @@ namespace detail {
         luaL_openlibs(l);
 
         xLuaState* xl = new xLuaState(l, false);
-        if (!xl->InitEnv(export_module, const_infos_, types_, scripts_)) {
+        if (!xl->InitEnv(export_module ? export_module : "", const_infos_, types_, scripts_)) {
             lua_close(l);
             delete xl;
             xl = nullptr;
@@ -114,7 +114,7 @@ namespace detail {
 
     xLuaState* GlobalVar::Attach(lua_State* l, const char* export_module) {
         xLuaState* xl = new xLuaState(l, true);
-        if (!xl->InitEnv(export_module, const_infos_, types_, scripts_)) {
+        if (!xl->InitEnv(export_module ? export_module : "", const_infos_, types_, scripts_)) {
             delete xl;
             xl = nullptr;
         } else {
