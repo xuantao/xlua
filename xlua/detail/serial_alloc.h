@@ -1,10 +1,10 @@
-#pragma once
+Ôªø#pragma once
 #include "../xlua_def.h"
 
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {
-    /* ∂‘∆Î£®1£¨2£¨4£¨8...£© */
+    /* ÂØπÈΩêÔºà1Ôºå2Ôºå4Ôºå8...Ôºâ */
     inline constexpr size_t AlignSize(size_t sz) {
         constexpr size_t bound = sizeof(void*);
         return sz + (bound - sz % bound) % bound;

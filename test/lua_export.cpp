@@ -1,4 +1,4 @@
-#include "lua_export.h"
+﻿#include "lua_export.h"
 #include <xlua_export.h>
 
 XLUA_EXPORT_EXTERNAL_BEGIN(ObjectBase)

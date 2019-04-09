@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <xlua_def.h>
 #include <stdio.h>
 

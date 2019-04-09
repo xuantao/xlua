@@ -1,4 +1,4 @@
-#include "test.h"
+ï»¿#include "test.h"
 #include "lua_export.h"
 #include <xlua.h>
 
@@ -106,7 +106,7 @@ void TestGlobal(xlua::xLuaState* l) {
         l->Push(&quard);
         ObjectBase* base1 = l->Load<ObjectBase*>(-1);
         ObjectBase* base2 = &quard;
-        assert(base1 == base2); // ¹Ø±Õ¶à¼Ì³ÐÊ±ÕâÀïµÄ¶ÏÑÔ»áÊ§°Ü
+        assert(base1 == base2); // å…³é—­å¤šç»§æ‰¿æ—¶è¿™é‡Œçš„æ–­è¨€ä¼šå¤±è´¥
     }
 
     {

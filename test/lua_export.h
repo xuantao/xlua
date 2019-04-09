@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "logic.h"
 
 XLUA_DECLARE_EXTERNAL(ObjectBase);
