@@ -108,6 +108,9 @@ public:
 
 /* lua堆栈守卫 */
 class xLuaGuard {
+protected:
+    xLuaGuard() { }
+
 public:
     xLuaGuard(xLuaState* l);
     xLuaGuard(xLuaState* l, int off);
@@ -117,9 +120,31 @@ public:
     xLuaGuard(const xLuaGuard&) = delete;
     xLuaGuard& operator = (const xLuaGuard&) = delete;
 
-private:
+protected:
     int top_;
     xLuaState* l_;
+};
+
+/* lua函数调用堆栈保护
+ * lua函数执行以后返回值存放在栈上, 如果清空栈可能会触发GC
+ * 导致引用的局部变量失效造成未定义行为
+*/
+class xLuaCallGuard : private xLuaGuard {
+    friend class xLuaState;
+public:
+    xLuaCallGuard(xLuaState* l) : xLuaGuard(l) { }
+    xLuaCallGuard(xLuaState* l, int off) : xLuaGuard(l, off) { }
+    xLuaCallGuard(xLuaCallGuard&& other) : xLuaGuard() {
+        top_ = other.top_;
+        l_ = other.l_;
+        other.l_ = nullptr;
+    }
+
+public:
+    explicit operator bool() const { return ok_; }
+
+private:
+    bool ok_ = false;
 };
 
 /* lua 状态机扩展 */
@@ -475,7 +500,85 @@ public:
         return xLuaFunction();
     }
 
+    /* 调用栈顶的Lua函数 */
+    template<typename... Rys, typename... Args>
+    inline xLuaCallGuard Call(std::tuple<Rys&...> ret, Args&&... args) {
+        xLuaCallGuard guard(this, -1);
+        if (GetType(-1) != LUA_TFUNCTION) {
+            detail::LogError("attempt to call is not a function");
+        } else {
+            guard.ok_ = DoCall(ret, std::forward<Args>(args)...);
+        }
+        return guard;
+    }
+
+    /* 调用全局Lua函数 */
+    template <typename... Rys, typename... Args>
+    inline xLuaCallGuard Call(const char* global, std::tuple<Rys&...> ret, Args&&... args) {
+        xLuaCallGuard guard(this);
+        if (LoadGlobal(global) != LUA_TFUNCTION) {
+            detail::LogError("global var:[%s] is not a function", global);
+        } else {
+            guard.ok_ = DoCall(ret, std::forward<Args>(args)...);
+        }
+        return guard;
+    }
+
+    /* 调用执行Lua函数 */
+    template <typename... Rys, typename... Args>
+    inline xLuaCallGuard Call(lua_CFunction func, std::tuple<Rys&...> ret, Args&&... args) {
+        xLuaCallGuard guard(this);
+        Push(func);
+        guard.ok_ = DoCall(ret, std::forward<Args>(args)...);
+        return guard;
+    }
+
+    template <typename... Rys, typename... Args>
+    inline xLuaCallGuard Call(int (*func)(xLuaState*), std::tuple<Rys&...> ret, Args&&... args) {
+        xLuaCallGuard guard(this);
+        Push(func);
+        guard.ok_ = DoCall(ret, std::forward<Args>(args)...);
+        return guard;
+    }
+
+    template <typename... Rys, typename... Args>
+    inline xLuaCallGuard Call(const xLuaFunction& func, std::tuple<Rys&...> ret, Args&&... args) {
+        xLuaCallGuard guard(this);
+        Push(func);
+        if (GetType(-1) != LUA_TFUNCTION) {
+            detail::LogError("attempt to call is not a function");
+        } else {
+            guard.ok_ = DoCall(ret, std::forward<Args>(args)...);
+        }
+        return guard;
+    }
+
+    /* table call, table函数是冒号调用的 table:Call(xxx) */
+    template <typename... Rys, typename... Args>
+    inline xLuaCallGuard Call(const xLuaTable& table, const char* func, std::tuple<Rys&...> ret, Args&&... args) {
+        xLuaCallGuard guard(this);
+        Push(table);
+        if (LoadTableField(-1, func) != LUA_TFUNCTION) {
+            detail::LogError("can not get table function:[%s]", func);
+        } else {
+            guard.ok_ = DoCall(ret, table, std::forward<Args>(args)...);
+        }
+        return guard;
+    }
+
 private:
+    template<typename... Rys, typename... Args>
+    inline bool DoCall(std::tuple<Rys&...>& ret, Args&&... args) {
+        int top = GetTopIndex();
+        PushMul(std::forward<Args>(args)...);
+        if (lua_pcall(GetState(), sizeof...(Args), sizeof...(Rys), 0) != LUA_OK) {
+            detail::LogError("excute lua function error!\n%s", lua_tostring(GetState(), -1));
+            return false;
+        }
+        LoadMul(ret, top);
+        return true;
+    }
+
     template <typename... Ty, size_t... Idxs>
     inline void DoLoadMul(std::tuple<Ty&...>& ret, int index, detail::index_sequence<Idxs...>) {
         using ints = int[];
@@ -579,106 +682,6 @@ private:
     std::unordered_map<void*, UdCache> raw_ptrs_;
     std::unordered_map<void*, UdCache> shared_ptrs_;
     char type_name_buf_[XLUA_MAX_TYPE_NAME_LENGTH];       // 输出类型名称缓存
-};
-
-/* Lua 函数调用器
- * 保护lua栈
-*/
-class xLuaCaller {
-public:
-    xLuaCaller(xLuaState* l) : l_(l), top_(-1) {
-    }
-
-    ~xLuaCaller() {
-        RecoverTop();
-    }
-
-public:
-    xLuaCaller(const xLuaCaller&) = delete;
-    xLuaCaller& operator = (const xLuaCaller&) = delete;
-
-public:
-    /* 调用栈顶的Lua函数 */
-    template<typename... Rys, typename... Args>
-    bool operator () (std::tuple<Rys&...> ret, Args&&... args) {
-        RecordTop(-1);
-        if (l_->GetType(-1) != LUA_TFUNCTION) {
-            detail::LogError("attempt to call is not a function");
-            return false;
-        }
-        return DoCall(ret, std::forward<Args>(args)...);
-    }
-
-    /* 调用全局Lua函数 */
-    template <typename... Rys, typename... Args>
-    bool operator () (const char* global, std::tuple<Rys&...> ret, Args&&... args) {
-        RecordTop(0);
-        if (l_->LoadGlobal(global) != LUA_TFUNCTION) {
-            detail::LogError("global var:[%s] is not a function", global);
-            return false;
-        }
-        return DoCall(ret, std::forward<Args>(args)...);
-    }
-
-    /* 调用执行Lua函数 */
-    template <typename... Rys, typename... Args>
-    inline bool operator ()(lua_CFunction func, std::tuple<Rys&...> ret, Args&&... args) {
-        RecordTop(0);
-        l_->Push(func);
-        return DoCall(ret, std::forward<Args>(args)...);
-    }
-
-    template <typename... Rys, typename... Args>
-    inline bool operator ()(const xLuaFunction& func, std::tuple<Rys&...> ret, Args&&... args) {
-        RecordTop(0);
-        l_->Push(func);
-        if (l_->GetType(-1) != LUA_TFUNCTION) {
-            detail::LogError("attempt to call is not a function");
-            l_->PopTop(1);
-            return false;
-        }
-        return DoCall(ret, std::forward<Args>(args)...);
-    }
-
-    /* table call, table函数是冒号调用的 table:Call(xxx) */
-    template <typename... Rys, typename... Args>
-    inline bool operator ()(const xLuaTable& table, const char* func, std::tuple<Rys&...> ret, Args&&... args) {
-        RecordTop(0);
-        l_->Push(table);
-        if (l_->LoadTableField(-1, func) != LUA_TFUNCTION) {
-            detail::LogError("can not get table function:[%s]", func);
-            return false;
-        }
-        return DoCall(ret, table, std::forward<Args>(args)...);
-    }
-
-private:
-    template<typename... Rys, typename... Args>
-    inline bool DoCall(std::tuple<Rys&...>& ret, Args&&... args) {
-        int top = l_->GetTopIndex();
-        l_->PushMul(std::forward<Args>(args)...);
-        if (lua_pcall(l_->GetState(), sizeof...(Args), sizeof...(Rys), 0) != LUA_OK) {
-            detail::LogError("excute lua function error!\n%s", lua_tostring(l_->GetState(), -1));
-            l_->PopTop(1); // pop error message
-            return false;
-        }
-        l_->LoadMul(ret, top);
-        return true;
-    }
-
-    inline void RecordTop(int off) {
-        RecoverTop();
-        top_ = l_->GetTopIndex() + off;
-    }
-
-    inline void RecoverTop() {
-        if (top_ >= 0)
-            l_->SetTop(top_);
-    }
-
-private:
-    xLuaState* l_;
-    int top_;
 };
 
 namespace detail {

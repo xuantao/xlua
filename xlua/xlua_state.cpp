@@ -511,7 +511,8 @@ xLuaGuard::xLuaGuard(xLuaState* l, int off) : l_(l) {
 }
 
 xLuaGuard::~xLuaGuard() {
-    lua_settop(l_->GetState(), top_);
+    if (l_)
+        l_->SetTop(top_);
 }
 
 xLuaState::xLuaState(lua_State* l, bool attach)
