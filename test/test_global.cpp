@@ -89,6 +89,20 @@ end
 
 )V0G0N";
 
+struct ObjTest {
+    ObjTest() {
+        printf("ObjTest Create\n");
+    }
+
+    ObjTest(const ObjTest&) {
+        printf("ObjTest Copy\n");
+    }
+
+    ~ObjTest() {
+        printf("ObjTest release\n");
+    }
+};
+
 void TestGlobal(xlua::xLuaState* l) {
     l->DoString(sLuaBuf, "test_global");
     {
@@ -175,6 +189,30 @@ void TestGlobal(xlua::xLuaState* l) {
 
         printf("test export global\n");
         call("TestExportGlobal", std::tie());
+    }
+
+    {
+        int a = 0;
+        void(*f)(void) = []() {
+            printf("xuantao a\n");
+        };
+        l->Push(f);
+        {
+            xlua::xLuaCaller call(l);
+            call(std::tie());
+        }
+
+        ObjTest obj;
+        std::function<void()> f2 = [obj] {
+            printf("obj test %p\n", &obj);
+        };
+        {
+            xlua::xLuaCaller call(l);
+            l->Push(f2);
+            call(std::tie());
+        }
+
+        lua_gc(l->GetState(), LUA_GCCOLLECT, 0);
     }
 
     LOG_TOP_(l);

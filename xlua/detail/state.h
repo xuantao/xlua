@@ -190,34 +190,6 @@ namespace detail {
         if (ret) *ret = ud_info;
         return true;
     }
-
-    template <typename Ry, typename... Args>
-    struct CFunc {
-        typedef Ry(*func_type)(Args...);
-
-        static int Dispatch(lua_State* l) {
-            auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
-            auto* f = (func_type*)lua_tocfunction(l, lua_upvalueindex(2));
-            //TODO: call
-            return 1;
-        }
-    };
-
-    //template <typename Ry, typename... Args>
-    //struct CFunc2 {
-    //    typedef Ry(Args...);
-
-    //    static int Dispatch(lua_State* l) {
-    //        auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
-    //        auto* f = lua_touserdata(l, lua_upvalueindex(2));
-
-    //        //TODO: check param, call function, push result
-    //        return 1;
-    //    }
-    //};
-
-
-
 } // namespace detail
 
 XLUA_NAMESPACE_END

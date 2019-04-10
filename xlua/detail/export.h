@@ -140,9 +140,10 @@ namespace detail {
                     return false;
                 }
 
-                 src_ptr = ary_obj->obj_;
-                 src = ary_obj->info_;
-            } else {
+                src_ptr = ary_obj->obj_;
+                src = ary_obj->info_;
+            }
+            else {
                 const TypeInfo* src_info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud->type_);
                 if (src_info == nullptr) {
                     LogError("unknown obj type");
@@ -155,7 +156,8 @@ namespace detail {
                     }
 
                     src_ptr = ::xLuaGetWeakObjPtr(ud->index_);
-                } else {
+                }
+                else {
                     src_ptr = ud->RawPtr();
                 }
 
@@ -173,7 +175,8 @@ namespace detail {
             Ty* d = nullptr;
             if (src->is_weak_obj) {
                 d = ToDerivedWeakPtr<Ty>(::xLuaGetWeakObjPtr(ud->index_));
-            } else {
+            }
+            else {
                 d = (Ty*)ToDerived(src_ptr, src);
             }
 
@@ -215,7 +218,8 @@ namespace detail {
 
             if (ud->type_ == UserDataCategory::kRawPtr) {
                 d = (Ty*)ToDerived(ud->obj_, ud->info_);
-            } else if (ud->type_ == UserDataCategory::kObjPtr) {
+            }
+            else if (ud->type_ == UserDataCategory::kObjPtr) {
                 if (ud->info_->is_weak_obj) {
                     if (ud->serial_ != ::xLuaGetWeakObjSerialNum(ud->index_)) {
                         LogError("obj is nil");
@@ -223,7 +227,8 @@ namespace detail {
                     }
 
                     d = ToDerivedWeakPtr<Ty>(::xLuaGetWeakObjPtr(ud->index_));
-                } else {
+                }
+                else {
                     auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                     if (ary_obj == nullptr|| ary_obj->serial_num_ != ud->serial_) {
                         LogError("obj is nil");
@@ -297,390 +302,47 @@ namespace detail {
     }
 
     namespace param {
-        /* 净化参数类型
-         * 导出类的类可以接受引用参数, 其它类型(数值, shared_ptr, weakobj_ptr)只能接受值类型参数
-        */
-        template <typename Ty>
-        struct Perify {
-            typedef typename std::decay<Ty>::type deacy_type;
-            typedef typename std::remove_volatile<typename std::remove_reference<Ty>::type>::type rm_rf_type;
-            typedef typename std::conditional<IsInternal<deacy_type>::value || IsExternal<deacy_type>::value,
-                Ty, rm_rf_type>::type type;
-        };
-
-        struct UdInfo {
-            bool is_nil;
-            const TypeInfo* info;
-        };
-
-        inline UdInfo GetUdInfo(xLuaState* l, int index, bool check_nil) {
-            UdInfo ud_info{ false, nullptr};
-            int l_ty = l->GetType(index);
-
-            if (l_ty == LUA_TNIL) {
-                ud_info.is_nil = true;
-            } else if (l_ty == LUA_TLIGHTUSERDATA) {
-#if XLUA_USE_LIGHT_USER_DATA
-                LightUserData ud = MakeLightPtr(lua_touserdata(l->GetState(), index));
-                if (!ud.IsLightData()) {
-                    // unknown val
-                } else if (ud.IsInternalType()) {
-                    ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
-                    if (obj)
-                        ud_info.info = obj->info_;
-                    if (check_nil)
-                        ud_info.is_nil = (obj == nullptr || obj->serial_num_ != ud.serial_);
-                } else {
-                    ud_info.info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
-                    if (ud_info.info->is_weak_obj && check_nil)
-                        ud_info.is_nil = (ud.serial_ == ::xLuaGetWeakObjSerialNum(ud.index_));
-                }
-#endif // XLUA_USE_LIGHT_USER_DATA
-            } else if (l_ty == LUA_TUSERDATA) {
-                FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
-                ud_info.info = ud->info_;
-                if (!check_nil) {
-                    if (ud->type_ == UserDataCategory::kObjPtr) {
-                        if (ud->info_->is_weak_obj) {
-                            ud_info.is_nil = (ud->serial_ == ::xLuaGetWeakObjSerialNum(ud->index_));
-                        } else {
-                            ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
-                            ud_info.is_nil = (obj == nullptr || obj->serial_num_ != obj->serial_num_);
-                        }
-                    }
-                }
-            }
-            return ud_info;
-        }
-
-        template <typename Ty>
-        inline bool IsExtendTypeCheck(xLuaState* l, int index, std::true_type) {
-            return ::xLuaIsType(l, index, Identity<Ty>());
-        }
-
-        template <typename Ty>
-        inline bool IsExtendTypeCheck(xLuaState* l, int index, std::false_type) {
-            return true;
-        }
-
-        template <typename Ty>
-        struct Checker {
-            typedef typename std::remove_cv<Ty>::type value_type;
-            static inline bool Do(xLuaState* l, int index, int param) {
-                using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
-                    typename std::conditional<IsExtendLoad<value_type>::value, tag_extend,
-                    typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_unknown>::type>::type>::type;
-                return Do<value_type>(l, index, param, tag());
-            }
-
-            template <typename U>
-            static inline bool Do(xLuaState* l, int index, int param, tag_unknown) {
-                return false;
-            }
-
-            template <typename U>
-            static inline bool Do(xLuaState* l, int index, int param, tag_enum) {
-                if (l->GetType(index) != LUA_TNUMBER) {
-                    LogError("param(%d) error, need:enum(number) got:%s", param, l->GetTypeName(index));
-                    return false;
-                }
-                return true;
-            }
-
-            template <typename U>
-            static inline bool Do(xLuaState* l, int index, int param, tag_extend) {
-                return IsExtendTypeCheck<U>(l, index, std::integral_constant<bool, IsExtendType<U>::value>());
-            }
-
-            template <typename U>
-            static inline bool Do(xLuaState* l, int index, int param, tag_declared) {
-                const TypeInfo* info = GetTypeInfoImpl<U>();
-                UdInfo ud = GetUdInfo(l, index, true);
-                if (ud.is_nil) {
-                    LogError("param(%d) error, need:%s got:nil", param, info->type_name);
-                    return false;
-                }
-                if (!IsBaseOf(info, ud.info)) {
-                    LogError("param(%d) error, need:%s got:%s", param, info->type_name, l->GetTypeName(index));
-                    return false;
-                }
-                return true;
-            }
-        };
-
-        template <typename Ty>
-        struct Checker<Ty*> {
-            typedef typename std::remove_cv<Ty>::type value_type;
-            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
-
-            static inline bool Do(xLuaState* l, int index, int param) {
-                const TypeInfo* info = GetTypeInfoImpl<value_type>();
-                UdInfo ud = GetUdInfo(l, index, false);
-                if (ud.is_nil || IsBaseOf(ud.info, info))
-                    return true;
-                LogError("param(%d) error, need:%s* got:%s", param, info->type_name, l->GetTypeName(index));
-                return false;
-            }
-        };
-
-        template <typename Ty>
-        struct Checker<std::shared_ptr<Ty>> {
-            typedef typename std::remove_cv<Ty>::type value_type;
-            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
-
-            static inline bool Do(xLuaState* l, int index, int param) {
-                int l_ty = l->GetType(index);
-                const TypeInfo* info = GetTypeInfoImpl<value_type>();
-                if (l_ty == LUA_TUSERDATA) {
-                    FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
-                    if (ud->type_ == UserDataCategory::kSharedPtr && IsBaseOf(info, ud->info_))
-                        return true;
-                } else if (l_ty == LUA_TNIL) {
-                    return true;
-                }
-
-                LogError("param(%d) error, need:std::shared_ptr<%s> got:%s", param, info->type_name, l->GetTypeName(index));
-                return false;
-            }
-        };
-
-        template <typename Ty>
-        struct Checker<xLuaWeakObjPtr<Ty>> {
-            static inline bool Do(xLuaState* l, int index, int param) {
-                return Checker<Ty*>::Do(l, index, param);
-            }
-        };
-
-        inline bool IsType_1(xLuaState* l, int index, int param, int ty, const char* need) {
-            if (l->GetType(index) == ty)
-                return true;
-            LogError("param(%d) error, need:%s got:%s", param, need, l->GetTypeName(index));
-            return false;
-        }
-
-        inline bool IsType_2(xLuaState* l, int index, int param, int ty, const char* need) {
-            int l_ty = l->GetType(index);
-            if (l_ty == ty || l_ty == LUA_TNIL)
-                return true;
-            LogError("param(%d) error, need:%s got:%s", param, need, l->GetTypeName(index));
-            return false;
-        }
-
-        template <typename Ty>
-        inline bool IsType(xLuaState* l, int index, int param) {
-            return Checker<Ty>::Do(l, index, param);
-        }
-
-        template <> inline bool IsType<bool>(xLuaState* l, int index, int param) {
-            return IsType_2(l, index, param, LUA_TBOOLEAN, "boolean");
-        }
-
-        template <> inline bool IsType<char>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "char(number)");
-        }
-
-        template <> inline bool IsType<unsigned char>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "unsigned char(number)");
-        }
-
-        template <> inline bool IsType<short>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "short(number)");
-        }
-
-        template <> inline bool IsType<unsigned short>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "unsigned short(number)");
-        }
-
-        template <> inline bool IsType<int>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "int(number)");
-        }
-
-        template <> inline bool IsType<unsigned int>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "unsigned int(number)");
-        }
-
-        template <> inline bool IsType<long>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "long(number)");
-        }
-
-        template <> inline bool IsType<unsigned long>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "unsigned long(number)");
-        }
-
-        template <> inline bool IsType<long long>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "short(number)");
-        }
-
-        template <> inline bool IsType<unsigned long long>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "unsigned long long(number)");
-        }
-
-        template <> inline bool IsType<float>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "float(number)");
-        }
-
-        template <> inline bool IsType<double>(xLuaState* l, int index, int param) {
-            return IsType_1(l, index, param, LUA_TNUMBER, "double(number)");
-        }
-
-        template <> inline bool IsType<char*>(xLuaState* l, int index, int param) {
-            return IsType_2(l, index, param, LUA_TSTRING, "char*(number)");
-        }
-
-        template <> inline bool IsType<const char*>(xLuaState* l, int index, int param) {
-            return IsType_2(l, index, param, LUA_TSTRING, "char*(number)");
-        }
-
-        template <> inline bool IsType<std::string>(xLuaState* l, int index, int param) {
-            return IsType_2(l, index, param, LUA_TSTRING, "std::string");
-        }
-
-        template <> inline bool IsType<void*>(xLuaState* l, int index, int param) {
-            return IsType_2(l, index, param, LUA_TLIGHTUSERDATA, "void*");
-        }
-
-        template <> inline bool IsType<const void*>(xLuaState* l, int index, int param) {
-            return IsType_2(l, index, param, LUA_TLIGHTUSERDATA, "void*");
-        }
-
-        template <> inline bool IsType<xLuaTable>(xLuaState* l, int index, int param) {
-            return IsType_2(l, index, param, LUA_TTABLE, "xLuaTable");
-        }
-
-        template <> inline bool IsType<xLuaFunction>(xLuaState* l, int index, int param) {
-            return IsType_2(l, index, param, LUA_TFUNCTION, "xLuaFunction");
-        }
-
-        inline void* GetUdPtr(xLuaState* l, int index, const TypeInfo* info) {
-            UserDataInfo ud_info;
-            if (!GetUserDataInfo(l->GetState(), index, &ud_info))
-                return nullptr;
-            if (!IsBaseOf(info, ud_info.info))
-                return nullptr;
-            return _XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info);
-        }
-
-        template <typename Ty, typename Ry>
-        struct Loader {
-            static Ry& Do(xLuaState* l, int index) {
-                Ty* ptr = static_cast<Ty*>(GetUdPtr(l, index, GetTypeInfoImpl<Ty>()));
-                assert(ptr);
-                return *ptr;
-            }
-        };
-
-        template <typename Ty, typename Ry>
-        struct Loader<Ty*, Ry> {
-            static Ry Do(xLuaState* l, int index) {
-                return static_cast<Ty*>(GetUdPtr(l, index, GetTypeInfoImpl<typename std::remove_const<Ty>::type>()));
-            }
-        };
-
-        template <typename Ty, typename Ry>
-        struct Loader<std::shared_ptr<Ty>, Ry> {
-            static Ry Do(xLuaState* l, int index) {
-                return l->Load<std::shared_ptr<Ty>>(index);
-            }
-        };
-
-        template <typename Ty, typename Ry>
-        struct Loader<xLuaWeakObjPtr<Ty>, Ry> {
-            static Ry Do(xLuaState* l, int index) {
-                Ty* ptr = GetUdPtr(l, index, GetTypeInfoImpl<Ty>());
-                return xLuaWeakObjPtr<Ty>(ptr);
-            }
-        };
-
-        template <typename... Ty>
-        inline bool DoCheck(xLuaState* l, int index) {
-            size_t count = 0;
-            int param = 0;
-            using els = int[];
-            (void)els { 0, (count += param::IsType<typename std::decay<Ty>::type>(l, index++, ++param) ? 1 : 0, 0)... };
-            return count == sizeof...(Ty);
-        }
-
         template <typename Ry, typename...Args>
-        inline bool Check(xLuaState* l, int index, Ry(*func)(Args...)) {
-            return DoCheck<Args...>(l, index);
+        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry(*func)(Args...)) {
+            return CheckParam<Args...>(l, index, lb);
         }
 
         template <typename Ty, typename Ry, typename...Args>
-        inline bool Check(xLuaState* l, int index, Ry(Ty::*func)(Args...)) {
-            return DoCheck<Args...>(l, index);
+        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry(Ty::*func)(Args...)) {
+            return CheckParam<Args...>(l, index, lb);
         }
 
         template <typename Ty, typename Ry, typename...Args>
-        inline bool Check(xLuaState* l, int index, Ry(Ty::*func)(Args...) const) {
-            return DoCheck<Args...>(l, index);;
+        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry(Ty::*func)(Args...) const) {
+            return CheckParam<Args...>(l, index, lb);
         }
 
         template <typename Ry>
-        inline bool Check(xLuaState* l, int index, Ry* var) {
-            return IsType<typename std::decay<Ry>::type>(l, index, 1);
+        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry* var) {
+            return IsType<typename std::decay<Ry>::type>(l, index, 1, lb);
         }
 
         template <typename Ty, typename Ry>
-        inline bool Check(xLuaState* l, int index, Ry Ty::*var) {
-            return IsType<typename std::decay<Ry>::type>(l, index, 1);
+        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry Ty::*var) {
+            return IsType<typename std::decay<Ry>::type>(l, index, 1, lb);
         }
 
-        template <typename Ry>
-        inline bool Check(xLuaState* l, int index, Ry(*func)(xLuaState*)) { return true; }
+        inline bool CheckMetaParam(xLuaState* l, int index, int(*func)(xLuaState*)) { return true; }
 
-        template <typename Ty, typename Ry>
-        inline bool Check(xLuaState* l, int index, Ry(Ty::*func)(xLuaState*)) {return true;}
+        template <typename Ty>
+        inline bool CheckMetaParam(xLuaState* l, int index, int(Ty::*func)(xLuaState*)) { return true; }
 
-        template <typename Ty, typename Ry>
-        inline bool Check(xLuaState* l, int index, Ry(Ty::*func)(xLuaState*) const) {return true;}
+        template <typename Ty>
+        inline bool CheckMetaParam(xLuaState* l, int index, int(Ty::*func)(xLuaState*) const) { return true; }
+
+        template <typename Ty>
+        inline bool CheckMetaParamEx(xLuaState* l, int index, int(*func)(Ty*, xLuaState*)) { return true; }
 
         template <typename Ty, typename Ry, typename...Args>
-        inline bool CheckEx(xLuaState* l, int index, Ry(*func)(Ty*, Args...)) {
-            return DoCheck<Args...>(l, index);
+        inline bool CheckMetaParamEx(xLuaState* l, int index, LogBuf& lb, Ry(*func)(Ty*, Args...)) {
+            return CheckParam<Args...>(l, index, lb);
         }
-
-        template <typename Ty, typename Ry>
-        inline bool CheckEx(xLuaState* l, int index, Ry(*func)(Ty*, xLuaState*)) { return true; }
     } // namespace param
-
-    template <typename Ty>
-    inline Ty LoadParam_Un(xLuaState* l, int index) {
-        return l->Load<typename std::decay<Ty>::type>(index);
-    }
-
-    //template <>
-    //inline char* LoadParam_Un<char*>(xLuaState* l, int index) {
-    //    static_assert(false, "can not load char*, only const char* accepted");
-    //    return nullptr; // const char* is expecial
-    //}
-
-    template <>
-    inline const char* LoadParam_Un<const char*>(xLuaState* l, int index) {
-        return l->Load<const char*>(index); // const char* is expecial
-    }
-
-    template <typename Ty>
-    inline Ty LoadParam(xLuaState* l, int index, tag_unknown) {
-        return LoadParam_Un<Ty>(l, index);
-    }
-
-    template <typename Ty>
-    inline Ty LoadParam(xLuaState* l, int index, tag_declared) {
-        return detail::param::Loader<typename std::decay<Ty>::type, Ty>::Do(l, index);
-    }
-
-    template <typename Ty>
-    inline Ty LoadParam(xLuaState* l, int index, tag_extend) {
-        return ::xLuaLoad(l, index, Identity<typename std::decay<Ty>::type>());
-    }
-
-    template <typename Ty>
-    inline Ty LoadParam(xLuaState* l, int index) {
-        using decay_ty = typename std::decay<Ty>::type;
-        using tag = typename std::conditional<IsInternal<decay_ty>::value || IsExternal<decay_ty>::value, tag_declared,
-            typename std::conditional<IsExtendLoad<decay_ty>::value, tag_extend, tag_unknown>::type>::type;
-        return LoadParam<Ty>(l, index, tag());
-    }
 
     template <bool value, typename Ty = int>
     using EnableIfT = typename std::enable_if<value, int>::type;
@@ -689,14 +351,14 @@ namespace detail {
     template <typename Ry, typename... Args>
     inline int MetaCall(xLuaState* l, Ry(*func)(Args...)) {
         int index = 0;
-        l->Push(func(LoadParam<typename param::Perify<Args>::type>(l, ++index)...));
+        l->Push(func(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...));
         return 1;
     }
 
     template <typename... Args>
     inline int MetaCall(xLuaState* l, void(*func)(Args...)) {
         int index = 0;
-        func(LoadParam<typename param::Perify<Args>::type>(l, ++index)...);
+        func(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...);
         return 0;
     }
 
@@ -704,7 +366,7 @@ namespace detail {
     template <typename Ty, typename Ry, typename... Args>
     inline int MetaCall(xLuaState* l, Ty* obj, Ry(*func)(Ty*, Args...)) {
         int index = 1;
-        l->Push(func(obj, LoadParam<typename param::Perify<Args>::type>(l, ++index)...));
+        l->Push(func(obj, param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...));
         return 1;
     }
 
@@ -716,7 +378,7 @@ namespace detail {
     template <typename Ty, typename... Args>
     inline int MetaCall(xLuaState* l, Ty* obj, void(*func)(Ty*, Args...)) {
         int index = 1;
-        func(obj, LoadParam<typename param::Perify<Args>::type>(l, ++index)...);
+        func(obj, param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...);
         return 0;
     }
 
@@ -724,28 +386,28 @@ namespace detail {
     template <typename Obj, typename Ty, typename Ry, typename... Args>
     inline int MetaCall(xLuaState* l, Obj* obj, Ry(Ty::*func)(Args...)) {
         int index = 1;
-        l->Push((obj->*func)(LoadParam<typename param::Perify<Args>::type>(l, ++index)...));
+        l->Push((obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...));
         return 1;
     }
 
     template <typename Obj, typename Ty, typename Ry, typename... Args>
     inline int MetaCall(xLuaState* l, Obj* obj, Ry(Ty::*func)(Args...) const) {
         int index = 1;
-        l->Push((obj->*func)(LoadParam<typename param::Perify<Args>::type>(l, ++index)...));
+        l->Push((obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...));
         return 1;
     }
 
     template <typename Obj, typename Ty, typename... Args>
     inline int MetaCall(xLuaState* l, Obj* obj, void (Ty::*func)(Args...)) {
         int index = 1;
-        (obj->*func)(LoadParam<typename param::Perify<Args>::type>(l, ++index)...);
+        (obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...);
         return 0;
     }
 
     template <typename Obj, typename Ty, typename... Args>
     inline int MetaCall(xLuaState* l, Obj* obj, void (Ty::*func)(Args...) const) {
         int index = 1;
-        (obj->*func)(LoadParam<typename param::Perify<Args>::type>(l, ++index)...);
+        (obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...);
         return 0;
     }
 
@@ -886,15 +548,16 @@ namespace detail {
     struct MetaFunc {
         template <typename Fy, typename EnableIfT<std::is_member_function_pointer<Fy>::value> = 0>
         static inline int Call(xLuaState* l, const TypeInfo* info, const char* func_name, Fy f) {
+            LogBufCache<> lb;
             Ty* obj = static_cast<Ty*>(GetMetaCallObj(l, info));
             if (obj == nullptr) {
-                LogError("attempt call function[%s:%s] failed, obj is nil", info->type_name, func_name);
-                luaL_error(l->GetState(), "object is nil");
+                l->GetCallStack(lb);
+                luaL_error(l->GetState(), "attempt call function[%s:%s] failed, obj is nil\n%s", info->type_name, func_name, lb.Finalize());
                 return 0;
             }
-            if (!param::Check(l, 2, f)) {
-                LogError("attempt call function[%s:%s] failed, parameter is not allow", info->type_name, func_name);
-                luaL_error(l->GetState(), "parameter error");
+            if (!param::CheckMetaParam(l, 2, lb, f)) {
+                l->GetCallStack(lb);
+                luaL_error(l->GetState(), "attempt call function[%s:%s] failed, parameter is not allow\n%s", info->type_name, func_name, lb.Finalize());
                 return 0;
             }
 
@@ -903,9 +566,10 @@ namespace detail {
 
         template <typename Fy, typename EnableIfT<!std::is_member_function_pointer<Fy>::value> = 0>
         static inline int Call(xLuaState* l, const TypeInfo* info, const char* func_name, Fy f) {
-            if (!param::Check(l, 1, f)) {
-                LogError("attempt call function [%s.%s] failed, parameter is not allow", info->type_name, func_name);
-                luaL_error(l->GetState(), "parameter error");
+            LogBufCache<> lb;
+            if (!param::CheckMetaParam(l, 1, lb, f)) {
+                l->GetCallStack(lb);
+                luaL_error(l->GetState(), "attempt call function[%s:%s] failed, parameter is not allow\n%s", info->type_name, func_name, lb.Finalize());
                 return 0;
             }
 
@@ -917,15 +581,16 @@ namespace detail {
     struct MetaFuncEx {
         template <typename Fy>
         static inline int Call(xLuaState* l, const TypeInfo* info, const char* func_name, Fy f) {
+            LogBufCache<> lb;
             Ty* obj = static_cast<Ty*>(GetMetaCallObj(l, info));
             if (obj == nullptr) {
-                LogError("attempt call function[%s:%s] failed, obj is nil", info->type_name, func_name);
-                luaL_error(l->GetState(), "object is nil");
+                l->GetCallStack(lb);
+                luaL_error(l->GetState(), "attempt call function[%s:%s] failed, obj is nil\n%s", info->type_name, func_name, lb.Finalize());
                 return 0;
             }
-            if (!param::CheckEx(l, 2, f)) {
-                LogError("attempt call function[%s:%s] failed, parameter is not allow", info->type_name, func_name);
-                luaL_error(l->GetState(), "parameter error");
+            if (!param::CheckMetaParamEx(l, 2, lb, f)) {
+                l->GetCallStack(lb);
+                luaL_error(l->GetState(), "attempt call function[%s:%s] failed, parameter is not allow\n%s", info->type_name, func_name, lb.Finalize());
                 return 0;
             }
 
@@ -942,12 +607,13 @@ namespace detail {
 
         template <typename Fy, typename EnableIfT<IsMember<Fy>::value, int> = 0>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
-            if (!param::Check(l, 3, f)) {
-                LogError("attempt set var [%s.%s] failed, parameter is not allow", dst->type_name, var);
-                luaL_error(l->GetState(), "parameter error");
-            } else {
+            //LogBufCache<> lb;
+            //if (!param::CheckMetaParam(l, 3, lb, f)) {
+            //    l->GetCallStack(lb);
+            //    luaL_error(l->GetState(), "attempt set var [%s.%s] failed, parameter is not allow\n%s", dst->type_name, var, lb.Finalize());
+            //} else {
                 MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
-            }
+            //}
         }
 
         template <typename Fy, typename EnableIfT<!IsMember<Fy>::value, int> = 0>
@@ -957,12 +623,13 @@ namespace detail {
 
         template <typename Fy, typename EnableIfT<!IsMember<Fy>::value, int> = 0>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
-            if (!param::Check(l, 3, f)) {
-                LogError("attempt set var [%s.%s] failed, parameter is not allow", dst->type_name, var);
-                luaL_error(l->GetState(), "parameter error");
-            } else {
+            //LogBufCache<> lb;
+            //if (!param::CheckMetaParam(l, 3, lb, f)) {
+            //    l->GetCallStack(lb);
+            //    luaL_error(l->GetState(), "attempt set var [%s.%s] failed, parameter is not allow\n%s", dst->type_name, var, lb.Finalize());
+            //} else {
                 MetaSet(l, f);
-            }
+            //}
         }
 
         static inline void Get(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, std::nullptr_t) {
@@ -983,11 +650,13 @@ namespace detail {
 
         template <typename Fy>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
-            if (!param::CheckEx(l, 3, f)) {
-                luaL_error(l->GetState(), "attempt set var [%s.%s] failed, parameter is not allow", dst->type_name, var);
-            } else {
+            //LogBufCache<> lb;
+            //if (!param::CheckMetaParamEx(l, 3, lb, f)) {
+            //    l->GetCallStack(lb);
+            //    luaL_error(l->GetState(), "attempt set var [%s.%s] failed, parameter is not allow\n%s", dst->type_name, var, lb.Finalize());
+            //} else {
                 MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
-            }
+            //}
         }
 
         static inline void Get(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, std::nullptr_t) {

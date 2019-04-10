@@ -54,8 +54,14 @@ namespace detail {
         kObjPtr,
     };
 
+    struct UserDataBase
+    {
+        virtual ~UserDataBase() {}
+        virtual void* GetDataPtr() = 0;
+    };
+
     /* user data value */
-    struct FullUserData {
+    struct FullUserData : public UserDataBase {
         FullUserData(UserDataCategory type, void* obj, const TypeInfo* info)
             : type_(type)
             , info_(info)
@@ -70,7 +76,7 @@ namespace detail {
         }
 
         virtual ~FullUserData() {}
-        virtual void* GetDataPtr() { return nullptr; }
+        void* GetDataPtr() override { return nullptr; }
 
         UserDataCategory type_;
         const TypeInfo* info_;
@@ -81,6 +87,21 @@ namespace detail {
                 int32_t serial_;
             };
         };
+    };
+
+    /* 独立用户数据 */
+    template <typename Ty>
+    class LonelyUserData : public UserDataBase {
+    public:
+        LonelyUserData(const Ty& val) : val_(val) { }
+        LonelyUserData(Ty&& val) : val_(std::forward<Ty>(val)) { }
+        virtual ~LonelyUserData() { }
+
+    public:
+        void* GetDataPtr() final { return &val_; }
+
+    private:
+        Ty val_;
     };
 
     /* 日志输出 */
@@ -216,6 +237,75 @@ namespace detail {
         assert(false);
         return nullptr;
     }
+
+    /* 日志缓存 */
+    class LogBuf {
+    public:
+        LogBuf(char* buf, size_t capacity) : buf_(buf), capacity_(capacity) {
+            buf_[0] = 0;
+        }
+
+    public:
+        inline const char* Data() const { return buf_; }
+        inline char* Buf() const { return buf_; }
+        inline size_t Size() const { return write_; }
+        inline size_t Capacity() const { return capacity_; }
+
+        inline void Log(const char* fmt, ...) {
+            if (write_ >= capacity_)
+                return;
+
+            va_list args;
+            va_start(args, fmt);
+            int n = vsnprintf(buf_ + write_, capacity_ - write_, fmt, args);
+            va_end(args);
+            if (n > 0) {
+                write_ += n;
+                if (write_ < capacity_)
+                    buf_[write_++] = '\n';
+            }
+        }
+
+        inline void TrimEnd() {
+            if (write_ && write_ <= capacity_ && buf_[write_-1] == '\n')
+                buf_[--write_] = 0; // remove last '\n'
+        }
+
+        inline const char* Finalize() {
+            TrimEnd();
+            return buf_;
+        }
+
+        inline void Reset() {
+            write_ = 0;
+            buf_[0] = 0;
+        }
+
+    private:
+        size_t write_ = 0;
+        size_t capacity_;
+        char* buf_;
+    };
+
+    template <size_t N = XLUA_MAX_BUFFER_CACHE>
+    class LogBufCache : public LogBuf {
+    public:
+        LogBufCache() : LogBuf(data_, N) {
+        }
+
+    private:
+        char data_[N];
+    };
+
+    template <>
+    class LogBufCache<0> : public LogBuf {
+        LogBufCache() : LogBuf(data_, 1) {
+        }
+    private:
+        char data_[1];
+    };
+
+    using DummyLogBuf = LogBufCache<0>;
 } // namespace detail
 
 XLUA_NAMESPACE_END

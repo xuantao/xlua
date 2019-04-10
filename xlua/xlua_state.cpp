@@ -6,34 +6,26 @@ XLUA_NAMESPACE_BEGIN
 #define _XLUA_GET_STATE(l)  xlua::detail::GlobalVar::GetInstance()->GetState(l)
 
 namespace detail {
-    static void TraceCallStack(lua_State* L, char* buf, size_t size) {
-        char* dst = buf;
-        int len = (int)size;
+    static void TraceCallStack(lua_State* L, LogBuf& lb) {
         int level = 1;
         lua_Debug dbg;
 
-        if (size)
-            *buf = 0;
+        lb.Log("stack taceback:");
+        while (lua_getstack(L, level++, &dbg)) {
+            lua_getinfo(L, "nSl", &dbg);
 
-        while (len > 0 && lua_getstack(L, level, &dbg)) {
-            lua_getinfo(L, "Sl", &dbg);
-            int l = snprintf(dst, len, "%s:%d\n", dbg.source, dbg.currentline);
-            dst += l;
-            len -= l;
-
-            ++level;
+            if (dbg.name)
+                lb.Log("    %s:%d, in faild '%s'", dbg.source, dbg.currentline, dbg.name);
+            else
+                lb.Log("    %s:%d, in main chunk", dbg.source, dbg.currentline);
         }
-
-        // remove the last '\n'
-        int write = (int)size - len - 1;
-        if (write > 0 && buf[write] == '\n')
-            buf[write] = 0;
+        lb.TrimEnd();
     };
 
     static void LogCallStack(lua_State* l) {
-        char buf[XLUA_MAX_BUFFER_CACHE];
-        TraceCallStack(l, buf, XLUA_MAX_BUFFER_CACHE);
-        xLuaLogError(buf);
+        LogBufCache<> lb;
+        TraceCallStack(l, lb);
+        xLuaLogError(lb.Data());
     }
 
     static bool HasGlobal(const TypeInfo* info) {
@@ -489,6 +481,12 @@ namespace detail {
             lua_rawgeti(l, LUA_REGISTRYINDEX, xl->meta_table_ref_);
             return 1;
         }
+
+        static int LuaLonlyGc(lua_State* l) {
+            auto* ud = static_cast<UserDataBase*>(lua_touserdata(l, 1));
+            ud->~UserDataBase();    // 析构对象
+            return 0;
+        }
     };
 }
 
@@ -535,8 +533,8 @@ void xLuaState::LogCallStack() const {
     detail::LogCallStack(state_);
 }
 
-void xLuaState::GetCallStack(char* buf, size_t size) const {
-    detail::TraceCallStack(state_, buf, size);
+void xLuaState::GetCallStack(detail::LogBuf& lb) const {
+    detail::TraceCallStack(state_, lb);
 }
 
 const char* xLuaState::GetTypeName(int index) {
@@ -792,6 +790,15 @@ bool xLuaState::InitEnv(const char* export_module,
     lua_pop(state_, 1);             // light user data
     assert(GetTopIndex() == 0);
 #endif // XLUA_USE_LIGHT_USER_DATA
+
+    lua_createtable(state_, 0, 2);
+    lua_pushstring(state_, "lonly_user_data");
+    lua_setfield(state_, -2, "__name");
+
+    lua_pushcfunction(state_, &detail::MetaFuncs::LuaLonlyGc);
+    lua_setfield(state_, -2, "__gc");
+
+    lonly_user_data_ref_ = luaL_ref(state_, LUA_REGISTRYINDEX);
 
     InitConsts(export_module, consts);
 

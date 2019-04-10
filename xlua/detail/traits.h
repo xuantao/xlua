@@ -20,6 +20,21 @@ namespace detail {
     template <size_t N>
     using make_index_sequence_t = typename make_index_sequence<N>::type;
 
+    template <typename Ty>
+    struct AddReference {
+        typedef Ty& type;
+    };
+
+    template <typename Ty>
+    struct AddReference<Ty&> {
+        typedef Ty& type;
+    };
+
+    template <>
+    struct AddReference<void> {
+        typedef void type;
+    };
+
     template<typename Ty>
     struct IsInternal {
         template <typename U> static auto Check(int)->decltype(std::declval<U>().xlua_obj_index_);
