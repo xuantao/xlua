@@ -1,9 +1,9 @@
 ﻿#pragma once
 #include "xlua_config.h"
-#include <lua.hpp>
-#include <type_traits>
-#include <cstdint>
-#include <cassert>
+//#include <lua.hpp>
+//#include <type_traits>
+//#include <cstdint>
+//#include <cassert>
 
 /* 名字空间 */
 #define XLUA_NAMESPACE_BEGIN    namespace xlua {

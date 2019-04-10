@@ -203,18 +203,20 @@ namespace detail {
         }
     };
 
-    template <typename Ry, typename... Args>
-    struct CFunc {
-        typedef Ry(Args...);
+    //template <typename Ry, typename... Args>
+    //struct CFunc2 {
+    //    typedef Ry(Args...);
 
-        static int Dispatch(lua_State* l) {
-            auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
-            auto* f = lua_touserdata(l, lua_upvalueindex(2));
-            //TODO: call
-            return 1;
-        }
+    //    static int Dispatch(lua_State* l) {
+    //        auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
+    //        auto* f = lua_touserdata(l, lua_upvalueindex(2));
 
-    };
+    //        //TODO: check param, call function, push result
+    //        return 1;
+    //    }
+    //};
+
+
 
 } // namespace detail
 

@@ -591,16 +591,8 @@ namespace detail {
             }
         };
 
-        //template <typename Ty>
-        //inline bool DoCheckParam(xLuaState* l, int index, int param) {
-        //    //using decay_ty = typename std::decay<Ty>::type;
-        //    //static_assert(!std::is_same<decay_ty, char*>::value || std::is_const<Ty>::value,
-        //    //    "only accept const char* paramenter");
-        //    return param::IsType<typename std::decay<Ty>::type>(l, index, param);
-        //}
-
         template <typename... Ty>
-        inline bool DoCheckParams(xLuaState* l, int index) {
+        inline bool DoCheck(xLuaState* l, int index) {
             size_t count = 0;
             int param = 0;
             using els = int[];
@@ -610,17 +602,17 @@ namespace detail {
 
         template <typename Ry, typename...Args>
         inline bool Check(xLuaState* l, int index, Ry(*func)(Args...)) {
-            return DoCheckParams<Args...>(l, index);
+            return DoCheck<Args...>(l, index);
         }
 
         template <typename Ty, typename Ry, typename...Args>
         inline bool Check(xLuaState* l, int index, Ry(Ty::*func)(Args...)) {
-            return DoCheckParams<Args...>(l, index);
+            return DoCheck<Args...>(l, index);
         }
 
         template <typename Ty, typename Ry, typename...Args>
         inline bool Check(xLuaState* l, int index, Ry(Ty::*func)(Args...) const) {
-            return DoCheckParams<Args...>(l, index);;
+            return DoCheck<Args...>(l, index);;
         }
 
         template <typename Ry>
@@ -644,7 +636,7 @@ namespace detail {
 
         template <typename Ty, typename Ry, typename...Args>
         inline bool CheckEx(xLuaState* l, int index, Ry(*func)(Ty*, Args...)) {
-            return DoCheckParams<Args...>(l, index);
+            return DoCheck<Args...>(l, index);
         }
 
         template <typename Ty, typename Ry>

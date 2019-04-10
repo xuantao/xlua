@@ -39,11 +39,23 @@ function TestMultyInherit(quard)
     print("TestMultyInherit", quard:AreaSize(), quard.type)
 end
 
-function TestTriangle(quard, triangle)
+function TestTriangle_1(quard, triangle)
     quard:AddTriangle_1(triangle)
     quard:AddTriangle_2(triangle)
     quard:AddTriangle_3(triangle)
     quard:AddTriangle_4(triangle)
+end
+
+function TestTriangle_2(quard, triangle)
+    TestTriangle_1(quard, triangle)
+end
+
+function TestTriangle(quard, triangle)
+    --quard:AddTriangle_1(triangle)
+    --quard:AddTriangle_2(triangle)
+    --quard:AddTriangle_3(triangle)
+    --quard:AddTriangle_4(triangle)
+    TestTriangle_2(quard, triangle)
 end
 
 function TestTriangleNullptr(quard)
