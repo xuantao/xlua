@@ -6,26 +6,38 @@ XLUA_NAMESPACE_BEGIN
 #define _XLUA_GET_STATE(l)  xlua::detail::GlobalVar::GetInstance()->GetState(l)
 
 namespace detail {
-    static void TraceCallStack(lua_State* L, LogBuf& lb) {
+    static void TraceCallStack(lua_State* L, xLuaLogBuffer& lb) {
         int level = 1;
         lua_Debug dbg;
 
         lb.Log("stack taceback:");
-        while (lua_getstack(L, level++, &dbg)) {
+        while (lua_getstack(L, level, &dbg)) {
             lua_getinfo(L, "nSl", &dbg);
+            ++level;
 
             if (dbg.name)
                 lb.Log("    %s:%d, in faild '%s'", dbg.source, dbg.currentline, dbg.name);
             else
                 lb.Log("    %s:%d, in main chunk", dbg.source, dbg.currentline);
         }
-        lb.TrimEnd();
+
+        if (level == 1)
+            lb.Log("    in C?");
     };
 
-    static void LogCallStack(lua_State* l) {
+    static void LogWithStack(lua_State* l, const char* fmt, ...) {
         LogBufCache<> lb;
+        {
+            char tmp[XLUA_MAX_BUFFER_CACHE];
+            va_list args;
+            va_start(args, fmt);
+            int n = vsnprintf(tmp, XLUA_MAX_BUFFER_CACHE, fmt, args);
+            va_end(args);
+            lb.Log(tmp);
+        }
+
         TraceCallStack(l, lb);
-        xLuaLogError(lb.Data());
+        LogError(lb.Finalize());
     }
 
     static bool HasGlobal(const TypeInfo* info) {
@@ -42,33 +54,26 @@ namespace detail {
         if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
             auto ud = MakeLightPtr(lua_touserdata(l, 1));
-            if (!ud.IsLightData()) {
-                LogError("unknown obj");
+            if (!ud.IsLightData())
                 return false;
-            }
 
             if (ud.IsInternalType()) {
                 auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
                 return (ary_obj != nullptr && ary_obj->serial_num_ == ud.serial_);
             } else {
                 const auto* src_info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
-                if (src_info == nullptr) {
-                    LogError("unknown obj type");
+                if (src_info == nullptr)
                     return false;
-                }
 
-                if (src_info->is_weak_obj) {
+                if (src_info->is_weak_obj)
                     return (ud.serial_ == xLuaGetWeakObjSerialNum(ud.index_));
-                }
                 return true;
             }
 #endif // XLUA_USE_LIGHT_USER_DATA
         } else if (l_ty == LUA_TUSERDATA) {
             auto* ud = static_cast<FullUserData*>(lua_touserdata(l, 1));
-            if (ud == nullptr) {
-                LogError("unknown obj");
+            if (ud == nullptr)
                 return false;
-            }
 
             if (ud->type_ == UserDataCategory::kObjPtr) {
                 if (ud->info_->is_weak_obj) {
@@ -93,26 +98,21 @@ namespace detail {
 
             UserDataInfo ud_info{ false, nullptr, nullptr, nullptr };
             if (!GetUserDataInfo(l, 1, &ud_info)) {
-                LogError("meta \"__index\" object is nullptr");
-                LogCallStack(l);
+                LogWithStack(l, "meta \"__index\" object is nullptr");
                 return 0;
             }
 
-            //int st = lua_getfield(l, -2, "__name");
-            //const char* name = lua_tostring(l, -1);
-            //lua_pop(l, 1);
-
             if (ty != LUA_TLIGHTUSERDATA) {
-                LogError("type:[%s] member:[%s] is not exist", ud_info.info->type_name, lua_tostring(l, 2));
-                LogCallStack(l);
+                const char* name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] is not exist", ud_info.info->type_name, name ? name : "?");
                 return 0;
             }
 
             auto* mem = (MemberVar*)lua_touserdata(l, -1);
             assert(mem->name);
             if (mem->getter == nullptr) {
-                LogError("type:[%s] member:[%s] can not been read", ud_info.info->type_name, lua_tostring(l, 2));
-                LogCallStack(l);
+                const char* name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] can not been read", ud_info.info->type_name, name ? name : "?");
                 return 0;
             }
 
@@ -124,8 +124,7 @@ namespace detail {
         static int LuaNewIndex(lua_State* l) {
             UserDataInfo ud_info{ false, nullptr, nullptr, nullptr };
             if (!GetUserDataInfo(l, 1, &ud_info)) {
-                LogError("meta \"__newindex\" object is nullptr");
-                LogCallStack(l);
+                LogWithStack(l, "meta \"__newindex\" object is nullptr");
                 return 0;
             }
 
@@ -133,16 +132,16 @@ namespace detail {
             lua_pushvalue(l, 2);        // 5: copy_key
             int ty = lua_rawget(l, -2); // -1: key, -2: metatable
             if (ty != LUA_TLIGHTUSERDATA) {
-                LogError("type:[%s] member:[%s] is not exist", ud_info.info->type_name, lua_tostring(l, 2));
-                LogCallStack(l);
+                const char* name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] is not exist", ud_info.info->type_name, name ? name : "?");
                 return 0;
             }
 
             auto* mem = (MemberVar*)lua_touserdata(l, -1);
             assert(mem->name);
             if (mem->setter == nullptr) {
-                LogError("type:[%s] member:[%s] is read only", ud_info.info->type_name, lua_tostring(l, 2));
-                LogCallStack(l);
+                const char* name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] is read only", ud_info.info->type_name, name ? name : "?");
                 return 0;
             }
 
@@ -175,8 +174,7 @@ namespace detail {
         static int LuaLightPtrIndex(lua_State* l) {
             UserDataInfo ud_info{ false, nullptr, nullptr, nullptr };
             if (!GetUserDataInfo(l, 1, &ud_info)) {
-                LogError("meta \"__index\" object is nullptr");
-                LogCallStack(l);
+                LogWithStack(l, "meta \"__index\" object is nullptr");
                 return 0;
             }
 
@@ -189,16 +187,16 @@ namespace detail {
                 return 1;   // function
 
             if (ty != LUA_TLIGHTUSERDATA) {
-                LogError("type:[%s] member:[%s] is not exist", ud_info.info->type_name, lua_tostring(l, 2));
-                LogCallStack(l);
+                const char* name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] is not exist", ud_info.info->type_name, name ? name : "?");
                 return 0;
             }
 
             auto* mem = (MemberVar*)lua_touserdata(l, -1);
             assert(mem->name);
             if (mem->getter == nullptr) {
-                LogError("type:[%s] member:[%s] can not been read", ud_info.info->type_name, lua_tostring(l, 2));
-                LogCallStack(l);
+                const char* name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] can not been read", ud_info.info->type_name, name ? name : "?");
                 return 0;
             }
 
@@ -210,8 +208,7 @@ namespace detail {
         static int LuaLightPtrNewIndex(lua_State* l) {
             UserDataInfo ud_info{ false, nullptr, nullptr, nullptr };
             if (!GetUserDataInfo(l, 1, &ud_info)) {
-                LogError("meta \"__newindex\" object is nullptr");
-                LogCallStack(l);
+                LogWithStack(l, "meta \"__index\" object is nullptr");
                 return 0;
             }
 
@@ -220,16 +217,16 @@ namespace detail {
             lua_rawgeti(l, -1, ud_info.info->index);
             lua_pushvalue(l, 2);    // copy key to top
             if (lua_rawget(l, -2) != LUA_TLIGHTUSERDATA) {
-                LogError("type:[%s] member:[%s] is not exist", ud_info.info->type_name, lua_tostring(l, 2));
-                LogCallStack(l);
+                const char* name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] is not exist", ud_info.info->type_name, name ? name : "?");
                 return 0;
             }
 
             auto* mem = (MemberVar*)lua_touserdata(l, -1);
             assert(mem->name);
             if (mem->setter == nullptr) {
-                LogError("type:[%s] member:[%s] is read only", ud_info.info->type_name, lua_tostring(l, 2));
-                LogCallStack(l);
+                const char* name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] is read only", ud_info.info->type_name, name ? name : "?");
                 return 0;
             }
 
@@ -248,8 +245,10 @@ namespace detail {
             if (ty != LUA_TLIGHTUSERDATA) {
                 lua_pushstring(l, "__name");
                 lua_rawget(l, 3);
-                LogError("type:[%s] member:[%s] is not exist", lua_tostring(l, -1), lua_tostring(l, 2));
-                LogCallStack(l);
+
+                const char* table_name = lua_tostring(l, -1);
+                const char* member_name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] is not exist", table_name ? table_name : "?", member_name ? member_name : "?");
                 return 0;
             }
 
@@ -258,8 +257,10 @@ namespace detail {
             if (mem->getter == nullptr) {
                 lua_pushstring(l, "__name");
                 lua_rawget(l, 3);
-                LogError("type:[%s] member:[%s] can not been read", lua_tostring(l, -1), lua_tostring(l, 2));
-                LogCallStack(l);
+
+                const char* table_name = lua_tostring(l, -1);
+                const char* member_name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] can not been read", table_name ? table_name : "?", member_name ? member_name : "?");
                 return 0;
             }
 
@@ -275,8 +276,10 @@ namespace detail {
             if (ty != LUA_TLIGHTUSERDATA) {
                 lua_pushstring(l, "__name");
                 lua_rawget(l, 4);
-                LogError("type:[%s] member:[%s] is not exist", lua_tostring(l, -1), lua_tostring(l, 2));
-                LogCallStack(l);
+
+                const char* table_name = lua_tostring(l, -1);
+                const char* member_name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] is not exist", table_name ? table_name : "?", member_name ? member_name : "?");
                 return 0;
             }
 
@@ -285,8 +288,10 @@ namespace detail {
             if (mem->setter == nullptr) {
                 lua_pushstring(l, "__name");
                 lua_rawget(l, 4);
-                LogError("type:[%s] member:[%s] is ready only", lua_tostring(l, -1), lua_tostring(l, 2));
-                LogCallStack(l);
+
+                const char* table_name = lua_tostring(l, -1);
+                const char* member_name = lua_tostring(l, 2);
+                LogWithStack(l, "type:[%s] member:[%s] is ready only", table_name ? table_name : "?", member_name ? member_name : "?");
                 return 0;
             }
 
@@ -300,8 +305,7 @@ namespace detail {
             if (lua_rawget(l, 1) != LUA_TSTRING || lua_isstring(l, 2) == 0)
                 return 0;
 
-            LogError("const Type:[%s] member:[%s] does not exist", lua_tostring(l, -1), lua_tostring(l, 2));
-            LogCallStack(l);
+            LogWithStack(l, "const Type:[%s] member:[%s] does not exist", lua_tostring(l, -1), lua_tostring(l, 2));
             return 0;
         }
 
@@ -310,8 +314,7 @@ namespace detail {
             if (lua_rawget(l, 1) != LUA_TSTRING || lua_isstring(l, 2) == 0)
                 return 0;
 
-            LogError("const Type:[%s] can not add new member:[%s]", lua_tostring(l, -1), lua_tostring(l, 2));
-            LogCallStack(l);
+            LogWithStack(l, "const Type:[%s] can not add new member:[%s]", lua_tostring(l, -1), lua_tostring(l, 2));
             return 0;
         }
 
@@ -319,9 +322,8 @@ namespace detail {
             const char* dst_name = lua_tostring(l, 2);
             const TypeInfo* dst_info = GlobalVar::GetInstance()->GetTypeInfo(dst_name);
             if (dst_info == nullptr) {
-                LogError("can not find dest type info[%s]", dst_name ? dst_name : "");
-                LogCallStack(l);
                 lua_pushnil(l);
+                LogWithStack(l, "can not find dest type info[%s]", dst_name ? dst_name : "");
                 return 1;
             }
 
@@ -329,20 +331,15 @@ namespace detail {
             if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_USE_LIGHT_USER_DATA
                 auto ud = MakeLightPtr(lua_touserdata(l, 1));
+                LogBufCache<> lb;
                 if (ud.Ptr() == nullptr) {
-                    LogError("unknown obj");
-                    LogCallStack(l);
                     lua_pushnil(l);
+                    LogWithStack(l, "unknown obj");
                     return 1;
                 }
 
-                //if (IsBaseOf(dst_info, ud->info_)) {
-                //    lua_pushvalue(l, 1);
-                //    return 1;   // not nessasery
-                //}
-
-                if (!dst_info->caster->ToDerived(&ud)) {
-                    LogCallStack(l);
+                if (!dst_info->caster->ToDerived(&ud, lb)) {
+                    LogWithStack(l, lb.Finalize());
                     lua_pushnil(l);
                     return 1;
                 }
@@ -350,17 +347,16 @@ namespace detail {
                 lua_pushlightuserdata(l, ud.Ptr());
                 return 1;
 #else
-                LogError("unknown obj");
-                LogCallStack(l);
                 lua_pushnil(l);
+                LogWithStack(l, "unknown obj");
                 return 1;
 #endif // XLUA_USE_LIGHT_USER_DATA
             } else if (l_ty == LUA_TUSERDATA) {
                 auto* ud = static_cast<FullUserData*>(lua_touserdata(l, 1));
+                LogBufCache<> lb;
                 if (ud == nullptr || ud->info_ == nullptr) {
-                    LogError("unknown obj");
-                    LogCallStack(l);
                     lua_pushnil(l);
+                    LogWithStack(l, "unknown obj");
                     return 1;
                 }
 
@@ -369,8 +365,8 @@ namespace detail {
                     return 1;   // not nessasery
                 }
 
-                if (!dst_info->caster->ToDerived(ud)) {
-                    LogCallStack(l);
+                if (!dst_info->caster->ToDerived(ud, lb)) {
+                    LogWithStack(l, lb.Finalize());
                     lua_pushnil(l);
                     return 1;
                 }
@@ -383,9 +379,8 @@ namespace detail {
                 lua_pushvalue(l, 1);        // copy object to stack top
                 return 1;
             } else {
-                LogError("can not cast unknown value");
-                LogCallStack(l);
                 lua_pushnil(l);
+                LogWithStack(l, "can not cast unknown value");
                 return 1;
             }
         }
@@ -393,8 +388,6 @@ namespace detail {
         static int LuaIsValid(lua_State* l) {
             bool isValid = IsObjValid(l);
             lua_pushboolean(l, isValid);
-            if (!isValid)
-                LogCallStack(l);
             return 1;
         }
 
@@ -503,11 +496,11 @@ void xLuaObjBase::UnRef() {
 }
 
 xLuaGuard::xLuaGuard(xLuaState* l) : l_(l) {
-    top_ = l->GetTopIndex();
+    top_ = l->GetTop();
 }
 
 xLuaGuard::xLuaGuard(xLuaState* l, int off) : l_(l) {
-    top_ = l_->GetTopIndex() + off;
+    top_ = l_->GetTop() + off;
 }
 
 xLuaGuard::~xLuaGuard() {
@@ -527,14 +520,15 @@ xLuaState::~xLuaState() {
 void xLuaState::Release() {
     auto global = detail::GlobalVar::GetInstance();
     assert(global != nullptr);
+
+    if (!attach_)
+        lua_close(state_);
+    else
+        lua_gc(state_, LUA_GCCOLLECT, 0);
     global->Destory(this);
 }
 
-void xLuaState::LogCallStack() const {
-    detail::LogCallStack(state_);
-}
-
-void xLuaState::GetCallStack(detail::LogBuf& lb) const {
+void xLuaState::GetCallStack(xLuaLogBuffer& lb) const {
     detail::TraceCallStack(state_, lb);
 }
 
@@ -602,32 +596,36 @@ bool xLuaState::DoString(const char* buff, const char* chunk) {
 }
 
 int xLuaState::LoadGlobal(const char* path) {
-    if (path == nullptr || *path == 0)
+    if (path == nullptr || *path == 0) {
+        lua_pushnil(state_);
         return LUA_TNIL;
+    }
 
     lua_pushglobaltable(state_);
     while (const char* sub = ::strchr(path, '.')) {
         lua_pushlstring(state_, path, sub - path);
-        if (lua_gettable(state_, -2) != LUA_TTABLE)
+        if (lua_gettable(state_, -2) != LUA_TTABLE) {
+            lua_pop(state_, 2);
+            lua_pushnil(state_);
             return LUA_TNIL;
+        }
 
         lua_remove(state_, -2);
         path = sub + 1;
     }
 
-    lua_pushstring(state_, path);
-    int l_ty = lua_gettable(state_, -2);
+    int ty = lua_getfield(state_, -1, path);
     lua_remove(state_, -2);
-    return l_ty;
+    return ty;
 }
 
-bool xLuaState::SetGlobal(const char* path) {
-    int top = GetTopIndex();
+bool xLuaState::DoSetGlobal(const char* path, bool create, bool rawset) {
+    int top = GetTop();
     if (top == 0)
         return false;   // none value
 
     if (path == nullptr || *path == 0) {
-        lua_pop(state_, 1);
+        lua_pop(state_, 1); // pop value
         return false;   // wrong name
     }
 
@@ -635,14 +633,17 @@ bool xLuaState::SetGlobal(const char* path) {
     while (const char* sub = ::strchr(path, '.')) {
         lua_pushlstring(state_, path, sub - path);
         int l_ty = lua_gettable(state_, -2);
-        if (l_ty == LUA_TNIL) {
+        if (l_ty == LUA_TNIL && create) {
             lua_pop(state_, 1);                         // pop nil
             lua_newtable(state_);                       // new table
             lua_pushlstring(state_, path, sub - path);  // key
             lua_pushvalue(state_, -2);                  // copy table
-            lua_settable(state_, -4);                   // set field
+            if (rawset)
+                lua_rawset(state_, -4);
+            else
+                lua_settable(state_, -4);               // set field
         } else if (l_ty != LUA_TTABLE) {
-            lua_pop(state_, 2);
+            lua_pop(state_, 3); // [1]:value, [2]:table, [3]:unknown value
             return false;
         }
 
@@ -650,9 +651,52 @@ bool xLuaState::SetGlobal(const char* path) {
         path = sub + 1;
     }
 
-    lua_pushvalue(state_, top);
-    lua_setfield(state_, -2, path);
-    lua_pop(state_, 2); // [1]:value, [2]: table
+    lua_pushstring(state_, path);
+    lua_rotate(state_, top, -1);
+    if (rawset)
+        lua_rawset(state_, -3);
+    else
+        lua_settable(state_, -3);   // set field
+
+    lua_pop(state_, 1); // [1]: table
+    return true;
+}
+
+int xLuaState::LoadTableField(int index, int field) {
+    if (GetType(index) != LUA_TTABLE) {
+        lua_pushnil(state_);
+        detail::LogError("attempt to get table field:[%d], target is not table", field);
+        return LUA_TNIL;
+    }
+    return lua_geti(state_, index, field);
+}
+
+int xLuaState::LoadTableField(int index, const char* field) {
+    if (GetType(index) != LUA_TTABLE) {
+        lua_pushnil(state_);
+        detail::LogError("attempt to get table field:[%s], target is not table", field);
+        return LUA_TNIL;
+    }
+    return lua_getfield(state_, index, field);
+}
+
+bool xLuaState::SetTableField(int index, int field) {
+    if (GetType(index) != LUA_TTABLE) {
+        lua_pop(state_, 1);
+        detail::LogError("attempt to set table field:[%d], target is not table", field);
+        return false;
+    }
+    lua_seti(state_, index, field);
+    return true;
+}
+
+bool xLuaState::SetTableField(int index, const char* field) {
+    if (GetType(index) != LUA_TTABLE) {
+        lua_pop(state_, 1);
+        detail::LogError("attempt to set table field:[%s], target is not table", field);
+        return false;
+    }
+    lua_setfield(state_, index, field);
     return true;
 }
 
@@ -747,7 +791,7 @@ bool xLuaState::InitEnv(const char* export_module,
     lua_setmetatable(state_, -2);
     user_data_table_ref_ = luaL_ref(state_, LUA_REGISTRYINDEX);
     assert(user_data_table_ref_);
-    assert(GetTopIndex() == 0);
+    assert(GetTop() == 0);
 
     // table of type metatable
     lua_createtable(state_, (int)types.size(), 0);
@@ -789,17 +833,15 @@ bool xLuaState::InitEnv(const char* export_module,
 
     lua_setmetatable(state_, -2);   // set light user data metatable
     lua_pop(state_, 1);             // light user data
-    assert(GetTopIndex() == 0);
+    assert(GetTop() == 0);
 #endif // XLUA_USE_LIGHT_USER_DATA
 
     lua_createtable(state_, 0, 2);
     lua_pushstring(state_, "lonly_user_data");
     lua_setfield(state_, -2, "__name");
-
     lua_pushcfunction(state_, &detail::MetaFuncs::LuaLonlyGc);
     lua_setfield(state_, -2, "__gc");
-
-    lonly_user_data_ref_ = luaL_ref(state_, LUA_REGISTRYINDEX);
+    lonly_ud_meta_ref_ = luaL_ref(state_, LUA_REGISTRYINDEX);
 
     InitConsts(export_module, consts);
 
@@ -846,7 +888,7 @@ void xLuaState::InitConsts(const char* export_module, const std::vector<const de
 
             lua_createtable(state_, 0, num + 1);
             lua_pushvalue(state_, -1);  // copy ref
-            bool ok = SetGlobal(type_name);
+            bool ok = DoSetGlobal(type_name, true, true);
             assert(ok);
         }
 
@@ -882,7 +924,7 @@ void xLuaState::InitConsts(const char* export_module, const std::vector<const de
     }
 
     lua_pop(state_, 1); // pop const meta table
-    assert(GetTopIndex() == 0);
+    assert(GetTop() == 0);
 }
 
 void xLuaState::SetTypeMember(const detail::TypeInfo* info) {
@@ -947,7 +989,7 @@ void xLuaState::CreateTypeMeta(const detail::TypeInfo* info) {
     lua_setfield(state_, -2, "__gc");
 
     lua_pop(state_, 1);
-    assert(GetTopIndex() == 0);
+    assert(GetTop() == 0);
 }
 
 void xLuaState::CreateTypeGlobal(const char* export_module, const detail::TypeInfo* info) {
@@ -978,7 +1020,7 @@ void xLuaState::CreateTypeGlobal(const char* export_module, const detail::TypeIn
     } else {
         lua_newtable(state_);
         lua_pushvalue(state_, -1);  // copy ref
-        bool ok = SetGlobal(type_name);
+        bool ok = DoSetGlobal(type_name, true, true);
         assert(ok);
 
         lua_pushstring(state_, info->type_name);
@@ -1003,7 +1045,7 @@ void xLuaState::CreateTypeGlobal(const char* export_module, const detail::TypeIn
     }
 
     lua_pop(state_, 1);
-    assert(GetTopIndex() == 0);
+    assert(GetTop() == 0);
 }
 
 void xLuaState::PushClosure(lua_CFunction func) {
@@ -1029,12 +1071,11 @@ int xLuaState::RefLuaObj(int index) {
 
     index = lua_absindex(state_, index);
     lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
-    lua_rotate(state_, -2, -1);
+    lua_rotate(state_, index, -1);
     ref.lua_ref_ = luaL_ref(state_, -2);
     ref.ref_count_ = 1;
     lua_pop(state_, 1);
 
-    assert(GetTopIndex() == 0);
     return ary_index;
 }
 
@@ -1056,9 +1097,7 @@ void xLuaState::UnRefObj(int ary_index) {
     auto& ref = lua_objs_[ary_index];
     -- ref.ref_count_;
     if (ref.ref_count_ == 0) {
-        int ty = lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
-        assert(ty == LUA_TTABLE);
-        printf("top index %d\n", GetTopIndex());
+        lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
         luaL_unref(state_, -1, ref.lua_ref_);
         lua_pop(state_, 1);
 

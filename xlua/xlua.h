@@ -11,7 +11,7 @@
 
 XLUA_NAMESPACE_BEGIN
 
-bool Startup();
+bool Startup(LogFunc fn);
 void Shutdown();
 xLuaState* Create(const char* export_module);
 xLuaState* Attach(lua_State* l, const char* export_module);

@@ -46,11 +46,6 @@
     template <typename Ty> Ty* xLuaGetPtrByWeakObj(const xLuaWeakObjPtr<Ty>& obj);
 #endif // XLUA_ENABLE_WEAKOBJ
 
-/* 配置日志输出 */
-inline void xLuaLogError(const char* err) {
-    printf("%s\n", err);
-}
-
 /* 容器容量增量 */
 #define XLUA_CONTAINER_INCREMENTAL  1024
 /* 类型名称最大字节数 */

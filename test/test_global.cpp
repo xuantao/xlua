@@ -115,16 +115,16 @@ void TestGlobal(xlua::xLuaState* l) {
         l->Call("print", std::tie(), triangle, &triangle, quard, &quard);
         LOG_TOP_(l);
         l->NewTable();
-        l->SetGlobal("Scene.Info.OrignPos");
-        l->SetGlobal("Scene.Info.OrignPos", Vec2());
-        l->SetGlobal("Scene.Info.OrignPos.x", 10.f);
+        l->SetGlobal("Scene.Info.OrignPos", true);
+        l->SetGlobalVar("Scene.Info.OrignPos", Vec2());
+        l->SetGlobalVar("Scene.Info.OrignPos.x", 10.f);
 
         l->Call("PrintInfo", std::tie());
         LOG_TOP_(l);
         Vec2 v1;
-        v1.x = l->GetGlobal<float>("Scene.Info.OrignPos.x");
+        v1.x = l->GetGlobalVar<float>("Scene.Info.OrignPos.x");
 
-        Vec2 v2 = l->GetGlobal<Vec2>("Scene.Info.OrignPos");
+        Vec2 v2 = l->GetGlobalVar<Vec2>("Scene.Info.OrignPos");
 
         printf("v1.x=%f, v2.x=%f, v2.y=%f\n", v1.x, v2.x, v2.y);
     }
@@ -133,8 +133,8 @@ void TestGlobal(xlua::xLuaState* l) {
         Triangle triangle;
         Quard quard;
         LOG_TOP_(l);
-        auto print = l->GetGlobal<xlua::xLuaFunction>("print");
-        auto table = l->GetGlobal<xlua::xLuaTable>("GlobalVar");
+        auto print = l->GetGlobalVar<xlua::xLuaFunction>("print");
+        auto table = l->GetGlobalVar<xlua::xLuaTable>("GlobalVar");
         LOG_TOP_(l);
         l->Call(print, std::tie(), triangle, &triangle, quard, &quard);
         LOG_TOP_(l);

@@ -3,8 +3,8 @@
 
 XLUA_NAMESPACE_BEGIN
 
-bool Startup() {
-    return detail::GlobalVar::Startup();
+bool Startup(LogFunc fn) {
+    return detail::GlobalVar::Startup(fn);
 }
 
 void Shutdown() {

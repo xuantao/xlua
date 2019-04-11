@@ -125,9 +125,9 @@ namespace detail {
         }
 
 #if XLUA_USE_LIGHT_USER_DATA
-        bool ToDerived(detail::LightUserData* ud) override {
+        bool ToDerived(detail::LightUserData* ud, xLuaLogBuffer& lb) override {
             if (!ud->IsLightData()) {
-                LogError("unknown obj");
+                lb.Log("unknown obj");
                 return false;
             }
 
@@ -136,28 +136,26 @@ namespace detail {
             if (ud->IsInternalType()) {
                 auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                 if (ary_obj == nullptr || ary_obj->serial_num_ != ud->serial_) {
-                    LogError("current obj is nil");
+                    lb.Log("current obj is nil");
                     return false;
                 }
 
                 src_ptr = ary_obj->obj_;
                 src = ary_obj->info_;
-            }
-            else {
+            } else {
                 const TypeInfo* src_info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud->type_);
                 if (src_info == nullptr) {
-                    LogError("unknown obj type");
+                    lb.Log("unknown obj type");
                     return false;
                 }
                 if (src_info->is_weak_obj) {
                     if (ud->serial_ != ::xLuaGetWeakObjSerialNum(ud->index_)) {
-                        LogError("current obj is nil");
+                        lb.Log("current obj is nil");
                         return false;
                     }
 
                     src_ptr = ::xLuaGetWeakObjPtr(ud->index_);
-                }
-                else {
+                } else {
                     src_ptr = ud->RawPtr();
                 }
 
@@ -168,20 +166,19 @@ namespace detail {
                 return true; // 不需要向基类转换
 
             if (!IsBaseOf(src, info_)) {
-                LogError("can not cast obj from:[%s] to type:[%s]", src->type_name, info_->type_name);
+                lb.Log("can not cast obj from:[%s] to type:[%s]", src->type_name, info_->type_name);
                 return false;
             }
 
             Ty* d = nullptr;
             if (src->is_weak_obj) {
                 d = ToDerivedWeakPtr<Ty>(::xLuaGetWeakObjPtr(ud->index_));
-            }
-            else {
+            } else {
                 d = (Ty*)ToDerived(src_ptr, src);
             }
 
             if (d == nullptr) {
-                LogError("can not cast obj from:[%s] to type:[%s]", src->type_name, info_->type_name);
+                lb.Log("can not cast obj from:[%s] to type:[%s]", src->type_name, info_->type_name);
                 return false;
             }
 
@@ -190,16 +187,16 @@ namespace detail {
         }
 #endif // XLUA_USE_LIGHT_USER_DATA
 
-        bool ToDerived(detail::FullUserData* ud) override {
+        bool ToDerived(detail::FullUserData* ud, xLuaLogBuffer& lb) override {
             if (ud->type_ == UserDataCategory::kValue) {
-                LogError("can not cast value obj");
+                lb.Log("can not cast value obj");
                 return false;
             }
             if (IsBaseOf(info_, ud->info_)) {
                 return true; // 不需要向基类转换
             }
             if (!IsBaseOf(ud->info_, info_)) {
-                LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, info_->type_name);
+                lb.Log("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, info_->type_name);
                 return false;
             }
 
@@ -207,7 +204,7 @@ namespace detail {
             if (ud->type_ == UserDataCategory::kSharedPtr) {
                 d = (Ty*)ToDerived(ud->obj_, ud->info_);
                 if (d == nullptr) {
-                    LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, info_->type_name);
+                    lb.Log("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, info_->type_name);
                     return false;
                 }
 
@@ -218,20 +215,18 @@ namespace detail {
 
             if (ud->type_ == UserDataCategory::kRawPtr) {
                 d = (Ty*)ToDerived(ud->obj_, ud->info_);
-            }
-            else if (ud->type_ == UserDataCategory::kObjPtr) {
+            } else if (ud->type_ == UserDataCategory::kObjPtr) {
                 if (ud->info_->is_weak_obj) {
                     if (ud->serial_ != ::xLuaGetWeakObjSerialNum(ud->index_)) {
-                        LogError("obj is nil");
+                        lb.Log("obj is nil");
                         return false;
                     }
 
                     d = ToDerivedWeakPtr<Ty>(::xLuaGetWeakObjPtr(ud->index_));
-                }
-                else {
+                } else {
                     auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                     if (ary_obj == nullptr|| ary_obj->serial_num_ != ud->serial_) {
-                        LogError("obj is nil");
+                        lb.Log("obj is nil");
                         return false;
                     }
 
@@ -240,7 +235,7 @@ namespace detail {
             }
 
             if (d == nullptr) {
-                LogError("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, info_->type_name);
+                lb.Log("can not cast obj from:[%s] to type:[%s]", ud->info_->type_name, info_->type_name);
                 return false;
             }
 
@@ -260,9 +255,9 @@ namespace detail {
         void* ToSuper(void* obj, const TypeInfo* dst) override { return obj; }
         void* ToDerived(void* obj, const TypeInfo* src) override { return obj; }
 #if XLUA_USE_LIGHT_USER_DATA
-        bool ToDerived(detail::LightUserData* ud) override { return true; }
+        bool ToDerived(detail::LightUserData* ud, xLuaLogBuffer& lb) override { return true; }
 #endif // XLUA_USE_LIGHT_USER_DATA
-        bool ToDerived(detail::FullUserData* ud) override { return true; }
+        bool ToDerived(detail::FullUserData* ud, xLuaLogBuffer& lb) override { return true; }
 
     public:
         const TypeInfo* info_ = nullptr;
@@ -295,36 +290,23 @@ namespace detail {
         if (!IsBaseOf(info, ud_info.info))
             return nullptr;
 
-        if (info->is_weak_obj)
-            return _XLUA_TO_WEAKOBJ_PTR(info, ud_info.obj);
-        else
-            return _XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info);
+        return _XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info);
     }
 
     namespace param {
         template <typename Ry, typename...Args>
-        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry(*func)(Args...)) {
+        inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, Ry(*func)(Args...)) {
             return CheckParam<Args...>(l, index, lb);
         }
 
         template <typename Ty, typename Ry, typename...Args>
-        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry(Ty::*func)(Args...)) {
+        inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, Ry(Ty::*func)(Args...)) {
             return CheckParam<Args...>(l, index, lb);
         }
 
         template <typename Ty, typename Ry, typename...Args>
-        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry(Ty::*func)(Args...) const) {
+        inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, Ry(Ty::*func)(Args...) const) {
             return CheckParam<Args...>(l, index, lb);
-        }
-
-        template <typename Ry>
-        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry* var) {
-            return IsType<typename std::decay<Ry>::type>(l, index, 1, lb);
-        }
-
-        template <typename Ty, typename Ry>
-        inline bool CheckMetaParam(xLuaState* l, int index, LogBuf& lb, Ry Ty::*var) {
-            return IsType<typename std::decay<Ry>::type>(l, index, 1, lb);
         }
 
         inline bool CheckMetaParam(xLuaState* l, int index, int(*func)(xLuaState*)) { return true; }
@@ -339,7 +321,7 @@ namespace detail {
         inline bool CheckMetaParamEx(xLuaState* l, int index, int(*func)(Ty*, xLuaState*)) { return true; }
 
         template <typename Ty, typename Ry, typename...Args>
-        inline bool CheckMetaParamEx(xLuaState* l, int index, LogBuf& lb, Ry(*func)(Ty*, Args...)) {
+        inline bool CheckMetaParamEx(xLuaState* l, int index, xLuaLogBuffer& lb, Ry(*func)(Ty*, Args...)) {
             return CheckParam<Args...>(l, index, lb);
         }
     } // namespace param

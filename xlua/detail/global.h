@@ -28,7 +28,7 @@ namespace detail
         ~GlobalVar();
 
     public:
-        static bool Startup();
+        static bool Startup(LogFunc fn);
         static GlobalVar* GetInstance();
 
         void Purge();
@@ -51,6 +51,7 @@ namespace detail
         inline void* SerialAlloc(size_t size) { return alloc_.Alloc(size); }
 
     private:
+        LogFunc fn_log_ = nullptr;
         int type_index_gener_ = 0;                  // 类型编号分配器
         int serial_num_gener_ = 0;                  // lua导出对象序列号分配器
         std::vector<const char*> scripts_;          // 导出的脚本

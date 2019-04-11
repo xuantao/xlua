@@ -30,6 +30,7 @@ protected:
     xLuaObjBase(const xLuaObjBase& other)
         : lua_(other.lua_)
         , ary_index_(other.ary_index_) {
+        AddRef();
     }
 
     xLuaObjBase(xLuaObjBase&& other)
@@ -137,6 +138,7 @@ public:
     xLuaCallGuard(xLuaCallGuard&& other) : xLuaGuard() {
         top_ = other.top_;
         l_ = other.l_;
+        ok_ = other.ok_;
         other.l_ = nullptr;
     }
 
@@ -149,11 +151,16 @@ private:
 
 /* lua 状态机扩展 */
 class xLuaState {
+    /* user data cache
+     * 将User data缓存在一个lua table中, 缓存的key值为对象的基类指针
+     * 确保每个对象只构建一个lua user data
+    */
     struct UdCache {
         int lua_ref_;
         detail::FullUserData* user_data_;
     };
 
+    /* 引用lua对象(table, function)的引用记录 */
     struct LuaObjRef {
         union {
             int lua_ref_;
@@ -162,7 +169,6 @@ class xLuaState {
         int ref_count_;
     };
 
-    template <typename Ty> friend struct detail::Loader;
     template <typename Ty> friend struct detail::Pusher;
     friend struct detail::MetaFuncs;
     friend class detail::GlobalVar;
@@ -178,21 +184,19 @@ public:
 
 public:
     inline lua_State* GetState() const { return state_; }
-    inline int GetTopIndex() const { return lua_gettop(state_); }
+    inline int GetTop() const { return lua_gettop(state_); }
     inline void SetTop(int top) { lua_settop(state_, top); }
     inline void PopTop(int num) { lua_pop(state_, num); }
 
     inline int GetType(int index) const { return lua_type(state_, index); }
     const char* GetTypeName(int index);
 
-    /* 当前lua 调用栈 */
-    void LogCallStack() const;
-    void GetCallStack(char* buf, size_t size) const {
-        detail::LogBuf lb(buf, size);
+    /* 获取调用栈 */
+    void GetCallStack(xLuaLogBuffer& lb) const;
+    inline void GetCallStack(char* buf, size_t size) const {
+        xLuaLogBuffer lb(buf, size);
         GetCallStack(lb);
     }
-
-    void GetCallStack(detail::LogBuf& lb) const;
 
     /* 执行一段字符串 */
     bool DoString(const char* buff, const char* chunk = nullptr);
@@ -211,66 +215,35 @@ public:
     /* 将全局变量加载到栈顶, 并返回lua type */
     int LoadGlobal(const char* path);
     /* 栈顶元素设置为全局变量 */
-    bool SetGlobal(const char* path);
+    inline bool SetGlobal(const char* path, bool create = true) {
+        return DoSetGlobal(path, create, false);
+    }
 
     /* 将table成员加载到栈顶并返回数据类型 */
-    inline int LoadTableField(int index, int field) {
-        if (GetType(index) != LUA_TTABLE) {
-            lua_pushnil(state_);
-            detail::LogError("attempt to get table field:[%d], target is not table", field);
-            return LUA_TNIL;
-        }
-        return lua_geti(state_, index, field);
-    }
-
-    inline int LoadTableField(int index, const char* field) {
-        if (GetType(index) != LUA_TTABLE) {
-            lua_pushnil(state_);
-            detail::LogError("attempt to get table field:[%s], target is not table", field);
-            return LUA_TNIL;
-        }
-        return lua_getfield(state_, index, field);
-    }
+    int LoadTableField(int index, int field);
+    int LoadTableField(int index, const char* field);
 
     /* 将栈顶元素设置为table成员 */
-    inline bool SetTableField(int index, int field) {
-        if (GetType(index) != LUA_TTABLE) {
-            lua_pop(state_, 1);
-            detail::LogError("attempt to set table field:[%d], target is not table", field);
-            return false;
-        }
-        lua_seti(state_, index, field);
-        return true;
-    }
-
-    inline bool SetTableField(int index, const char* field) {
-        if (GetType(index) != LUA_TTABLE) {
-            lua_pop(state_, 1);
-            detail::LogError("attempt to set table field:[%s], target is not table", field);
-            return false;
-        }
-        lua_setfield(state_, index, field);
-        return true;
-    }
+    bool SetTableField(int index, int field);
+    bool SetTableField(int index, const char* field);
 
     template <typename Ty>
-    inline Ty GetGlobal(const char* path) {
+    inline Ty GetGlobalVar(const char* path) {
         xLuaGuard guard(this);
         LoadGlobal(path);
         return Load<Ty>(-1);
     }
 
-    template <typename Ty>
-    inline bool SetGlobal(const char* path, const Ty& val) {
-        xLuaGuard guard(this);
-        Push(val);
-        return SetGlobal(path);
+    inline bool SetGlobalVar(const char* path, std::nullptr_t) {
+        Push(nullptr);
+        DoSetGlobal(path, false, false);
+        return true;
     }
 
-    inline bool SetGlobal(const char* path, std::nullptr_t) {
-        xLuaGuard guard(this);
-        lua_pushnil(state_);
-        return SetGlobal(path);
+    template <typename Ty>
+    inline bool SetGlobalVar(const char* path, const Ty& val, bool caeate = true) {
+        Push(val);
+        return DoSetGlobal(path, caeate, false);
     }
 
     template <typename Ty>
@@ -301,14 +274,8 @@ public:
         return Load<Ty>(-1);
     }
 
-    inline bool SetTableField(int index, const char* field, std::nullptr_t) {
-        index = lua_absindex(state_, index);
-        lua_pushnil(state_);
-        return SetTableField(index, field);
-    }
-
     template <typename Ty>
-    inline Ty GetTableField(xLuaTable table, int field) {
+    inline Ty GetTableField(const xLuaTable& table, int field) {
         xLuaGuard guard(this);
         Push(table);
         LoadTableField(-1, field);
@@ -316,7 +283,7 @@ public:
     }
 
     template <typename Ty>
-    inline Ty GetTableField(xLuaTable table, const char* field) {
+    inline Ty GetTableField(const xLuaTable& table, const char* field) {
         xLuaGuard guard(this);
         Push(table);
         LoadTableField(-1, field);
@@ -324,7 +291,7 @@ public:
     }
 
     template <typename Ty>
-    inline bool SetTableField(xLuaTable table, int field, const Ty& val) {
+    inline bool SetTableField(const xLuaTable& table, int field, const Ty& val) {
         xLuaGuard guard(this);
         Push(table);
         Push(val);
@@ -332,7 +299,7 @@ public:
     }
 
     template <typename Ty>
-    inline bool SetTableField(xLuaTable table, const char* field, const Ty& val) {
+    inline bool SetTableField(const xLuaTable& table, const char* field, const Ty& val) {
         xLuaGuard guard(this);
         Push(table);
         Push(val);
@@ -347,15 +314,14 @@ public:
     template <typename Ty>
     inline Ty Load(int index) {
         static_assert(!std::is_reference<Ty>::value, "can not load reference value");
+        static_assert(!std::is_same<char*, Ty>::value, "can not load char*, use const char*");
         return detail::Loader<typename std::decay<Ty>::type>::Do(this, index);
     }
 
     template<typename... Ty>
     inline void PushMul(Ty&&... vals) {
         using ints = int[];
-        (void)ints {
-            0, (Push(std::forward<Ty>(vals)), 0)...
-        };
+        (void)ints { 0, (Push(std::forward<Ty>(vals)), 0)... };
     }
 
     template <typename... Ty>
@@ -379,8 +345,9 @@ public:
     inline void Push(char* val) { lua_pushstring(state_, val); }
     inline void Push(const char* val) { lua_pushstring(state_, val); }
     inline void Push(const std::string& val) { lua_pushstring(state_, val.c_str()); }
-    inline void Push(lua_CFunction func) { lua_pushcfunction(state_, func); }
+    inline void Push(std::nullptr_t) { lua_pushnil(state_); }
     inline void Push(const void* val) { Push(const_cast<void*>(val)); }
+
     inline void Push(void* val) {
 #if XLUA_USE_LIGHT_USER_DATA
         assert(detail::IsValidRawPtr(val));
@@ -390,8 +357,6 @@ public:
         else
             lua_pushlightuserdata(state_, val);
     }
-
-    inline void Push(std::nullptr_t) { lua_pushnil(state_); }
 
     inline void Push(const xLuaTable& val) {
         if (val.lua_ != this)
@@ -405,6 +370,10 @@ public:
             Push(nullptr);
         else
             PushLuaObj(val.ary_index_);
+    }
+
+    inline void Push(lua_CFunction func) {
+        lua_pushcfunction(state_, func);
     }
 
     inline void Push(int(*func)(xLuaState* l)) {
@@ -463,7 +432,7 @@ public:
 
         void* mem = lua_newuserdata(state_, sizeof(UdType));
         new (mem) UdType(func);
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, lonly_user_data_ref_);
+        lua_rawgeti(state_, LUA_REGISTRYINDEX, lonly_ud_meta_ref_);
         lua_setmetatable(state_, -2);
 
         lua_pushcclosure(state_, f, 2);
@@ -524,7 +493,7 @@ public:
         return guard;
     }
 
-    /* 调用执行Lua函数 */
+    /* 调用指定Lua函数 */
     template <typename... Rys, typename... Args>
     inline xLuaCallGuard Call(lua_CFunction func, std::tuple<Rys&...> ret, Args&&... args) {
         xLuaCallGuard guard(this);
@@ -567,9 +536,11 @@ public:
     }
 
 private:
+    bool DoSetGlobal(const char* path, bool create, bool rawset);
+
     template<typename... Rys, typename... Args>
     inline bool DoCall(std::tuple<Rys&...>& ret, Args&&... args) {
-        int top = GetTopIndex();
+        int top = GetTop();
         PushMul(std::forward<Args>(args)...);
         if (lua_pcall(GetState(), sizeof...(Args), sizeof...(Rys), 0) != LUA_OK) {
             detail::LogError("excute lua function error!\n%s", lua_tostring(GetState(), -1));
@@ -592,9 +563,9 @@ private:
         int ty = 0;
         ty = lua_rawgeti(state_, LUA_REGISTRYINDEX, meta_table_ref_);    // type metatable table
         assert(ty == LUA_TTABLE);
-        ty = lua_rawgeti(state_, -1, info->index);   // metatable
+        ty = lua_rawgeti(state_, -1, info->index);  // metatable
         assert(ty == LUA_TTABLE);
-        lua_remove(state_, -2);                 // remove type table
+        lua_remove(state_, -2);                     // remove type table
         lua_setmetatable(state_, -2);
         return new (mem) Ty(std::forward<Args>(args)...);
     }
@@ -674,7 +645,7 @@ private:
     int meta_table_ref_ = 0;        // 导出元表索引
     int user_data_table_ref_ = 0;   // user data table
     int lua_obj_table_ref_ = 0;     // table, function
-    int lonly_user_data_ref_ = 0;
+    int lonly_ud_meta_ref_ = 0;     // 独立user data元表索引
     int next_free_lua_obj_ = -1;    // 下一个的lua对象表空闲槽
     std::vector<LuaObjRef> lua_objs_;
     std::vector<UdCache> lua_obj_ptrs_;
@@ -773,9 +744,7 @@ namespace detail {
         static_assert(IsInternal<value_type>::value
             || IsExternal<value_type>::value
             || IsExtendLoad<value_type>::value
-            || std::is_enum<value_type>::value,
-            "only type has declared export to lua accept"
-            );
+            || std::is_enum<value_type>::value, "only type has declared export to lua accept");
 
         static inline Ty Do(xLuaState* l, int index) {
             using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
@@ -916,8 +885,7 @@ namespace detail {
                     if (ud->type_ == UserDataCategory::kObjPtr) {
                         if (ud->info_->is_weak_obj) {
                             ud_info.is_nil = (ud->serial_ == ::xLuaGetWeakObjSerialNum(ud->index_));
-                        }
-                        else {
+                        } else {
                             ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                             ud_info.is_nil = (obj == nullptr || obj->serial_num_ != obj->serial_num_);
                         }
@@ -940,7 +908,7 @@ namespace detail {
         template <typename Ty>
         struct ParamChecker {
             typedef typename std::remove_cv<Ty>::type value_type;
-            static inline bool Do(xLuaState* l, int index, int param, LogBuf& lb) {
+            static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
                 using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
                     typename std::conditional<IsExtendLoad<value_type>::value, tag_extend,
                     typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_unknown>::type>::type>::type;
@@ -948,13 +916,13 @@ namespace detail {
             }
 
             template <typename U>
-            static inline bool Do(xLuaState* l, int index, int param, LogBuf& lb, tag_unknown) {
+            static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb, tag_unknown) {
                 lb.Log("param(%d), unknown value", param);
                 return false;
             }
 
             template <typename U>
-            static inline bool Do(xLuaState* l, int index, int param, LogBuf& lb, tag_enum) {
+            static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb, tag_enum) {
                 if (l->GetType(index) != LUA_TNUMBER) {
                     lb.Log("param(%d), need:enum(number) got:%s", param, l->GetTypeName(index));
                     return false;
@@ -963,7 +931,7 @@ namespace detail {
             }
 
             template <typename U>
-            static inline bool Do(xLuaState* l, int index, int param, LogBuf& lb, tag_extend) {
+            static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb, tag_extend) {
                 if (IsExtendTypeCheck<U>(l, index, std::integral_constant<bool, IsExtendType<U>::value>()))
                     return true;
 
@@ -972,7 +940,7 @@ namespace detail {
             }
 
             template <typename U>
-            static inline bool Do(xLuaState* l, int index, int param, LogBuf& lb, tag_declared) {
+            static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb, tag_declared) {
                 const TypeInfo* info = GetTypeInfoImpl<U>();
                 UdInfo ud = GetUdInfo(l, index, true);
                 if (ud.is_nil) {
@@ -992,7 +960,7 @@ namespace detail {
             typedef typename std::remove_cv<Ty>::type value_type;
             static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
 
-            static inline bool Do(xLuaState* l, int index, int param, LogBuf& lb) {
+            static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
                 const TypeInfo* info = GetTypeInfoImpl<value_type>();
                 UdInfo ud = GetUdInfo(l, index, false);
                 if (ud.is_nil || IsBaseOf(ud.info, info))
@@ -1007,7 +975,7 @@ namespace detail {
             typedef typename std::remove_cv<Ty>::type value_type;
             static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
 
-            static inline bool Do(xLuaState* l, int index, int param, LogBuf& lb) {
+            static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
                 int l_ty = l->GetType(index);
                 const TypeInfo* info = GetTypeInfoImpl<value_type>();
                 if (l_ty == LUA_TUSERDATA) {
@@ -1025,19 +993,19 @@ namespace detail {
 
         template <typename Ty>
         struct ParamChecker<xLuaWeakObjPtr<Ty>> {
-            static inline bool Do(xLuaState* l, int index, int param) {
-                return ParamChecker<Ty*>::Do(l, index, param);
+            static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
+                return ParamChecker<Ty*>::Do(l, index, param, lb);
             }
         };
 
-        inline bool IsType_1(xLuaState* l, int index, int param, LogBuf& lb, int ty, const char* need) {
+        inline bool IsType_1(xLuaState* l, int index, int param, xLuaLogBuffer& lb, int ty, const char* need) {
             if (l->GetType(index) == ty)
                 return true;
             lb.Log("param(%d), need:%s got:%s", param, need, l->GetTypeName(index));
             return false;
         }
 
-        inline bool IsType_2(xLuaState* l, int index, int param, LogBuf& lb, int ty, const char* need) {
+        inline bool IsType_2(xLuaState* l, int index, int param, xLuaLogBuffer& lb, int ty, const char* need) {
             int l_ty = l->GetType(index);
             if (l_ty == ty || l_ty == LUA_TNIL)
                 return true;
@@ -1046,88 +1014,88 @@ namespace detail {
         }
 
         template <typename Ty>
-        inline bool IsType(xLuaState* l, int index, int param, LogBuf& lb) {
+        inline bool IsType(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return ParamChecker<Ty>::Do(l, index, param, lb);
         }
 
-        template <> inline bool IsType<bool>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<bool>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_2(l, index, param, lb, LUA_TBOOLEAN, "boolean");
         }
 
-        template <> inline bool IsType<char>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<char>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "char(number)");
         }
 
-        template <> inline bool IsType<unsigned char>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<unsigned char>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "unsigned char(number)");
         }
 
-        template <> inline bool IsType<short>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<short>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "short(number)");
         }
 
-        template <> inline bool IsType<unsigned short>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<unsigned short>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "unsigned short(number)");
         }
 
-        template <> inline bool IsType<int>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<int>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "int(number)");
         }
 
-        template <> inline bool IsType<unsigned int>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<unsigned int>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "unsigned int(number)");
         }
 
-        template <> inline bool IsType<long>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<long>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "long(number)");
         }
 
-        template <> inline bool IsType<unsigned long>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<unsigned long>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "unsigned long(number)");
         }
 
-        template <> inline bool IsType<long long>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<long long>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "short(number)");
         }
 
-        template <> inline bool IsType<unsigned long long>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<unsigned long long>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "unsigned long long(number)");
         }
 
-        template <> inline bool IsType<float>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<float>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "float(number)");
         }
 
-        template <> inline bool IsType<double>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<double>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_1(l, index, param, lb, LUA_TNUMBER, "double(number)");
         }
 
-        template <> inline bool IsType<const char*>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<const char*>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_2(l, index, param, lb, LUA_TSTRING, "char*(number)");
         }
 
-        template <> inline bool IsType<std::string>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<std::string>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_2(l, index, param, lb, LUA_TSTRING, "std::string");
         }
 
-        template <> inline bool IsType<void*>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<void*>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_2(l, index, param, lb, LUA_TLIGHTUSERDATA, "void*");
         }
 
-        template <> inline bool IsType<const void*>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<const void*>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_2(l, index, param, lb, LUA_TLIGHTUSERDATA, "const void*");
         }
 
-        template <> inline bool IsType<xLuaTable>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<xLuaTable>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_2(l, index, param, lb, LUA_TTABLE, "xLuaTable");
         }
 
-        template <> inline bool IsType<xLuaFunction>(xLuaState* l, int index, int param, LogBuf& lb) {
+        template <> inline bool IsType<xLuaFunction>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_2(l, index, param, lb, LUA_TFUNCTION, "xLuaFunction");
         }
 
         template <typename... Ty>
-        inline bool CheckParam(xLuaState* l, int index, LogBuf& lb) {
+        inline bool CheckParam(xLuaState* l, int index, xLuaLogBuffer& lb) {
             size_t count = 0;
             int param = 0;
             using els = int[];

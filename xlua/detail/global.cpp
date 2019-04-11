@@ -9,6 +9,7 @@ XLUA_NAMESPACE_BEGIN
 namespace detail {
     static NodeBase* s_node_head = nullptr;
     static GlobalVar* s_global = nullptr;
+    static LogFunc s_log = nullptr;
 }
 
 xLuaIndex::~xLuaIndex() {
@@ -21,6 +22,10 @@ namespace detail {
         return l.first < r.first;
     }
 
+    static void DummyLogError(const char* err) {
+        printf("%s\n", err);
+    }
+
     void LogError(const char* fmt, ...) {
         char buf[XLUA_MAX_BUFFER_CACHE];
         int n = snprintf(buf, XLUA_MAX_BUFFER_CACHE, "xlua_err: ");
@@ -30,7 +35,7 @@ namespace detail {
         vsnprintf(buf + n, XLUA_MAX_BUFFER_CACHE - n, fmt, args);
         va_end(args);
 
-        xLuaLogError(buf);
+        s_log(buf);
     }
 
     NodeBase::NodeBase(NodeCategory type) : category(type) {
@@ -50,11 +55,12 @@ namespace detail {
         next = nullptr;
     }
 
-    bool GlobalVar::Startup() {
+    bool GlobalVar::Startup(LogFunc fn) {
         if (s_global)
             return false;
 
         s_global = new GlobalVar();
+        s_log = fn ? fn : &DummyLogError;
 
         /* 初始化静态数据 */
         NodeBase* node = s_node_head;

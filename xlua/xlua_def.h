@@ -1,9 +1,7 @@
 ﻿#pragma once
 #include "xlua_config.h"
-//#include <lua.hpp>
-//#include <type_traits>
-//#include <cstdint>
-//#include <cassert>
+#include <stdarg.h>
+#include <stdio.h>
 
 /* 名字空间 */
 #define XLUA_NAMESPACE_BEGIN    namespace xlua {
@@ -29,6 +27,8 @@ namespace detail {
     /* 导出类型信息 */
     struct TypeInfo;
 }
+
+typedef void(*LogFunc)(const char*);
 
 class xLuaState;
 
@@ -56,6 +56,51 @@ public:
 
 private:
     int index_ = -1;
+};
+
+/* 日志缓存 */
+class xLuaLogBuffer {
+public:
+    xLuaLogBuffer(char* buf, size_t capacity) : buf_(buf), capacity_(capacity) {
+        buf_[0] = 0;
+    }
+
+public:
+    inline const char* Data() const { return buf_; }
+    inline char* Buf() const { return buf_; }
+    inline size_t Size() const { return write_; }
+    inline size_t Capacity() const { return capacity_; }
+
+    void Log(const char* fmt, ...) {
+        if (write_ >= capacity_)
+            return;
+
+        va_list args;
+        va_start(args, fmt);
+        int n = vsnprintf(buf_ + write_, capacity_ - write_, fmt, args);
+        va_end(args);
+        if (n > 0) {
+            write_ += n;
+            if (write_ < capacity_)
+                buf_[write_++] = '\n';
+        }
+    }
+
+    inline const char* Finalize() {
+        if (write_ && write_ <= capacity_ && buf_[write_-1] == '\n')
+            buf_[--write_] = 0; // remove last '\n'
+        return buf_;
+    }
+
+    inline void Reset() {
+        write_ = 0;
+        buf_[0] = 0;
+    }
+
+private:
+    size_t write_ = 0;
+    size_t capacity_;
+    char* buf_;
 };
 
 XLUA_NAMESPACE_END

@@ -121,9 +121,9 @@ namespace detail {
         virtual void* ToSuper(void* obj, const TypeInfo* info) = 0;
         virtual void* ToDerived(void* obj, const TypeInfo* info) = 0;
 #if XLUA_USE_LIGHT_USER_DATA
-        virtual bool ToDerived(detail::LightUserData* ud) = 0;
+        virtual bool ToDerived(detail::LightUserData* ud, xLuaLogBuffer& lb) = 0;
 #endif // XLUA_USE_LIGHT_USER_DATA
-        virtual bool ToDerived(detail::FullUserData* ud) = 0;
+        virtual bool ToDerived(detail::FullUserData* ud, xLuaLogBuffer& lb) = 0;
     };
 
     /* 类型描述, 用于构建导出类型信息 */
@@ -238,59 +238,10 @@ namespace detail {
         return nullptr;
     }
 
-    /* 日志缓存 */
-    class LogBuf {
-    public:
-        LogBuf(char* buf, size_t capacity) : buf_(buf), capacity_(capacity) {
-            buf_[0] = 0;
-        }
-
-    public:
-        inline const char* Data() const { return buf_; }
-        inline char* Buf() const { return buf_; }
-        inline size_t Size() const { return write_; }
-        inline size_t Capacity() const { return capacity_; }
-
-        inline void Log(const char* fmt, ...) {
-            if (write_ >= capacity_)
-                return;
-
-            va_list args;
-            va_start(args, fmt);
-            int n = vsnprintf(buf_ + write_, capacity_ - write_, fmt, args);
-            va_end(args);
-            if (n > 0) {
-                write_ += n;
-                if (write_ < capacity_)
-                    buf_[write_++] = '\n';
-            }
-        }
-
-        inline void TrimEnd() {
-            if (write_ && write_ <= capacity_ && buf_[write_-1] == '\n')
-                buf_[--write_] = 0; // remove last '\n'
-        }
-
-        inline const char* Finalize() {
-            TrimEnd();
-            return buf_;
-        }
-
-        inline void Reset() {
-            write_ = 0;
-            buf_[0] = 0;
-        }
-
-    private:
-        size_t write_ = 0;
-        size_t capacity_;
-        char* buf_;
-    };
-
     template <size_t N = XLUA_MAX_BUFFER_CACHE>
-    class LogBufCache : public LogBuf {
+    class LogBufCache : public xLuaLogBuffer {
     public:
-        LogBufCache() : LogBuf(data_, N) {
+        LogBufCache() : xLuaLogBuffer(data_, N) {
         }
 
     private:
@@ -298,8 +249,8 @@ namespace detail {
     };
 
     template <>
-    class LogBufCache<0> : public LogBuf {
-        LogBufCache() : LogBuf(data_, 1) {
+    class LogBufCache<0> : public xLuaLogBuffer {
+        LogBufCache() : xLuaLogBuffer(data_, 1) {
         }
     private:
         char data_[1];
