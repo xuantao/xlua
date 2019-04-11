@@ -330,26 +330,43 @@ namespace detail {
     using EnableIfT = typename std::enable_if<value, int>::type;
 
     /* global function */
-    template <typename Ry, typename... Args>
-    inline int MetaCall(xLuaState* l, Ry(*func)(Args...)) {
-        int index = 0;
-        l->Push(func(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...));
+    template <typename Ry, typename... Args, size_t... Idx>
+    inline int MetaCall(xLuaState* l, Ry(*func)(Args...), index_sequence<Idx...>) {
+        l->Push(func(param::LoadParam<typename param::ParamType<Args>::type>(l, Idx + 1)...));
         return 1;
     }
 
-    template <typename... Args>
-    inline int MetaCall(xLuaState* l, void(*func)(Args...)) {
-        int index = 0;
-        func(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...);
+    template <typename... Args, size_t... Idx>
+    inline int MetaCall(xLuaState* l, void(*func)(Args...), index_sequence<Idx...>) {
+        func(param::LoadParam<typename param::ParamType<Args>::type>(l, Idx + 1)...);
         return 0;
     }
 
+    template <typename Ry, typename... Args>
+    inline int MetaCall(xLuaState* l, Ry(*func)(Args...)) {
+        return MetaCall(l, func, make_index_sequence_t<sizeof...(Args)>());
+    }
+
+    inline int MetaCall(xLuaState* l, int(*func)(xLuaState*)) {
+        return func(l);
+    }
+
     /* extend member function */
+    template <typename Ty, typename Ry, typename... Args, size_t... Idx>
+    inline int MetaCall(xLuaState* l, Ty* obj, Ry(*func)(Ty*, Args...), index_sequence<Idx...>) {
+        l->Push(func(obj, param::LoadParam<typename param::ParamType<Args>::type>(l, Idx + 1)...));
+        return 1;
+    }
+
+    template <typename Ty, typename... Args, size_t... Idx>
+    inline int MetaCall(xLuaState* l, Ty* obj, void(*func)(Ty*, Args...), index_sequence<Idx...>) {
+        func(obj, param::LoadParam<typename param::ParamType<Args>::type>(l, Idx + 1)...);
+        return 0;
+    }
+
     template <typename Ty, typename Ry, typename... Args>
     inline int MetaCall(xLuaState* l, Ty* obj, Ry(*func)(Ty*, Args...)) {
-        int index = 1;
-        l->Push(func(obj, param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...));
-        return 1;
+        return MetaCall(l, obj, func, make_index_sequence_t<sizeof...(Args)>());
     }
 
     template <typename Ty>
@@ -357,40 +374,39 @@ namespace detail {
         return func(obj, l);
     }
 
-    template <typename Ty, typename... Args>
-    inline int MetaCall(xLuaState* l, Ty* obj, void(*func)(Ty*, Args...)) {
-        int index = 1;
-        func(obj, param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...);
+    /* normal member function */
+    template <typename Obj, typename Ty, typename... Args, size_t... Idx>
+    inline int MetaCall(xLuaState* l, Obj* obj, void(Ty::*func)(Args...), index_sequence<Idx...>) {
+        (obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, Idx + 1)...);
         return 0;
     }
 
-    /* normal member function */
+    template <typename Obj, typename Ty, typename Ry, typename... Args, size_t... Idx>
+    inline int MetaCall(xLuaState* l, Obj* obj, Ry(Ty::*func)(Args...), index_sequence<Idx...>) {
+        l->Push((obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, Idx + 1)...));
+        return 1;
+    }
+
+    template <typename Obj, typename Ty, typename... Args, size_t... Idx>
+    inline int MetaCall(xLuaState* l, Obj* obj, void(Ty::*func)(Args...) const, index_sequence<Idx...>) {
+        (obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, Idx + 1)...);
+        return 0;
+    }
+
+    template <typename Obj, typename Ty, typename Ry, typename... Args, size_t... Idx>
+    inline int MetaCall(xLuaState* l, Obj* obj, Ry(Ty::*func)(Args...) const, index_sequence<Idx...>) {
+        l->Push((obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, Idx + 1)...));
+        return 1;
+    }
+
     template <typename Obj, typename Ty, typename Ry, typename... Args>
     inline int MetaCall(xLuaState* l, Obj* obj, Ry(Ty::*func)(Args...)) {
-        int index = 1;
-        l->Push((obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...));
-        return 1;
+        return MetaCall(l, obj, func, make_index_sequence_t<sizeof...(Args)>());
     }
 
     template <typename Obj, typename Ty, typename Ry, typename... Args>
     inline int MetaCall(xLuaState* l, Obj* obj, Ry(Ty::*func)(Args...) const) {
-        int index = 1;
-        l->Push((obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...));
-        return 1;
-    }
-
-    template <typename Obj, typename Ty, typename... Args>
-    inline int MetaCall(xLuaState* l, Obj* obj, void (Ty::*func)(Args...)) {
-        int index = 1;
-        (obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...);
-        return 0;
-    }
-
-    template <typename Obj, typename Ty, typename... Args>
-    inline int MetaCall(xLuaState* l, Obj* obj, void (Ty::*func)(Args...) const) {
-        int index = 1;
-        (obj->*func)(param::LoadParam<typename param::ParamType<Args>::type>(l, ++index)...);
-        return 0;
+        return MetaCall(l, obj, func, make_index_sequence_t<sizeof...(Args)>());
     }
 
     template <typename Obj, typename Ty>
@@ -537,7 +553,9 @@ namespace detail {
                 luaL_error(l->GetState(), "attempt call function[%s:%s] failed, obj is nil\n%s", info->type_name, func_name, lb.Finalize());
                 return 0;
             }
-            if (!param::CheckMetaParam(l, 2, lb, f)) {
+
+            lua_remove(l->GetState(), 1);
+            if (!param::CheckMetaParam(l, 1, lb, f)) {
                 l->GetCallStack(lb);
                 luaL_error(l->GetState(), "attempt call function[%s:%s] failed, parameter is not allow\n%s", info->type_name, func_name, lb.Finalize());
                 return 0;
@@ -570,7 +588,9 @@ namespace detail {
                 luaL_error(l->GetState(), "attempt call function[%s:%s] failed, obj is nil\n%s", info->type_name, func_name, lb.Finalize());
                 return 0;
             }
-            if (!param::CheckMetaParamEx(l, 2, lb, f)) {
+
+            lua_remove(l->GetState(), 1);
+            if (!param::CheckMetaParamEx(l, 1, lb, f)) {
                 l->GetCallStack(lb);
                 luaL_error(l->GetState(), "attempt call function[%s:%s] failed, parameter is not allow\n%s", info->type_name, func_name, lb.Finalize());
                 return 0;
@@ -589,13 +609,7 @@ namespace detail {
 
         template <typename Fy, typename EnableIfT<IsMember<Fy>::value, int> = 0>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
-            //LogBufCache<> lb;
-            //if (!param::CheckMetaParam(l, 3, lb, f)) {
-            //    l->GetCallStack(lb);
-            //    luaL_error(l->GetState(), "attempt set var [%s.%s] failed, parameter is not allow\n%s", dst->type_name, var, lb.Finalize());
-            //} else {
-                MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
-            //}
+            MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
         }
 
         template <typename Fy, typename EnableIfT<!IsMember<Fy>::value, int> = 0>
@@ -605,13 +619,7 @@ namespace detail {
 
         template <typename Fy, typename EnableIfT<!IsMember<Fy>::value, int> = 0>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
-            //LogBufCache<> lb;
-            //if (!param::CheckMetaParam(l, 3, lb, f)) {
-            //    l->GetCallStack(lb);
-            //    luaL_error(l->GetState(), "attempt set var [%s.%s] failed, parameter is not allow\n%s", dst->type_name, var, lb.Finalize());
-            //} else {
-                MetaSet(l, f);
-            //}
+            MetaSet(l, f);
         }
 
         static inline void Get(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, std::nullptr_t) {
@@ -632,13 +640,7 @@ namespace detail {
 
         template <typename Fy>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
-            //LogBufCache<> lb;
-            //if (!param::CheckMetaParamEx(l, 3, lb, f)) {
-            //    l->GetCallStack(lb);
-            //    luaL_error(l->GetState(), "attempt set var [%s.%s] failed, parameter is not allow\n%s", dst->type_name, var, lb.Finalize());
-            //} else {
-                MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
-            //}
+            MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
         }
 
         static inline void Get(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, std::nullptr_t) {

@@ -36,10 +36,10 @@ public:
     int type_ = 0;
 };
 
-class Quard : public IName, public ObjectBase, public ExtType {
+class Quard : public IName, public Triangle, public ExtType {
 public:
-    const char* Name() const override { return "MultyInherit"; }
-    XLUA_DECLARE_CLASS(Quard, ObjectBase);
+    const char* Name() const override { return "Quard"; }
+    XLUA_DECLARE_CLASS(Quard, Triangle);
 
 public:
     int AreaSize() const override { return width_ * height_; }
@@ -60,6 +60,24 @@ public:
         printf("void AddTriangle(std::shared_ptr<Triangle>)\n");
     }
 
+    int TestParam_1(int a, const char* name, Triangle* triangle) {
+        printf("TestParam_1(this:0x%p, a:%d, name:%s, triangle:0x%p)\n", this, a, name, triangle);
+        return 1;
+    }
+
+    void TestParam_2(int a, const char* name, Triangle* triangle) {
+        printf("TestParam_2(this:0x%p, a:%d, name:%s, triangle:0x%p)\n", this, a, name, triangle);
+    }
+
+    int TestParam_3(int a, const char* name, Triangle* triangle) const {
+        printf("TestParam_3(this:0x%p, a:%d, name:%s, triangle:0x%p)\n", this, a, name, triangle);
+        return 1;
+    }
+
+    void TestParam_4(int a, const char* name, Triangle* triangle) const {
+        printf("TestParam_4(this:0x%p, a:%d, name:%s, triangle:0x%p)\n", this, a, name, triangle);
+    }
+
     int width_ = 0;
     int height_= 0;
 };
@@ -74,6 +92,11 @@ struct Color {
 struct Vec2 {
     float x = 0;
     float y = 0;
+};
+
+struct PushVal {
+    int a = 0;
+    int b = 0;
 };
 
 struct WeakObj : public WeakObjBase {

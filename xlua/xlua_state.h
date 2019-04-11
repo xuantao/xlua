@@ -325,8 +325,8 @@ public:
     }
 
     template <typename... Ty>
-    inline void LoadMul(std::tuple<Ty&...> tp, int index) {
-        DoLoadMul(tp, index, detail::make_index_sequence_t<sizeof...(Ty)>());
+    inline void LoadMul(int index, std::tuple<Ty&...> tp) {
+        DoLoadMul(index, tp, detail::make_index_sequence_t<sizeof...(Ty)>());
     }
 
     inline void Push(bool val) { lua_pushboolean(state_, val); }
@@ -395,8 +395,6 @@ public:
 
     template <typename Ry, typename... Args>
     inline void Push(Ry(*func)(Args...)) {
-        typedef Ry(*func_type)(Args...);
-
         if (func == nullptr) {
             Push(nullptr);
             return;
@@ -405,7 +403,7 @@ public:
         static lua_CFunction f = [](lua_State* l) -> int {
             auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
             void* f = lua_touserdata(l, lua_upvalueindex(2));
-            return detail::DoFunction<func_type, Ry, Args...>(reinterpret_cast<func_type>(f), xl/*, std::is_same<Ry, void>()*/);
+            return detail::DoFunction<Ry(*)(Args...), Ry, Args...>(reinterpret_cast<Ry(*)(Args...)>(f), xl/*, std::is_same<Ry, void>()*/);
         };
 
         lua_pushlightuserdata(state_, this);
@@ -415,8 +413,7 @@ public:
 
     template <typename Ry, typename... Args>
     inline void Push(const std::function<Ry(Args...)>& func) {
-        typedef std::function<Ry(Args...)> func_type;
-        typedef detail::LonelyUserData<func_type> UdType;
+        typedef detail::LonelyUserData<std::function<Ry(Args...)>> UdType;
         if (!func) {
             Push(nullptr);
             return;
@@ -425,7 +422,8 @@ public:
         static lua_CFunction f = [](lua_State* l) -> int {
             auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
             auto* ud = (UdType*)lua_touserdata(l, lua_upvalueindex(2));
-            return detail::DoFunction<func_type&, Ry, Args...>(*static_cast<func_type*>(ud->GetDataPtr()), xl/*, std::is_same<Ry, void>()*/);
+            return detail::DoFunction<std::function<Ry(Args...)>&, Ry, Args...>(
+                *static_cast<std::function<Ry(Args...)>*>(ud->GetDataPtr()), xl/*, std::is_same<Ry, void>()*/);
         };
 
         lua_pushlightuserdata(state_, this);
@@ -495,22 +493,6 @@ public:
 
     /* 调用指定Lua函数 */
     template <typename... Rys, typename... Args>
-    inline xLuaCallGuard Call(lua_CFunction func, std::tuple<Rys&...> ret, Args&&... args) {
-        xLuaCallGuard guard(this);
-        Push(func);
-        guard.ok_ = DoCall(ret, std::forward<Args>(args)...);
-        return guard;
-    }
-
-    template <typename... Rys, typename... Args>
-    inline xLuaCallGuard Call(int (*func)(xLuaState*), std::tuple<Rys&...> ret, Args&&... args) {
-        xLuaCallGuard guard(this);
-        Push(func);
-        guard.ok_ = DoCall(ret, std::forward<Args>(args)...);
-        return guard;
-    }
-
-    template <typename... Rys, typename... Args>
     inline xLuaCallGuard Call(const xLuaFunction& func, std::tuple<Rys&...> ret, Args&&... args) {
         xLuaCallGuard guard(this);
         Push(func);
@@ -543,15 +525,15 @@ private:
         int top = GetTop();
         PushMul(std::forward<Args>(args)...);
         if (lua_pcall(GetState(), sizeof...(Args), sizeof...(Rys), 0) != LUA_OK) {
-            detail::LogError("excute lua function error!\n%s", lua_tostring(GetState(), -1));
+            detail::LogError("excute lua function error! %s", lua_tostring(GetState(), -1));
             return false;
         }
-        LoadMul(ret, top);
+        LoadMul(top, ret);
         return true;
     }
 
     template <typename... Ty, size_t... Idxs>
-    inline void DoLoadMul(std::tuple<Ty&...>& ret, int index, detail::index_sequence<Idxs...>) {
+    inline void DoLoadMul(int index, std::tuple<Ty&...>& ret, detail::index_sequence<Idxs...>) {
         using ints = int[];
         (void)ints { 0, (std::get<Idxs>(ret) = Load<Ty>(index++), 0)... };
     }
@@ -691,6 +673,8 @@ namespace detail {
     template <typename Ty>
     struct Pusher<Ty*> {
         typedef typename std::remove_cv<Ty>::type value_type;
+        static_assert(!std::is_const<Ty>::value, "can not push const value pointer");
+        static_assert(!IsExtendPush<value_type>::value, "can not push extend type pointer");
         static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value,
             "only type has declared export to lua accept");
 
@@ -784,6 +768,7 @@ namespace detail {
     struct Loader<Ty*> {
         typedef typename std::remove_cv<Ty>::type value_type;
         static_assert(!std::is_same<Ty, char>::value, "can not load value as char*, only const char* accept");
+        static_assert(!IsExtendLoad<value_type>::value, "can not load extend type pointer");
         static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
 
         static Ty* Do(xLuaState* l, int index) {
@@ -792,8 +777,10 @@ namespace detail {
                 return nullptr;
 
             const TypeInfo* info = GetTypeInfoImpl<value_type>();
-            if (!IsBaseOf(info, ud_info.info))
+            if (!IsBaseOf(info, ud_info.info)) {
+                LogError("can not load [%s*] pointer from:[%s*]", info->type_name, ud_info.info->type_name);
                 return nullptr;
+            }
 
             return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info));
         }
@@ -811,8 +798,10 @@ namespace detail {
             if (ud == nullptr || ud->type_ != UserDataCategory::kSharedPtr)
                 return nullptr;
             const TypeInfo* info = GetTypeInfoImpl<value_type>();
-            if (!IsBaseOf(info, ud->info_))
+            if (!IsBaseOf(info, ud->info_)) {
+                LogError("can not load [%s*] pointer from:[%s*]", info->type_name, ud->info_->type_name);
                 return nullptr;
+            }
 
             return std::shared_ptr<Ty>(*static_cast<std::shared_ptr<Ty>*>(ud->GetDataPtr()),
                 (Ty*)_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_));
@@ -963,7 +952,7 @@ namespace detail {
             static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
                 const TypeInfo* info = GetTypeInfoImpl<value_type>();
                 UdInfo ud = GetUdInfo(l, index, false);
-                if (ud.is_nil || IsBaseOf(ud.info, info))
+                if (ud.is_nil || IsBaseOf(info, ud.info))
                     return true;
                 lb.Log("param(%d), need:%s* got:%s", param, info->type_name, l->GetTypeName(index));
                 return false;
@@ -1078,6 +1067,7 @@ namespace detail {
             return IsType_2(l, index, param, lb, LUA_TSTRING, "std::string");
         }
 
+        /* void* */
         template <> inline bool IsType<void*>(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
             return IsType_2(l, index, param, lb, LUA_TLIGHTUSERDATA, "void*");
         }
@@ -1138,37 +1128,35 @@ namespace detail {
         }
     } // namespace param
 
-    template <typename Fy, typename Ry, typename... Args>
-    inline auto DoFunctionImpl(Fy f, xLuaState* l) -> typename std::enable_if<!std::is_void<Ry>::value, int>::type {
+    template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
+    inline auto DoFunctionImpl(Fy f, xLuaState* l, index_sequence<Idxs...>) -> typename std::enable_if<!std::is_void<Ry>::value, int>::type {
         LogBufCache<> lb;
         if (!param::CheckParam<Args...>(l, 1, lb)) {
             l->GetCallStack(lb);
-            luaL_error(l->GetState(), "attempt call function failed, parameter is not allow\n%s", lb.Finalize());
+            luaL_error(l->GetState(), "attempt call function failed, parameter is not allow!\n%s", lb.Finalize());
             return 0;
         } else {
-            int index = 0;
-            l->Push(f(param::LoadParam<param::ParamType<Args>>(++index)...));
+            l->Push(f(param::LoadParam<typename param::ParamType<Args>::type>(l, Idxs + 1)...));
             return 1;
         }
     }
 
-    template <typename Fy, typename Ry, typename... Args>
-    inline auto DoFunctionImpl(Fy f, xLuaState* l) -> typename std::enable_if<std::is_void<Ry>::value, int>::type {
+    template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
+    inline auto DoFunctionImpl(Fy f, xLuaState* l, index_sequence<Idxs...>) -> typename std::enable_if<std::is_void<Ry>::value, int>::type {
         LogBufCache<> lb;
         if (!param::CheckParam<Args...>(l, 1, lb)) {
             l->GetCallStack(lb);
-            luaL_error(l->GetState(), "attempt call function failed, parameter is not allow\n%s", lb.Finalize());
+            luaL_error(l->GetState(), "attempt call function failed, parameter is not allow!\n%s", lb.Finalize());
         } else {
-            int index = 0;
-            f(param::LoadParam<param::ParamType<Args>>(++index)...);
+            f(param::LoadParam<typename param::ParamType<Args>::type>(l, Idxs + 1)...);
         }
 
         return 0;
     }
 
     template <typename Fy, typename Ry, typename... Args>
-    int DoFunction(Fy f, xLuaState* l) {
-        return DoFunctionImpl<Fy, Ry, Args...>(f, l);
+    inline int DoFunction(Fy f, xLuaState* l) {
+        return DoFunctionImpl<Fy, Ry, Args...>(f, l, make_index_sequence_t<sizeof...(Args)>());
     }
 } // namespace detail
 

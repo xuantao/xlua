@@ -663,7 +663,8 @@ bool xLuaState::DoSetGlobal(const char* path, bool create, bool rawset) {
 }
 
 int xLuaState::LoadTableField(int index, int field) {
-    if (GetType(index) != LUA_TTABLE) {
+    int ty = GetType(index);
+    if (ty != LUA_TTABLE && ty != LUA_TLIGHTUSERDATA && ty != LUA_TUSERDATA) {
         lua_pushnil(state_);
         detail::LogError("attempt to get table field:[%d], target is not table", field);
         return LUA_TNIL;
@@ -672,7 +673,8 @@ int xLuaState::LoadTableField(int index, int field) {
 }
 
 int xLuaState::LoadTableField(int index, const char* field) {
-    if (GetType(index) != LUA_TTABLE) {
+    int ty = GetType(index);
+    if (ty != LUA_TTABLE && ty != LUA_TLIGHTUSERDATA && ty != LUA_TUSERDATA) {
         lua_pushnil(state_);
         detail::LogError("attempt to get table field:[%s], target is not table", field);
         return LUA_TNIL;
@@ -681,7 +683,8 @@ int xLuaState::LoadTableField(int index, const char* field) {
 }
 
 bool xLuaState::SetTableField(int index, int field) {
-    if (GetType(index) != LUA_TTABLE) {
+    int ty = GetType(index);
+    if (ty != LUA_TTABLE && ty != LUA_TLIGHTUSERDATA && ty != LUA_TUSERDATA) {
         lua_pop(state_, 1);
         detail::LogError("attempt to set table field:[%d], target is not table", field);
         return false;
@@ -691,7 +694,8 @@ bool xLuaState::SetTableField(int index, int field) {
 }
 
 bool xLuaState::SetTableField(int index, const char* field) {
-    if (GetType(index) != LUA_TTABLE) {
+    int ty = GetType(index);
+    if (ty != LUA_TTABLE && ty != LUA_TLIGHTUSERDATA && ty != LUA_TUSERDATA) {
         lua_pop(state_, 1);
         detail::LogError("attempt to set table field:[%s], target is not table", field);
         return false;

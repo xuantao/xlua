@@ -17,6 +17,10 @@ XLUA_EXPORT_CLASS_END()
 XLUA_EXPORT_CLASS_BEGIN(Quard)
 XLUA_MEMBER_FUNC(Name)
 XLUA_MEMBER_FUNC(DoExtWork)
+XLUA_MEMBER_FUNC(TestParam_1)
+XLUA_MEMBER_FUNC(TestParam_2)
+XLUA_MEMBER_FUNC(TestParam_3)
+XLUA_MEMBER_FUNC(TestParam_4)
 XLUA_MEMBER_FUNC_AS(AddTriangle_1, AddTriangle, Triangle*)
 XLUA_MEMBER_FUNC_AS(AddTriangle_2, AddTriangle, Triangle&)
 XLUA_MEMBER_FUNC_AS(AddTriangle_3, AddTriangle, const Triangle&)
@@ -88,10 +92,10 @@ XLUA_EXPORT_EXTERNAL_END()
 
 void xLuaPush(xlua::xLuaState* l, const Color& c) {
     l->NewTable();
-    l->SetTableField(-1, 'a', c.a);
-    l->SetTableField(-1, 'r', c.r);
-    l->SetTableField(-1, 'g', c.g);
-    l->SetTableField(-1, 'b', c.b);
+    l->SetTableField(-1, "a", c.a);
+    l->SetTableField(-1, "r", c.r);
+    l->SetTableField(-1, "g", c.g);
+    l->SetTableField(-1, "b", c.b);
 }
 
 Color xLuaLoad(xlua::xLuaState* l, int i, xlua::Identity<Color>) {
@@ -120,6 +124,12 @@ Vec2 xLuaLoad(xlua::xLuaState* l, int i, xlua::Identity<Vec2>) {
     c.x = l->GetTableField<float>(i, "x");
     c.y = l->GetTableField<float>(i, "y");
     return c;
+}
+
+void xLuaPush(xlua::xLuaState* l, const PushVal& v) {
+    l->NewTable();
+    l->SetTableField(-1, "x", v.a);
+    l->SetTableField(-1, "y", v.b);
 }
 
 static void TestGlobal() {

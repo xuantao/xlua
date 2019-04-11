@@ -10,3 +10,5 @@ Color xLuaLoad(xlua::xLuaState* l, int i, xlua::Identity<Color>);
 
 void xLuaPush(xlua::xLuaState* l, const Vec2& vec);
 Vec2 xLuaLoad(xlua::xLuaState* l, int i, xlua::Identity<Vec2>);
+
+void xLuaPush(xlua::xLuaState* l, const PushVal& vec);
