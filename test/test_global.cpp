@@ -87,6 +87,21 @@ function TestExportGlobal()
     print("Const.Name", Const.Name)
 end
 
+function TestExtend(obj)
+    obj:Ext1(101, "TestExtend")
+    obj:Ext2(101, "TestExtend")
+    obj:Ext3(101, "TestExtend")
+    obj:Ext4(101, "TestExtend")
+
+    print(obj.Tag1)
+    print(obj.Tag2)
+    print(obj.Tag3)
+
+    obj.Tag1 = 101
+    obj.Tag2 = 102
+    obj.Tag3 = 103
+end
+
 )V0G0N";
 
 struct ObjTest {
@@ -204,6 +219,13 @@ void TestGlobal(xlua::xLuaState* l) {
         l->Call(std::tie());
 
         lua_gc(l->GetState(), LUA_GCCOLLECT, 0);
+    }
+    {
+        ObjectBase o;
+        Quard q;
+
+        l->Call("TestExtend", std::tie(), &o);
+        l->Call("TestExtend", std::tie(), &q);
     }
 
     LOG_TOP_(l);

@@ -1,10 +1,76 @@
 ﻿#include "lua_export.h"
 #include <xlua_export.h>
 
+static int Obj_Ext1(ObjectBase* obj, int a, const char* name) {
+    printf("Obj_Ext1(obj:0x%p, a:%d, name:%s\n", obj, a, name);
+    return 0;
+}
+
+static void Obj_Ext2(ObjectBase* obj, int a, const char* name) {
+    printf("Obj_Ext2(obj:0x%p, a:%d, name:%s\n", obj, a, name);
+}
+
+static int Obj_Ext3(ObjectBase* obj, xlua::xLuaState* l) {
+    int a = 0;
+    const char* name = nullptr;
+    l->LoadMul(1, std::tie(a, name));
+    printf("Obj_Ext3(obj:0x%p, a:%d, name:%s\n", obj, a, name);
+    return 0;
+}
+
+static int Obj_Ext4(ObjectBase* obj, lua_State* l) {
+    int a = 0;
+    const char* name = nullptr;
+    a = (int)lua_tonumber(l, 1);
+    name = lua_tostring(l, 2);
+    printf("Obj_Ext4(obj:0x%p, a:%d, name:%s\n", obj, a, name);
+    return 0;
+}
+
+static const char* Obj_GetTag1(ObjectBase* obj) {
+    printf("Obj_GetTag1(obj:0x%p)\n", obj);
+    return "Obj_GetTag1";
+}
+
+static int Obj_GetTag2(ObjectBase* obj, xlua::xLuaState* l) {
+    printf("Obj_GetTag2(obj:0x%p)\n", obj);
+    l->Push("Obj_GetTag2");
+    return 1;
+}
+
+static int Obj_GetTag3(ObjectBase* obj, lua_State* l) {
+    printf("Obj_GetTag3(obj:0x%p)\n", obj);
+    lua_pushstring(l, "Obj_GetTag3");
+    return 1;
+}
+
+static void Obj_SetTag1(ObjectBase* obj, int v) {
+    printf("Obj_SetTag1(obj:0x%p), v:%d\n", obj, v);
+}
+
+static int Obj_SetTag2(ObjectBase* obj, xlua::xLuaState* l) {
+    int v = l->Load<int>(1);
+    printf("Obj_SetTag2(obj:0x%p), v:%d\n", obj, v);
+    return 0;
+}
+
+static int Obj_SetTag3(ObjectBase* obj, lua_State* l) {
+    int v = (int)lua_tonumber(l, 1);
+    printf("Obj_SetTag3(obj:0x%p), v:%d\n", obj, v);
+    return 0;
+}
+
 XLUA_EXPORT_EXTERNAL_BEGIN(ObjectBase)
 XLUA_MEMBER_VAR_AS(obj_id, obj_id_)
 XLUA_MEMBER_VAR_AS(name, name_)
 XLUA_MEMBER_FUNC(AreaSize)
+XLUA_MEMBER_FUNC_EXTEND(Ext1, Obj_Ext1)
+XLUA_MEMBER_FUNC_EXTEND(Ext2, Obj_Ext2)
+XLUA_MEMBER_FUNC_EXTEND(Ext3, Obj_Ext3)
+XLUA_MEMBER_FUNC_EXTEND(Ext4, Obj_Ext4)
+XLUA_MEMBER_VAR_EXTEND(Tag1, Obj_GetTag1, Obj_SetTag1)
+XLUA_MEMBER_VAR_EXTEND(Tag2, Obj_GetTag2, Obj_SetTag2)
+XLUA_MEMBER_VAR_EXTEND(Tag3, Obj_GetTag3, Obj_SetTag3)
 XLUA_EXPORT_EXTERNAL_END()
 
 XLUA_EXPORT_CLASS_BEGIN(Triangle)

@@ -306,7 +306,7 @@ public:
         return SetTableField(-2, field);
     }
 
-    template <typename Ty>
+    template <typename Ty, typename std::enable_if<!std::is_function<Ty>::value, int>::type = 0>
     inline void Push(const Ty& val) {
         detail::Pusher<typename std::decay<Ty>::type>::Do(this, val);
     }

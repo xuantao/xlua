@@ -6,3 +6,4 @@
 
 void TestPushLoad(xlua::xLuaState* l);
 void TestGlobal(xlua::xLuaState* l);
+void TestExport(xlua::xLuaState* l);

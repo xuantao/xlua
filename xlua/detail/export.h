@@ -309,21 +309,26 @@ namespace detail {
             return CheckParam<Args...>(l, index, lb);
         }
 
-        inline bool CheckMetaParam(xLuaState* l, int index, int(*func)(xLuaState*)) { return true; }
-
-        template <typename Ty>
-        inline bool CheckMetaParam(xLuaState* l, int index, int(Ty::*func)(xLuaState*)) { return true; }
-
-        template <typename Ty>
-        inline bool CheckMetaParam(xLuaState* l, int index, int(Ty::*func)(xLuaState*) const) { return true; }
-
-        template <typename Ty>
-        inline bool CheckMetaParamEx(xLuaState* l, int index, int(*func)(Ty*, xLuaState*)) { return true; }
-
         template <typename Ty, typename Ry, typename...Args>
         inline bool CheckMetaParamEx(xLuaState* l, int index, xLuaLogBuffer& lb, Ry(*func)(Ty*, Args...)) {
             return CheckParam<Args...>(l, index, lb);
         }
+
+        inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, int(*func)(xLuaState*)) { return true; }
+        inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, int(*func)(lua_State*)) { return true; }
+
+        template <typename Ty>
+        inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, int(Ty::*func)(xLuaState*)) { return true; }
+        template <typename Ty>
+        inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, int(Ty::*func)(lua_State*)) { return true; }
+        template <typename Ty>
+        inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, int(Ty::*func)(xLuaState*) const) { return true; }
+        template <typename Ty>
+        inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, int(Ty::*func)(lua_State*) const) { return true; }
+        template <typename Ty>
+        inline bool CheckMetaParamEx(xLuaState* l, int index, xLuaLogBuffer& lb, int(*func)(Ty*, xLuaState*)) { return true; }
+        template <typename Ty>
+        inline bool CheckMetaParamEx(xLuaState* l, int index, xLuaLogBuffer& lb, int(*func)(Ty*, lua_State*)) { return true; }
     } // namespace param
 
     template <bool value, typename Ty = int>
@@ -351,6 +356,10 @@ namespace detail {
         return func(l);
     }
 
+    inline int MetaCall(xLuaState* l, int(*func)(lua_State*)) {
+        return func(l->GetState());
+    }
+
     /* extend member function */
     template <typename Ty, typename Ry, typename... Args, size_t... Idx>
     inline int MetaCall(xLuaState* l, Ty* obj, Ry(*func)(Ty*, Args...), index_sequence<Idx...>) {
@@ -372,6 +381,11 @@ namespace detail {
     template <typename Ty>
     inline int MetaCall(xLuaState* l, Ty* obj, int(*func)(Ty*, xLuaState*)) {
         return func(obj, l);
+    }
+
+    template <typename Ty>
+    inline int MetaCall(xLuaState* l, Ty* obj, int(*func)(Ty*, lua_State*)) {
+        return func(obj, l->GetState());
     }
 
     /* normal member function */
@@ -419,9 +433,19 @@ namespace detail {
         return (obj->*func)(l);
     }
 
+    template <typename Obj, typename Ty>
+    inline int MetaCall(xLuaState* l, Obj* obj, int (Ty::*func)(lua_State*)) {
+        return (obj->*func)(l->GetState());
+    }
+
+    template <typename Obj, typename Ty>
+    inline int MetaCall(xLuaState* l, Obj* obj, int (Ty::*func)(lua_State*) const) {
+        return (obj->*func)(l->GetState());
+    }
+
     /* 设置字符串数组 */
     inline void MetaSetArray(xLuaState* l, char* buf, size_t sz) {
-        const char* s = l->Load<const char*>(3);    // 1:obj, 2:name, 3:value
+        const char* s = l->Load<const char*>(1);
         if (s)
             snprintf(buf, sz, s);
         else
@@ -435,11 +459,6 @@ namespace detail {
     }
 
     template <typename Ry>
-    inline void MetaGet(xLuaState* l, Ry* data) {
-        l->Push(*data);
-    }
-
-    template <typename Ry>
     inline void MetaSet_(xLuaState* l, Ry* data, std::true_type) {
         static_assert(std::extent<Ry>::value > 0, "array size must greater than 0");
         MetaSetArray(l, *data, std::extent<Ry>::value);
@@ -447,99 +466,69 @@ namespace detail {
 
     template <typename Ry>
     inline void MetaSet_(xLuaState* l, Ry* data, std::false_type) {
-        *data = l->Load<typename std::decay<Ry>::type>(3);
-    }
-
-    template <typename Ry>
-    inline void MetaSet(xLuaState* l, Ry* data) {
-        MetaSet_(l, data, std::is_array<Ry>());
-    }
-
-    template <typename Ry>
-    inline void MetaGet(xLuaState* l, Ry (*data)()) {
-        l->Push(data());
-    }
-
-    template <typename Ry>
-    inline void MetaSet(xLuaState* l, void (*data)(Ry)) {
-        data(l->Load<typename std::decay<Ry>::type>(1));
-    }
-
-    template <typename Obj, typename Ty, typename Ry>
-    inline void MetaGet(xLuaState* l, Obj* obj, Ry Ty::* data) {
-        l->Push(static_cast<Ry>(obj->*data));
+        *data = l->Load<typename std::decay<Ry>::type>(1);
     }
 
     template <typename Ty, typename Ry>
     inline void MetaSet_(xLuaState* l, Ty* obj, Ry Ty::*data, std::true_type) {
         static_assert(std::extent<Ry>::value > 0, "array size must greater than 0");
-        MetaSetArray(l , obj->*data, std::extent<Ry>::value);
+        MetaSetArray(l, obj->*data, std::extent<Ry>::value);
     }
 
     template <typename Ty, typename Ry>
     inline void MetaSet_(xLuaState* l, Ty* obj, Ry Ty::*data, std::false_type) {
-        obj->*data = l->Load<typename std::decay<Ry>::type>(3);
+        obj->*data = l->Load<typename std::decay<Ry>::type>(1);
     }
 
+    template <typename Ry>
+    inline void MetaGet(xLuaState* l, Ry* data) { l->Push(*data); }
+    template <typename Ry>
+    inline void MetaSet(xLuaState* l, Ry* data) { MetaSet_(l, data, std::is_array<Ry>()); }
+    template <typename Ry>
+    inline void MetaGet(xLuaState* l, Ry(*data)()) { l->Push(data()); }
+    template <typename Ry>
+    inline void MetaSet(xLuaState* l, void(*data)(Ry)) { data(l->Load<typename std::decay<Ry>::type>(1)); }
     template <typename Obj, typename Ty, typename Ry>
-    inline void MetaSet(xLuaState* l, Obj* obj, Ry Ty::*data) {
-        MetaSet_(l, static_cast<Ty*>(obj), data, std::is_array<Ry>());
-    }
-
+    inline void MetaGet(xLuaState* l, Obj* obj, Ry Ty::* data) { l->Push(static_cast<Ry>(obj->*data)); }
     template <typename Obj, typename Ty, typename Ry>
-    inline void MetaGet(xLuaState* l, Obj* obj, Ry(Ty::*func)()) {
-        l->Push((obj->*func)());
-    }
-
+    inline void MetaSet(xLuaState* l, Obj* obj, Ry Ty::*data) { MetaSet_(l, static_cast<Ty*>(obj), data, std::is_array<Ry>()); }
     template <typename Obj, typename Ty, typename Ry>
-    inline void MetaSet(xLuaState* l, Obj* obj, void(Ty::*func)(Ry)) {
-        (obj->*func)(l->Load<typename std::decay<Ry>::type>(1));
-    }
-
+    inline void MetaGet(xLuaState* l, Obj* obj, Ry(Ty::*func)()) { l->Push((obj->*func)()); }
+    template <typename Obj, typename Ty, typename Ry>
+    inline void MetaSet(xLuaState* l, Obj* obj, void(Ty::*func)(Ry)) { (obj->*func)(l->Load<typename std::decay<Ry>::type>(1)); }
     template <typename Ty, typename Ry>
-    inline void MetaGet(xLuaState* l, Ty* obj, Ry (*func)(Ty*)) {
-        l->Push(func(obj));
-    }
-
+    inline void MetaGet(xLuaState* l, Ty* obj, Ry(*func)(Ty*)) { l->Push(func(obj)); }
     template <typename Ty, typename Ry>
-    inline void MetaSet(xLuaState* l, Ty* obj, void (*func)(Ty*, Ry)) {
-        func(obj, l->Load<typename std::decay<Ry>::type>(1));
-    }
+    inline void MetaSet(xLuaState* l, Ty* obj, void(*func)(Ty*, Ry)) { func(obj, l->Load<typename std::decay<Ry>::type>(1)); }
+    template <typename Ty>
+    inline void MetaGet(xLuaState* l, Ty* obj, int(Ty::*func)(xLuaState*)) { (obj->*func)(l); }
+    template <typename Ty>
+    inline void MetaGet(xLuaState* l, Ty* obj, int(Ty::*func)(xLuaState*) const) { (obj->*func)(l); }
+    template <typename Ty>
+    inline void MetaSet(xLuaState* l, Ty* obj, int(Ty::*func)(xLuaState*)) { (obj->*func)(l); }
+    template <typename Ty>
+    inline void MetaSet(xLuaState* l, Ty* obj, void(Ty::*func)(xLuaState*)) { (obj->*func)(l); }
+    template <typename Ty>
+    inline void MetaGet(xLuaState* l, Ty* obj, int(*func)(Ty*, xLuaState*)) { func(obj, l); }
+    template <typename Ty>
+    inline void MetaSet(xLuaState* l, Ty* obj, int(*func)(Ty*, xLuaState*)) { func(obj, l); }
+    template <typename Ty>
+    inline void MetaSet(xLuaState* l, Ty* obj, void(*func)(Ty*, xLuaState*)) { func(obj, l); }
 
     template <typename Ty>
-    inline void MetaGet(xLuaState* l, Ty* obj, int(Ty::*func)(xLuaState*)) {
-        (obj->*func)(l);
-    }
-
+    inline void MetaGet(xLuaState* l, Ty* obj, int(Ty::*func)(lua_State*)) { (obj->*func)(l->GetState()); }
     template <typename Ty>
-    inline void MetaGet(xLuaState* l, Ty* obj, int(Ty::*func)(xLuaState*) const) {
-        (obj->*func)(l);
-    }
-
+    inline void MetaGet(xLuaState* l, Ty* obj, int(Ty::*func)(lua_State*) const) { (obj->*func)(l->GetState()); }
     template <typename Ty>
-    inline void MetaSet(xLuaState* l, Ty* obj, int(Ty::*func)(xLuaState*)) {
-        (obj->*func)(l);
-    }
-
+    inline void MetaSet(xLuaState* l, Ty* obj, int(Ty::*func)(lua_State*)) { (obj->*func)(l->GetState()); }
     template <typename Ty>
-    inline void MetaSet(xLuaState* l, Ty* obj, void(Ty::*func)(xLuaState*)) {
-        (obj->*func)(l);
-    }
-
+    inline void MetaSet(xLuaState* l, Ty* obj, void(Ty::*func)(lua_State*)) { (obj->*func)(l->GetState()); }
     template <typename Ty>
-    inline void MetaGet(xLuaState* l, Ty* obj, int(*func)(Ty*, xLuaState*)) {
-        func(obj, l);
-    }
-
+    inline void MetaGet(xLuaState* l, Ty* obj, int(*func)(Ty*, lua_State*)) { func(obj, l->GetState()); }
     template <typename Ty>
-    inline void MetaSet(xLuaState* l, Ty* obj, int(*func)(Ty*, xLuaState*)) {
-        func(obj, l);
-    }
-
+    inline void MetaSet(xLuaState* l, Ty* obj, int(*func)(Ty*, lua_State*)) { func(obj, l->GetState()); }
     template <typename Ty>
-    inline void MetaSet(xLuaState* l, Ty* obj, void(*func)(Ty*, xLuaState*)) {
-        func(obj, l);
-    }
+    inline void MetaSet(xLuaState* l, Ty* obj, void(*func)(Ty*, lua_State*)) { func(obj, l->GetState()); }
 
     /* 支持类的成员函数, 静态函数 */
     template <typename Ty>

@@ -26,6 +26,7 @@
   <ItemGroup>
     <ClCompile Include="..\..\test\lua_export.cpp" />
     <ClCompile Include="..\..\test\main.cpp" />
+    <ClCompile Include="..\..\test\test_export.cpp" />
     <ClCompile Include="..\..\test\test_global.cpp" />
     <ClCompile Include="..\..\test\test_push_load.cpp" />
   </ItemGroup>

@@ -9,6 +9,7 @@ int main(int argc, char* argvp[]) {
     xlua::xLuaState* l = xlua::Create(nullptr);
 
     TestPushLoad(l);
+    TestExport(l);
     TestGlobal(l);
 
     l->Release();

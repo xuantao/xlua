@@ -247,35 +247,50 @@ void sPushLoadFunction(xlua::xLuaState* l) {
         printf("[](Quard& quard) -> void\n");
     };
 
+    int(*f_5)(lua_State*) = [](lua_State* l) -> int {
+        printf("[](lua_State* l) -> int\n");
+        lua_pushboolean(l, 1);
+        lua_pushfstring(l, "xlua");
+        lua_pushnumber(l, 1.01);
+        return 3;
+    };
+
+    int(*f_6)(xlua::xLuaState*) = [](xlua::xLuaState* l) -> int {
+        printf("[](xlua::xLuaState* l) -> int\n");
+        l->PushMul(true, "xlua", 1.01f);
+        return 3;
+    };
+
     {
         Quard quard;
         auto s_q = std::make_shared<Quard>();
-        int a = 0;
+        int int_val = 0;
+        bool bool_val = false;
+        float float_val = 0.0f;
+        const char* str_val = nullptr;
         l->Push(f_1);
-        if (auto guard = l->Call(std::tie(a))) {
-            assert(a == 1);
+        if (auto guard = l->Call(std::tie(int_val))) {
+            assert(int_val == 1);
         }
 
-        const char* p = nullptr;
         l->Push(f_2);
-        if (auto guard = l->Call(std::tie(p), 2)) {
-            assert(strcmp(p, "xlua") == 0);
+        if (auto guard = l->Call(std::tie(str_val), 2)) {
+            assert(strcmp(str_val, "xlua") == 0);
         }
 
-        bool b = false;
         l->Push(f_3);
-        if (l->Call(std::tie(b), nullptr)) {
+        if (l->Call(std::tie(bool_val), nullptr)) {
             assert(true);   // nullptr -> shared_ptr
         }
 
         l->Push(f_3);
-        if (l->Call(std::tie(b), &quard)) {
+        if (l->Call(std::tie(bool_val), &quard)) {
             assert(false);  // param not allow
         }
 
         l->Push(f_3);
-        if (l->Call(std::tie(b), s_q)) {
-            assert(b);  // param not allow
+        if (l->Call(std::tie(bool_val), s_q)) {
+            assert(bool_val);  // param not allow
         }
 
         l->Push(f_4);
@@ -293,10 +308,24 @@ void sPushLoadFunction(xlua::xLuaState* l) {
             assert(s_q->obj_id_ == 1);
         }
 
+        l->Push(f_5);
+        if (l->Call(std::tie(bool_val, str_val, float_val))) {
+            assert(bool_val);
+            assert(strcmp(str_val, "xlua") == 0);
+            assert(float_val == 1.01f);
+        }
+
+        l->Push(f_6);
+        if (l->Call(std::tie(bool_val, str_val, float_val))) {
+            assert(bool_val);
+            assert(strcmp(str_val, "xlua") == 0);
+            assert(float_val == 1.01f);
+        }
+
         l->Push(s_q);
         l->LoadTableField(-1, "TestParam_1");
-        if (l->Call(std::tie(a), &quard, 101, "xlua", &quard)) {
-            assert(a == 1);
+        if (l->Call(std::tie(int_val), &quard, 101, "xlua", &quard)) {
+            assert(int_val == 1);
         }
 
         l->LoadTableField(-1, "TestParam_2");
@@ -305,8 +334,8 @@ void sPushLoadFunction(xlua::xLuaState* l) {
         }
 
         l->LoadTableField(-1, "TestParam_3");
-        if (l->Call(std::tie(a), &quard, 101, "xlua", &quard)) {
-            assert(a == 1);
+        if (l->Call(std::tie(int_val), &quard, 101, "xlua", &quard)) {
+            assert(int_val == 1);
         }
 
         l->LoadTableField(-1, "TestParam_4");

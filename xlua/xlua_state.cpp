@@ -145,8 +145,11 @@ namespace detail {
                 return 0;
             }
 
+            lua_pop(l, 2);      // pop: -1: type_member, -2: metatable
+            lua_remove(l, 1);   // remove ud
+            lua_remove(l, 1);   // remove key
+
             xLuaState* xl = static_cast<xLuaState*>(lua_touserdata(l, lua_upvalueindex(1)));
-            lua_pop(l, 2);  // pop: -1: type_member, -2: metatable
             mem->setter(xl, ud_info.obj, ud_info.info);
             return 0;
         }
@@ -232,6 +235,8 @@ namespace detail {
 
             // stack: [1]:ud, [2]:key, [3]:value, [4]:meta_list, [5]:metatable, [6]: member
             lua_pop(l, 3);
+            lua_remove(l, 1);   // remove ud
+            lua_remove(l, 1);   // remove key
 
             mem->setter(xl, ud_info.obj, ud_info.info);
             return 0;
@@ -294,6 +299,9 @@ namespace detail {
                 LogWithStack(l, "type:[%s] member:[%s] is ready only", table_name ? table_name : "?", member_name ? member_name : "?");
                 return 0;
             }
+
+            lua_remove(l, 1);   // remove table
+            lua_remove(l, 1);   // remove name
 
             xLuaState* xl = static_cast<xLuaState*>(lua_touserdata(l, lua_upvalueindex(1)));
             mem->setter(xl, nullptr, nullptr);
@@ -808,7 +816,7 @@ bool xLuaState::InitEnv(const char* export_module,
     assert(lua_obj_table_ref_);
 
     // xlua table
-    lua_newtable(state_);
+    lua_createtable(state_, 0, 5);
     PushClosure(&detail::MetaFuncs::LuaCast);
     lua_setfield(state_, -2, "Cast");
     PushClosure(&detail::MetaFuncs::LuaIsValid);
