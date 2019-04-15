@@ -215,7 +215,7 @@ public:
     /* 将全局变量加载到栈顶, 并返回lua type */
     int LoadGlobal(const char* path);
     /* 栈顶元素设置为全局变量 */
-    inline bool SetGlobal(const char* path, bool create = true) {
+    inline bool SetGlobal(const char* path, bool create = false) {
         return DoSetGlobal(path, create, false);
     }
 
@@ -241,7 +241,7 @@ public:
     }
 
     template <typename Ty>
-    inline bool SetGlobalVar(const char* path, const Ty& val, bool caeate = true) {
+    inline bool SetGlobalVar(const char* path, const Ty& val, bool caeate = false) {
         Push(val);
         return DoSetGlobal(path, caeate, false);
     }
@@ -627,6 +627,7 @@ private:
     int meta_table_ref_ = 0;        // 导出元表索引
     int user_data_table_ref_ = 0;   // user data table
     int lua_obj_table_ref_ = 0;     // table, function
+    int meta_newindex_ref = 0;
     int lonly_ud_meta_ref_ = 0;     // 独立user data元表索引
     int next_free_lua_obj_ = -1;    // 下一个的lua对象表空闲槽
     std::vector<LuaObjRef> lua_objs_;

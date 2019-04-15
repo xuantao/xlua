@@ -189,6 +189,8 @@ namespace detail {
         bool is_weak_obj;
         uint8_t light_index;        // 外部类型编号, 用于lightuserdata索引类型
         const TypeInfo* super;      // 父类信息
+        const TypeInfo* brother;    // 兄弟
+        const TypeInfo* child;      // 子类
         ITypeCaster* caster;        // 类型转换器
         MemberVar* vars;            // 成员变量
         MemberFunc* funcs;          // 成员函数

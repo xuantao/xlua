@@ -56,6 +56,14 @@ namespace detail {
         info->is_weak_obj = is_weak_obj_;
         info->caster = caster_;
 
+        info->child = nullptr;
+        if (super_) {
+            info->brother = super_->child;
+            const_cast<TypeInfo*>(super_)->child = info;
+        } else {
+            info->brother = nullptr;
+        }
+
         char* type_name = (char*)mgr_->SerialAlloc(name_.length()+1);
         snprintf(type_name, name_.length() + 1, name_.c_str());
         info->type_name = type_name;

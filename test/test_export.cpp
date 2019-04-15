@@ -20,6 +20,15 @@ function AddExntedMeta()
     end
 end
 
+function AddExntedMeta2()
+    local meta = xlua.GetTypeMeta("Triangle")
+    meta.DoExtWork = function (triangle)
+        triangle.name = "LuaExtend"
+        print("Triangle:LuaExtend called")
+        return true
+    end
+end
+
 function TraverseMetas()
     local list = xlua.GetMetaList()
     for _, v in ipairs(list) do
@@ -64,6 +73,7 @@ void TestExport(xlua::xLuaState* l)
     l->Call("TraverseMetas", std::tie());
     l->Call("AddExntedMeta", std::tie());
     l->Call("TraverseMetas", std::tie());
+    l->Call("AddExntedMeta2", std::tie());
 
     TestGetType(l);
 
