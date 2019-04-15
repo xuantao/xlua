@@ -207,13 +207,13 @@
 #define XLUA_EXPORT_ENUM_BEGIN_AS(Name, EnumType)                                       \
     _XLUA_EXPORT_CONST_BEGIN(Name)                                                      \
             using enum_type = EnumType;                                                 \
-            static xlua::ConstValue values[] = {
+            static xlua::detail::ConstValue values[] = {
 
 #define XLUA_EXPORT_ENUM_BEGIN(EnumType)    XLUA_EXPORT_ENUM_BEGIN_AS(EnumType, EnumType)
 #define XLUA_EXPORT_ENUM_END()              XLUA_EXPORT_CONST_END()
 
 #define XLUA_ENUM_VAR_AS(Name, Val)         XLUA_CONST_VAR(Name, (int)enum_type::Val)
-#define XLUA_ENUM_VAR(Val)                  XLUA_ENUM_VAR_AS(Var, Val)
+#define XLUA_ENUM_VAR(Val)                  XLUA_ENUM_VAR_AS(Val, Val)
 
 /* 导出预设脚本 */
 #define XLUA_EXPORT_SCRIPT(Str)                                                         \

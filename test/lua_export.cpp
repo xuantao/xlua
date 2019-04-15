@@ -60,6 +60,24 @@ static int Obj_SetTag3(ObjectBase* obj, lua_State* l) {
     return 0;
 }
 
+XLUA_EXPORT_ENUM_BEGIN(ObjType)
+XLUA_ENUM_VAR(kUnknown)
+XLUA_ENUM_VAR(kTriangle)
+XLUA_ENUM_VAR(kQuard)
+XLUA_EXPORT_ENUM_END()
+
+XLUA_EXPORT_ENUM_BEGIN_AS(_G, ObjType)
+XLUA_ENUM_VAR(kUnknown)
+XLUA_ENUM_VAR(kTriangle)
+XLUA_ENUM_VAR(kQuard)
+XLUA_EXPORT_ENUM_END()
+
+XLUA_EXPORT_ENUM_BEGIN_AS(Enum.ObjType, ObjType)
+XLUA_ENUM_VAR(kUnknown)
+XLUA_ENUM_VAR(kTriangle)
+XLUA_ENUM_VAR(kQuard)
+XLUA_EXPORT_ENUM_END()
+
 XLUA_EXPORT_EXTERNAL_BEGIN(ObjectBase)
 XLUA_MEMBER_VAR_AS(obj_id, obj_id_)
 XLUA_MEMBER_VAR_AS(name, name_)

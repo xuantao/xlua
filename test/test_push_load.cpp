@@ -1,11 +1,11 @@
-#include "test.h"
+ï»¿#include "test.h"
 #include "lua_export.h"
 #include <xlua_state.h>
 
 static int sLuaCall_1(xlua::xLuaState* l) {
     printf("int sLuaCall_1(xlua::xLuaState* l)\n");
     auto f = l->GetTableField<lua_CFunction>(1, "Call_1");
-    // ·Ç±ê×¼Luaµ¼³öº¯Êı»áÍ¨¹ıÖĞ×ªº¯Êı×ª·¢
+    // éæ ‡å‡†Luaå¯¼å‡ºå‡½æ•°ä¼šé€šè¿‡ä¸­è½¬å‡½æ•°è½¬å‘
     assert((void*)f != &sLuaCall_1);
     return 0;
 }
@@ -153,11 +153,11 @@ static void sPushLoadDeclare(xlua::xLuaState* l) {
 
     l->Push(&quard);
 
-    /* ×ÓÀàÄÜ¹»×ª»»Îª»ùÀà */
+    /* å­ç±»èƒ½å¤Ÿè½¬æ¢ä¸ºåŸºç±» */
     auto triangle_ptr_2 = l->Load<Triangle*>(-1);
     auto base_ptr_2 = l->Load<ObjectBase*>(-1);
 
-    /* ÕâÀï¿ªÆô¶à¼Ì³Ğ²ÅÄÜÕıÈ·×ª»» */
+    /* è¿™é‡Œå¼€å¯å¤šç»§æ‰¿æ‰èƒ½æ­£ç¡®è½¬æ¢ */
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
     assert(triangle_ptr_2 == &quard);
     assert(base_ptr_2 == &quard);

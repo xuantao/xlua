@@ -1,4 +1,4 @@
-static const char* s_lua_str = R"V0G0N(
+﻿static const char* s_lua_str = R"V0G0N(
 Test = {}
 Test.triangle = nil
 
@@ -29,15 +29,13 @@ function AddExntedMeta2()
     end
 end
 
-function TraverseMetas()
-    local list = xlua.GetMetaList()
-    for _, v in ipairs(list) do
-        print(string.format("%s {", v.__name))
-        for name, member in pairs(v) do
-            print(string.format("    %s: %s", name, type(member)))
-        end
-        print("}")
+function TraverseMeta(type_name)
+    local list = xlua.GetTypeMeta(type_name)
+    print(string.format("%s {", type_name))
+    for name, member in pairs(list) do
+        print(string.format("    %s: %s", name, type(member)))
     end
+    print("}")
 end
 
 )V0G0N";
@@ -70,9 +68,10 @@ void TestExport(xlua::xLuaState* l)
     xlua::xLuaGuard guard(l);
     l->DoString(s_lua_str, "TestExport");
 
-    l->Call("TraverseMetas", std::tie());
+    l->Call("TraverseMeta", std::tie(), "Triangle");
     l->Call("AddExntedMeta", std::tie());
-    l->Call("TraverseMetas", std::tie());
+    l->Call("TraverseMeta", std::tie(), "Triangle");
+    l->Call("TraverseMeta", std::tie(), "Quard");
     l->Call("AddExntedMeta2", std::tie());
 
     TestGetType(l);

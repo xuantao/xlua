@@ -627,7 +627,6 @@ private:
     int meta_table_ref_ = 0;        // 导出元表索引
     int user_data_table_ref_ = 0;   // user data table
     int lua_obj_table_ref_ = 0;     // table, function
-    int meta_newindex_ref = 0;
     int lonly_ud_meta_ref_ = 0;     // 独立user data元表索引
     int next_free_lua_obj_ = -1;    // 下一个的lua对象表空闲槽
     std::vector<LuaObjRef> lua_objs_;

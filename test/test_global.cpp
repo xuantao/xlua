@@ -75,7 +75,6 @@ function TestExportGlobal()
     print("Const.Version", Const.Version)
     print("Const.Name", Const.Name)
 
-
     print(getmetatable(Const).__name)
     print(getmetatable(Const).__index)
     print(getmetatable(Const).__newindex)
@@ -100,6 +99,26 @@ function TestExtend(obj)
     obj.Tag1 = 101
     obj.Tag2 = 102
     obj.Tag3 = 103
+end
+
+function TestPrintEnum()
+    print("ObjType = {")
+    for k, v in pairs(ObjType) do
+        print(k, v)
+    end
+    print("}")
+
+    print("Enum.ObjType = {")
+    for k, v in pairs(Enum.ObjType) do
+        print(k, v)
+    end
+    print("}")
+
+    print("_G = {")
+    for k, v in pairs(ObjType) do
+        print(k, _G[k])
+    end
+    print("}")
 end
 
 )V0G0N";
@@ -226,6 +245,7 @@ void TestGlobal(xlua::xLuaState* l) {
 
         l->Call("TestExtend", std::tie(), &o);
         l->Call("TestExtend", std::tie(), &q);
+        l->Call("TestPrintEnum", std::tie());
     }
 
     LOG_TOP_(l);

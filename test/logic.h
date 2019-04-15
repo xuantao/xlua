@@ -2,6 +2,12 @@
 #include <xlua_def.h>
 #include <memory>
 
+enum class ObjType {
+    kUnknown,
+    kTriangle,
+    kQuard,
+};
+
 class ObjectBase {
 public:
     virtual ~ObjectBase() {}

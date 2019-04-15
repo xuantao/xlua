@@ -9,6 +9,34 @@ XLUA_NAMESPACE_BEGIN
 #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TUSERDATA)
 #endif
 
+static const char* s_xlua_table =R"V0G0N(
+local tbMeta = {}
+tbMeta.__pairs = function (tb)
+    local iter = function (meta, k)
+        local v
+        k, v = next(meta, k)
+        if v then return k, v end
+    end
+    return iter, tb.__meta, nil
+end
+
+tbMeta.__tostring = function (tb)
+    return tostring(tb.__meta)
+end
+
+tbMeta.__index = function (tb, k)
+    return tb.__meta[k]
+end
+
+tbMeta.__newindex = function (tb, k, v)
+    xlua.ExtendType(tb.__meta.__name, k, v)
+end
+
+xlua.__CreateTypeMetaWrap = function (meta)
+    return setmetatable({__meta = meta}, tbMeta)
+end
+)V0G0N";
+
 namespace detail {
     static void TraceCallStack(lua_State* L, xLuaLogBuffer& lb) {
         int level = 1;
@@ -53,6 +81,49 @@ namespace detail {
         return false;
     }
 
+    static void ContactPath(char* dst, size_t s, const char* module, const char* path) {
+        if (*path == 0 || ::strcmp(path, "_G") == 0) {
+            snprintf(dst, s, module);
+        } else if (module == nullptr || *module == 0) {
+            snprintf(dst, s, path);
+        } else {
+            snprintf(dst, s, "%s.%s", module, path);
+        }
+    }
+
+    static bool MakeGlobal(lua_State* l, const char* path) {
+        if (*path == 0) {
+            lua_pushglobaltable(l);
+            return true;
+        }
+
+        lua_newtable(l);
+        lua_pushglobaltable(l);
+        while (const char* sub = ::strchr(path, '.')) {
+            lua_pushlstring(l, path, sub - path);
+            int l_ty = lua_gettable(l, -2);
+            if (l_ty == LUA_TNIL) {
+                lua_pop(l, 1);                          // pop nil
+                lua_newtable(l);                        // new table
+                lua_pushlstring(l, path, sub - path);   // key
+                lua_pushvalue(l, -2);                   // copy table
+                lua_rawset(l, -4);                      // set failed
+            } else if (!_IS_TABLE_TYPE(l_ty)) {
+                lua_pop(l, 3); // [1]:value, [2]:table, [3]:unknown value
+                return false;
+            }
+
+            lua_remove(l, -2);
+            path = sub + 1;
+        }
+
+        lua_pushstring(l, path);    // push key
+        lua_pushvalue(l, -3);       // copy table
+        lua_rawset(l, -3);          // set field
+        lua_pop(l, 1);              // [1]: table
+        return true;
+    }
+
     static bool IsObjValid(lua_State* l) {
         int l_ty = lua_type(l, 1);
         if (l_ty == LUA_TLIGHTUSERDATA) {
@@ -95,50 +166,24 @@ namespace detail {
     struct MetaFuncs {
         static void ExtendTypeMember(xLuaState* l, const TypeInfo* info) {
             lua_State* state = l->GetState();
-            for (const auto* brother = info; brother; brother = brother->brother) {
-                lua_rawgeti(state, LUA_REGISTRYINDEX, l->meta_table_ref_);
-                lua_rawgeti(state, -1, brother->index);
-                lua_pushvalue(state, 1);
-                if (lua_gettable(state, -2) != LUA_TNIL) {
-                    lua_pop(state, 3);
-                    const char* key = lua_tostring(state, 1);
-                    LogWithStack(state, "extend type[%s] member:[%s] failed, target member is exist!", brother->type_name, key ? key : "?");
-                    continue;
-                } else {
-                    lua_pushvalue(state, 1);
-                    lua_pushvalue(state, 2);
-                    lua_rawset(state, -4);
-                    lua_pop(state, 3);
-                }
-
-                ExtendTypeMember(l, brother->child);
-            }
-        }
-
-        /* used for extend type member functions */
-        static int LuaMetaNewIndex(lua_State* l) {
-            lua_getfield(l, 1, "__name");
-            const char* type_name = lua_tostring(l, -1);
-            const TypeInfo* info = GlobalVar::GetInstance()->GetTypeInfo(type_name);
-            if (info == nullptr) {
-                LogWithStack(l, "can not get typeinfo of [%s]", type_name ? type_name : "?");
-                return 0;
+            lua_rawgeti(state, LUA_REGISTRYINDEX, l->meta_table_ref_);
+            lua_rawgeti(state, -1, info->index);
+            lua_pushvalue(state, 1);
+            if (lua_gettable(state, -2) != LUA_TNIL) {
+                lua_pop(state, 3);
+                const char* key = lua_tostring(state, 1);
+                LogWithStack(state, "extend type[%s] member:[%s] failed, member is already exist!", info->type_name, key ? key : "?");
+                return;
             }
 
-            lua_pop(l, 1);  // __name
-            if (!lua_isfunction(l, -1)) {
-                LogWithStack(l, "only accept extend type member[name] function", info->type_name);
-                return 0;
+            lua_pushvalue(state, 1);
+            lua_pushvalue(state, 2);
+            lua_rawset(state, -4);
+            lua_pop(state, 3);
+
+            for (const auto* child = info->child; child; child = child->brother) {
+                ExtendTypeMember(l, child);
             }
-
-            lua_pushvalue(l, 2);
-            lua_pushvalue(l, 3);
-            lua_rawset(l, 1);
-            lua_remove(l, 1);
-
-            xLuaState* xl = static_cast<xLuaState*>(lua_touserdata(l, lua_upvalueindex(1)));
-            ExtendTypeMember(xl, info->child);
-            return 0;
         }
 
         static int LuaIndex(lua_State* l) {
@@ -523,9 +568,11 @@ namespace detail {
                 return 0;
 
             xLuaState* xl = static_cast<xLuaState*>(lua_touserdata(l, lua_upvalueindex(1)));
+            xl->LoadGlobal("xlua.__CreateTypeMetaWrap");
             lua_rawgeti(l, LUA_REGISTRYINDEX, xl->meta_table_ref_);
             lua_rawgeti(l, -1, info->index);
             lua_remove(l, -2);
+            lua_pcall(l, 1, 1, 0);
             return 1;
         }
 
@@ -533,6 +580,28 @@ namespace detail {
             xLuaState* xl = static_cast<xLuaState*>(lua_touserdata(l, lua_upvalueindex(1)));
             lua_rawgeti(l, LUA_REGISTRYINDEX, xl->meta_table_ref_);
             return 1;
+        }
+
+        /* used for extend type member functions */
+        static int LuaExtendType(lua_State* l) {
+            const char* type_name = lua_tostring(l, 1);
+            const TypeInfo* info = GlobalVar::GetInstance()->GetTypeInfo(type_name);
+            if (info == nullptr) {
+                LogWithStack(l, "can not get typeinfo of [%s]", type_name ? type_name : "?");
+                return 0;
+            }
+
+            const char* mem = lua_tostring(l, 2);
+            if (!lua_isfunction(l, -1)) {
+                LogWithStack(l, "only accept extend type member[name] function", info->type_name, mem ? mem : "?");
+                return 0;
+            }
+
+            lua_remove(l, 1);   // remove type name
+
+            xLuaState* xl = static_cast<xLuaState*>(lua_touserdata(l, lua_upvalueindex(1)));
+            ExtendTypeMember(xl, info);
+            return 0;
         }
 
         static int LuaLonlyGc(lua_State* l) {
@@ -877,9 +946,12 @@ bool xLuaState::InitEnv(const char* export_module,
     lua_setfield(state_, -2, "Type");
     PushClosure(&detail::MetaFuncs::LuaGetTypeMeta);
     lua_setfield(state_, -2, "GetTypeMeta");
-    PushClosure(&detail::MetaFuncs::LuaGetMetaList);
-    lua_setfield(state_, -2, "GetMetaList");
+    PushClosure(&detail::MetaFuncs::LuaExtendType);
+    lua_setfield(state_, -2, "ExtendType");
     lua_setglobal(state_, "xlua");
+
+    // 扩展xlua table
+    DoString(s_xlua_table, "xlua");
 
 #if XLUA_USE_LIGHT_USER_DATA
     // light user data metatable
@@ -899,13 +971,6 @@ bool xLuaState::InitEnv(const char* export_module,
     lua_pop(state_, 1);             // light user data
     assert(GetTop() == 0);
 #endif // XLUA_USE_LIGHT_USER_DATA
-
-    lua_createtable(state_, 0, 2);
-    lua_pushstring(state_, "meta_newindex_table");
-    lua_setfield(state_, -2, "__name");
-    PushClosure(&detail::MetaFuncs::LuaMetaNewIndex);
-    lua_setfield(state_, -2, "__newindex");
-    meta_newindex_ref = luaL_ref(state_, LUA_REGISTRYINDEX);
 
     lua_createtable(state_, 0, 2);
     lua_pushstring(state_, "lonly_user_data");
@@ -941,36 +1006,10 @@ void xLuaState::InitConsts(const char* export_module, const std::vector<const de
 
     for (const detail::ConstInfo* info : consts) {
         char type_name[XLUA_MAX_TYPE_NAME_LENGTH];
-        if (*info->name == 0 || ::strcmp(info->name, "_G") == 0) {
-            snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, export_module);
-        } else if (export_module == nullptr || *export_module == 0) {
-            snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, info->name);
-        } else {
-            snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, "%s.%s", export_module, info->name);
-        }
 
-        if (*type_name == 0) {
-            // global table
-            lua_pushglobaltable(state_);
-        } else {
-            int ty = LoadGlobal(type_name);
-            if (ty != LUA_TTABLE) {
-                if (ty != LUA_TNIL) {
-                    detail::LogError("Init Const table failed, already has value of [%s]", type_name);
-                    assert(false);
-                }
-
-                int num = 0;
-                while (info->values[num].name)
-                    ++num;
-
-                lua_pop(state_, 1);
-                lua_createtable(state_, 0, num + 1);
-                lua_pushvalue(state_, -1);  // copy ref
-                bool ok = DoSetGlobal(type_name, true, true);
-                assert(ok);
-            }
-        }
+        detail::ContactPath(type_name, XLUA_MAX_TYPE_NAME_LENGTH, export_module, info->name);
+        bool ok = detail::MakeGlobal(state_, type_name);
+        assert(ok);
 
         for (int i = 0; info->values[i].name; ++i) {
             const auto& val = info->values[i];
@@ -1073,25 +1112,18 @@ void xLuaState::CreateTypeMeta(const detail::TypeInfo* info) {
     PushClosure(&detail::MetaFuncs::LuaGc);
     lua_setfield(state_, -2, "__gc");
 
-    lua_rawgeti(state_, LUA_REGISTRYINDEX, meta_newindex_ref);
-    lua_setmetatable(state_, -2);
-
     lua_pop(state_, 1);
     assert(GetTop() == 0);
 }
 
 void xLuaState::CreateTypeGlobal(const char* export_module, const detail::TypeInfo* info) {
     char type_name[XLUA_MAX_TYPE_NAME_LENGTH];
-    if (*info->type_name == 0 || ::strcmp(info->type_name, "_G") == 0) {
-        snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, export_module);
-    } else if (export_module == nullptr || *export_module == 0) {
-        snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, info->type_name);
-    } else {
-        snprintf(type_name, XLUA_MAX_TYPE_NAME_LENGTH, "%s.%s", export_module, info->type_name);
-    }
+    detail::ContactPath(type_name, XLUA_MAX_TYPE_NAME_LENGTH, export_module, info->type_name);
+
+    bool ok = detail::MakeGlobal(state_, type_name);
+    assert(ok);
 
     if (*type_name == 0) {
-        lua_pushglobaltable(state_);
         SetGlobalMember(info, true, false);
 
         int var_num = 0;
@@ -1106,20 +1138,6 @@ void xLuaState::CreateTypeGlobal(const char* export_module, const detail::TypeIn
             detail::LogError("global table can not add member var");
         assert(var_num == 0 && "global table can not add member var");
     } else {
-        int ty = LoadGlobal(type_name);
-        if (ty != LUA_TTABLE) {
-            if (ty != LUA_TNIL) {
-                detail::LogError("Init Global table failed, already has value of [%s]", type_name);
-                assert(false);
-            }
-
-            lua_pop(state_, 1);
-            lua_newtable(state_);
-            lua_pushvalue(state_, -1);  // copy ref
-            bool ok = DoSetGlobal(type_name, true, true);
-            assert(ok);
-        }
-
         SetGlobalMember(info, true, false);
         lua_pushstring(state_, "__name");
         lua_pushstring(state_, info->type_name);
