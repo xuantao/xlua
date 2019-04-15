@@ -3,7 +3,11 @@
 
 XLUA_NAMESPACE_BEGIN
 
-#define _XLUA_GET_STATE(l)  xlua::detail::GlobalVar::GetInstance()->GetState(l)
+#if XLUA_USE_LIGHT_USER_DATA
+#define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TLIGHTUSERDATA || type == LUA_TUSERDATA)
+#else
+#define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TUSERDATA)
+#endif
 
 namespace detail {
     static void TraceCallStack(lua_State* L, xLuaLogBuffer& lb) {
@@ -47,6 +51,43 @@ namespace detail {
             info = info->super;
         }
         return false;
+    }
+
+    static bool MakeGlobalTable(lua_State* l, const char* path, bool rawset) {
+        if (path == nullptr || *path == 0)
+            return false;   // wrong name
+
+        lua_pushglobaltable(l);
+        while (const char* sub = ::strchr(path, '.')) {
+            lua_pushlstring(l, path, sub - path);
+            int l_ty = lua_gettable(l, -2);
+            if (l_ty == LUA_TNIL) {
+                lua_pop(l, 1);                          // pop nil
+                lua_newtable(l);                        // new table
+                lua_pushlstring(l, path, sub - path);   // key
+                lua_pushvalue(l, -2);                   // copy table
+                if (rawset)
+                    lua_rawset(l, -4);
+                else
+                    lua_settable(l, -4);                // set field
+            } else if (!_IS_TABLE_TYPE(l_ty)) {
+                lua_pop(l, 2);  // [1]:table, [2]:unknown value
+                return false;
+            }
+
+            lua_remove(l, -2);  // remove previous table
+            path = sub + 1;
+        }
+
+        lua_pushstring(l, path);
+        lua_newtable(l);
+        if (rawset)
+            lua_rawset(l, -3);
+        else
+            lua_settable(l, -3);   // set field
+
+        lua_pop(l, 1); // [1]: table
+        return true;
     }
 
     static bool IsObjValid(lua_State* l) {
@@ -650,7 +691,7 @@ bool xLuaState::DoSetGlobal(const char* path, bool create, bool rawset) {
                 lua_rawset(state_, -4);
             else
                 lua_settable(state_, -4);               // set field
-        } else if (l_ty != LUA_TTABLE) {
+        } else if (!_IS_TABLE_TYPE(l_ty)) {
             lua_pop(state_, 3); // [1]:value, [2]:table, [3]:unknown value
             return false;
         }
@@ -672,7 +713,7 @@ bool xLuaState::DoSetGlobal(const char* path, bool create, bool rawset) {
 
 int xLuaState::LoadTableField(int index, int field) {
     int ty = GetType(index);
-    if (ty != LUA_TTABLE && ty != LUA_TLIGHTUSERDATA && ty != LUA_TUSERDATA) {
+    if (!_IS_TABLE_TYPE(ty)) {
         lua_pushnil(state_);
         detail::LogError("attempt to get table field:[%d], target is not table", field);
         return LUA_TNIL;
@@ -682,7 +723,7 @@ int xLuaState::LoadTableField(int index, int field) {
 
 int xLuaState::LoadTableField(int index, const char* field) {
     int ty = GetType(index);
-    if (ty != LUA_TTABLE && ty != LUA_TLIGHTUSERDATA && ty != LUA_TUSERDATA) {
+    if (!_IS_TABLE_TYPE(ty)) {
         lua_pushnil(state_);
         detail::LogError("attempt to get table field:[%s], target is not table", field);
         return LUA_TNIL;
@@ -692,7 +733,7 @@ int xLuaState::LoadTableField(int index, const char* field) {
 
 bool xLuaState::SetTableField(int index, int field) {
     int ty = GetType(index);
-    if (ty != LUA_TTABLE && ty != LUA_TLIGHTUSERDATA && ty != LUA_TUSERDATA) {
+    if (!_IS_TABLE_TYPE(ty)) {
         lua_pop(state_, 1);
         detail::LogError("attempt to set table field:[%d], target is not table", field);
         return false;
@@ -703,7 +744,7 @@ bool xLuaState::SetTableField(int index, int field) {
 
 bool xLuaState::SetTableField(int index, const char* field) {
     int ty = GetType(index);
-    if (ty != LUA_TTABLE && ty != LUA_TLIGHTUSERDATA && ty != LUA_TUSERDATA) {
+    if (!_IS_TABLE_TYPE(ty)) {
         lua_pop(state_, 1);
         detail::LogError("attempt to set table field:[%s], target is not table", field);
         return false;
