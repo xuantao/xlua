@@ -30,8 +30,8 @@ namespace test {
 #include <xlua_export.h>
 
 XLUA_EXPORT_CLASS_BEGIN(test::Obj)
-  XLUA_MEMBER_FUNC(Member)
-  XLUA_MEMBER_VAR_AS(val, val_)
+  XLUA_MEMBER_FUNC(&test::Obj::Member)
+  XLUA_MEMBER_VAR_AS(val, &test::Obj::val_)
 XLUA_EXPORT_CLASS_END() 
 ```
 - 类型导出方式二  
@@ -57,8 +57,8 @@ XLUA_DECLARE_EXTERNAL(test::Obj);
 #include <xlua_export.h>
 
 XLUA_EXPORT_EXTERNAL_BEGIN(test::Obj)
-  XLUA_MEMBER_FUNC(Member)
-  XLUA_MEMBER_VAR(val)
+  XLUA_MEMBER_FUNC(&test::Obj::Member)
+  XLUA_MEMBER_VAR(&test::Obj::val)
 XLUA_EXPORT_EXTERNAL_END()
 ```
 这两种导出类型的主要区别：  
@@ -95,4 +95,35 @@ obj_ptr2 = l->Load<std::shared_ptr<Obj>>(-1);
 5. 共享指针->共享指针  
 
 #### 注意：
-由于共享指针、值数据->指针时，涉及到对象生命期管理问题，需确保使用对应指针lua栈未被清空，以免照成未定义行为。
+由于共享指针、值数据->指针时，涉及到对象生命期管理问题，需确保使用对应指针时lua栈未被清空，以免照成未定义行为。
+
+
+#### 扩展类的成员
+```cpp
+/* file: lua_export.cpp */
+
+static int Obj_Get_Type(Obj* obj) {
+  /* TODO: */ return 0;
+}
+
+static void Obj_Set_type(Obj* obj, int val) {
+  //TODO:
+}
+
+static bool Obj_DoWork(Obj* obj, int, bool) {
+  //TODO:
+}
+
+XLUA_EXPORT_EXTERNAL_BEGIN(test::Obj)
+  /* normal member function */
+  XLUA_MEMBER_FUNC(&test::Obj::Member)
+  /* read only */
+  XLUA_MEMBER_VAR_WRAP(val_1, &test::Obj::val, nullptr)
+  /* set only */
+  XLUA_MEMBER_VAR_WRAP(val_2, nullptr, &test::Obj::val)
+  /* extend member var */
+  XLUA_MEMBER_VAR_EXTEND(type, &Obj_Get_Type, &Obj_Set_type)
+  /* extend member function */
+  XLUA_MEMBER_FUNC_EXTEND(DoWork, &Obj_DoWork)
+XLUA_EXPORT_EXTERNAL_END()
+```
