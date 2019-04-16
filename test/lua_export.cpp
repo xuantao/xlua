@@ -1,16 +1,16 @@
 ﻿#include "lua_export.h"
 #include <xlua_export.h>
 
-static int Obj_Ext1(ObjectBase* obj, int a, const char* name) {
+static int Obj_Ext1(ShapeBase* obj, int a, const char* name) {
     printf("Obj_Ext1(obj:0x%p, a:%d, name:%s\n", obj, a, name);
     return 0;
 }
 
-static void Obj_Ext2(ObjectBase* obj, int a, const char* name) {
+static void Obj_Ext2(ShapeBase* obj, int a, const char* name) {
     printf("Obj_Ext2(obj:0x%p, a:%d, name:%s\n", obj, a, name);
 }
 
-static int Obj_Ext3(ObjectBase* obj, xlua::xLuaState* l) {
+static int Obj_Ext3(ShapeBase* obj, xlua::xLuaState* l) {
     int a = 0;
     const char* name = nullptr;
     l->LoadMul(1, std::tie(a, name));
@@ -18,7 +18,7 @@ static int Obj_Ext3(ObjectBase* obj, xlua::xLuaState* l) {
     return 0;
 }
 
-static int Obj_Ext4(ObjectBase* obj, lua_State* l) {
+static int Obj_Ext4(ShapeBase* obj, lua_State* l) {
     int a = 0;
     const char* name = nullptr;
     a = (int)lua_tonumber(l, 1);
@@ -27,61 +27,65 @@ static int Obj_Ext4(ObjectBase* obj, lua_State* l) {
     return 0;
 }
 
-static const char* Obj_GetTag1(ObjectBase* obj) {
+static const char* Obj_GetTag1(ShapeBase* obj) {
     printf("Obj_GetTag1(obj:0x%p)\n", obj);
     return "Obj_GetTag1";
 }
 
-static int Obj_GetTag2(ObjectBase* obj, xlua::xLuaState* l) {
+static int Obj_GetTag2(ShapeBase* obj, xlua::xLuaState* l) {
     printf("Obj_GetTag2(obj:0x%p)\n", obj);
     l->Push("Obj_GetTag2");
     return 1;
 }
 
-static int Obj_GetTag3(ObjectBase* obj, lua_State* l) {
+static int Obj_GetTag3(ShapeBase* obj, lua_State* l) {
     printf("Obj_GetTag3(obj:0x%p)\n", obj);
     lua_pushstring(l, "Obj_GetTag3");
     return 1;
 }
 
-static void Obj_SetTag1(ObjectBase* obj, int v) {
+static void Obj_SetTag1(ShapeBase* obj, int v) {
     printf("Obj_SetTag1(obj:0x%p), v:%d\n", obj, v);
 }
 
-static int Obj_SetTag2(ObjectBase* obj, xlua::xLuaState* l) {
+static int Obj_SetTag2(ShapeBase* obj, xlua::xLuaState* l) {
     int v = l->Load<int>(1);
     printf("Obj_SetTag2(obj:0x%p), v:%d\n", obj, v);
     return 0;
 }
 
-static int Obj_SetTag3(ObjectBase* obj, lua_State* l) {
+static int Obj_SetTag3(ShapeBase* obj, lua_State* l) {
     int v = (int)lua_tonumber(l, 1);
     printf("Obj_SetTag3(obj:0x%p), v:%d\n", obj, v);
     return 0;
 }
 
-XLUA_EXPORT_CONSTANT_BEGIN(ObjType)
-XLUA_CONST_VAR(ObjType::kUnknown)
-XLUA_CONST_VAR(ObjType::kTriangle)
-XLUA_CONST_VAR(ObjType::kQuard)
+namespace Enum {
+    using ShapeType = ::ShapeType;
+}
+
+XLUA_EXPORT_CONSTANT_BEGIN(ShapeType)
+XLUA_CONST_VAR(ShapeType::kUnknown)
+XLUA_CONST_VAR(ShapeType::kTriangle)
+XLUA_CONST_VAR(ShapeType::kQuard)
 XLUA_EXPORT_CONSTANT_END()
 
 XLUA_EXPORT_CONSTANT_BEGIN(_G)
-XLUA_CONST_VAR(ObjType::kUnknown)
-XLUA_CONST_VAR(ObjType::kTriangle)
-XLUA_CONST_VAR(ObjType::kQuard)
+XLUA_CONST_VAR(ShapeType::kUnknown)
+XLUA_CONST_VAR(ShapeType::kTriangle)
+XLUA_CONST_VAR(ShapeType::kQuard)
 XLUA_EXPORT_CONSTANT_END()
 
-XLUA_EXPORT_CONSTANT_BEGIN(Enum.ObjType)
-XLUA_CONST_VAR(ObjType::kUnknown)
-XLUA_CONST_VAR(ObjType::kTriangle)
-XLUA_CONST_VAR(ObjType::kQuard)
+XLUA_EXPORT_CONSTANT_BEGIN(Enum::ShapeType)
+XLUA_CONST_VAR(ShapeType::kUnknown)
+XLUA_CONST_VAR(ShapeType::kTriangle)
+XLUA_CONST_VAR(ShapeType::kQuard)
 XLUA_EXPORT_CONSTANT_END()
 
-XLUA_EXPORT_EXTERNAL_BEGIN(ObjectBase)
-XLUA_MEMBER_VAR_AS(obj_id, &ObjectBase::obj_id_)
-XLUA_MEMBER_VAR_AS(name, &ObjectBase::name_)
-XLUA_MEMBER_FUNC(&ObjectBase::AreaSize)
+XLUA_EXPORT_EXTERNAL_BEGIN(ShapeBase)
+XLUA_MEMBER_VAR_AS(obj_id, &ShapeBase::obj_id_)
+XLUA_MEMBER_VAR_AS(name, &ShapeBase::name_)
+XLUA_MEMBER_FUNC(&ShapeBase::AreaSize)
 XLUA_MEMBER_FUNC_EXTEND(Ext1, &Obj_Ext1)
 XLUA_MEMBER_FUNC_EXTEND(Ext2, &Obj_Ext2)
 XLUA_MEMBER_FUNC_EXTEND(Ext3, &Obj_Ext3)
@@ -98,20 +102,20 @@ XLUA_MEMBER_VAR_AS(line_2, &Triangle::line_2_)
 XLUA_MEMBER_VAR_AS(line_3, &Triangle::line_3_)
 XLUA_EXPORT_CLASS_END()
 
-XLUA_EXPORT_CLASS_BEGIN(Quard)
-XLUA_MEMBER_FUNC(&Quard::Name)
-XLUA_MEMBER_FUNC(&Quard::DoExtWork)
-XLUA_MEMBER_FUNC(&Quard::TestParam_1)
-XLUA_MEMBER_FUNC(&Quard::TestParam_2)
-XLUA_MEMBER_FUNC(&Quard::TestParam_3)
-XLUA_MEMBER_FUNC(&Quard::TestParam_4)
-XLUA_MEMBER_FUNC_AS(AddTriangle_1, &Quard::AddTriangle, Triangle*)
-XLUA_MEMBER_FUNC_AS(AddTriangle_2, &Quard::AddTriangle, Triangle&)
-XLUA_MEMBER_FUNC_AS(AddTriangle_3, &Quard::AddTriangle, const Triangle&)
-XLUA_MEMBER_FUNC_AS(AddTriangle_4, &Quard::AddTriangle, const std::shared_ptr<Triangle>&)
-XLUA_MEMBER_VAR_AS(type, &Quard::type_)
-XLUA_MEMBER_VAR_AS(width, &Quard::width_)
-XLUA_MEMBER_VAR_AS(height, &Quard::height_)
+XLUA_EXPORT_CLASS_BEGIN(Square)
+XLUA_MEMBER_FUNC(&Square::Name)
+XLUA_MEMBER_FUNC(&Square::DoExtWork)
+XLUA_MEMBER_FUNC(&Square::TestParam_1)
+XLUA_MEMBER_FUNC(&Square::TestParam_2)
+XLUA_MEMBER_FUNC(&Square::TestParam_3)
+XLUA_MEMBER_FUNC(&Square::TestParam_4)
+XLUA_MEMBER_FUNC_AS(AddTriangle_1, &Square::AddTriangle, Triangle*)
+XLUA_MEMBER_FUNC_AS(AddTriangle_2, &Square::AddTriangle, Triangle&)
+XLUA_MEMBER_FUNC_AS(AddTriangle_3, &Square::AddTriangle, const Triangle&)
+XLUA_MEMBER_FUNC_AS(AddTriangle_4, &Square::AddTriangle, const std::shared_ptr<Triangle>&)
+XLUA_MEMBER_VAR_AS(type, &Square::type_)
+XLUA_MEMBER_VAR_AS(width, &Square::width_)
+XLUA_MEMBER_VAR_AS(height, &Square::height_)
 XLUA_EXPORT_CLASS_END()
 
 XLUA_EXPORT_CLASS_BEGIN(WeakObj)

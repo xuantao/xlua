@@ -19,8 +19,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\test\logic.h" />
     <ClInclude Include="..\..\test\lua_export.h" />
+    <ClInclude Include="..\..\test\shape.h" />
     <ClInclude Include="..\..\test\test.h" />
   </ItemGroup>
   <ItemGroup>

@@ -106,6 +106,10 @@ namespace detail {
 
     /* 日志输出 */
     void LogError(const char* fmt, ...);
+    /* 净化导出类型名称 */
+    void PerifyTypeName(char* dst, size_t sz, const char* name);
+    /* 净化成员名称 */
+    const char* PerifyMemberName(const char* name);
 
     /* 导出到Lua类型 */
     typedef int(*LuaFunction)(lua_State* L);

@@ -38,6 +38,44 @@ namespace detail {
         s_log(buf);
     }
 
+    void PerifyTypeName(char* dst, size_t sz, const char* name) {
+        // replace "::" as '.'
+        snprintf(dst, sz, name);
+        const char* sub = dst;
+        while (sub = strstr(sub, "::")) {
+            char* tmp = const_cast<char*>(sub);
+            *tmp = '.';
+            ++tmp;
+            for (; tmp[0]; ++tmp) {
+                tmp[0] = tmp[1];
+            }
+        }
+    }
+
+    const char* PerifyMemberName(const char* name) {
+        while (const char* sub = ::strstr(name, "::"))
+            name = sub + 2;
+
+        // remove prefix: &
+        if (name[0] == '&')
+            ++name;
+
+        // remove prefix: "m_"
+        if (name[0] == 'm' && name[1] == '_')
+            name += 2;
+
+        // remove prefix: "lua_"
+        if ((name[0] == 'l' || name[0] == 'L') &&
+            (name[1] == 'u' || name[1] == 'U') &&
+            (name[2] == 'a' || name[2] == 'A')
+            ) {
+            name += 3;
+            if (name[0] == '_')
+                ++name;
+        }
+        return name;
+    }
+
     NodeBase::NodeBase(NodeCategory type) : category(type) {
         next = s_node_head;
         s_node_head = this;

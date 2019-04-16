@@ -20,7 +20,7 @@ end
 
 function CastToTriangle(base)
     local triangle = xlua.Cast(base, "Triangle")
-    local new_base = xlua.Cast(base, "ObjectBase")
+    local new_base = xlua.Cast(base, "ShapeBase")
     print("CastToTriangle_1", triangle.line_1, triangle.line_2, triangle.line_3)
 
     new_base.line_1 = 3
@@ -29,10 +29,10 @@ function CastToTriangle(base)
     print("CastToTriangle_2", triangle.line_1, triangle.line_2, triangle.line_3)
 end
 
-function CastToQuard(base)
-    local quard = xlua.Cast(base, "Quard")
+function CastToSquare(base)
+    local quard = xlua.Cast(base, "Square")
     quard.type = 1001
-    print("CastToQuard", quard:Name())
+    print("CastToSquare", quard:Name())
 end
 
 function TestMultyInherit(quard)
@@ -102,20 +102,20 @@ function TestExtend(obj)
 end
 
 function TestPrintEnum()
-    print("ObjType = {")
-    for k, v in pairs(ObjType) do
+    print("ShapeType = {")
+    for k, v in pairs(ShapeType) do
         print(k, v)
     end
     print("}")
 
-    print("Enum.ObjType = {")
-    for k, v in pairs(Enum.ObjType) do
+    print("Enum.ShapeType = {")
+    for k, v in pairs(Enum.ShapeType) do
         print(k, v)
     end
     print("}")
 
     print("_G = {")
-    for k, v in pairs(ObjType) do
+    for k, v in pairs(ShapeType) do
         print(k, _G[k])
     end
     print("}")
@@ -142,7 +142,7 @@ void TestGlobal(xlua::xLuaState* l) {
     {
         xlua::xLuaGuard guard(l);
         Triangle triangle;
-        Quard quard;
+        Square quard;
 
         l->Call("PrintTriangle", std::tie(), &triangle);
         LOG_TOP_(l);
@@ -165,7 +165,7 @@ void TestGlobal(xlua::xLuaState* l) {
 
     {
         Triangle triangle;
-        Quard quard;
+        Square quard;
         LOG_TOP_(l);
         auto print = l->GetGlobalVar<xlua::xLuaFunction>("print");
         auto table = l->GetGlobalVar<xlua::xLuaTable>("GlobalVar");
@@ -178,14 +178,14 @@ void TestGlobal(xlua::xLuaState* l) {
 
     {
         Triangle triangle;
-        Quard quard;
-        l->Call("CastToTriangle", std::tie(), static_cast<ObjectBase*>(&triangle));
-        l->Call("CastToQuard", std::tie(), static_cast<ObjectBase*>(&quard));
+        Square quard;
+        l->Call("CastToTriangle", std::tie(), static_cast<ShapeBase*>(&triangle));
+        l->Call("CastToSquare", std::tie(), static_cast<ShapeBase*>(&quard));
         l->Call("TestMultyInherit", std::tie(), &quard);
 
         l->Push(&quard);
-        ObjectBase* base1 = l->Load<ObjectBase*>(-1);
-        ObjectBase* base2 = &quard;
+        ShapeBase* base1 = l->Load<ShapeBase*>(-1);
+        ShapeBase* base2 = &quard;
         assert(base1 == base2); // 关闭多继承时这里的断言会失败
     }
 
@@ -202,7 +202,7 @@ void TestGlobal(xlua::xLuaState* l) {
 
     {
         Triangle triangle_1;
-        Quard quard_1;
+        Square quard_1;
         auto triangle_2 = std::make_shared<Triangle>();
 
         printf("test triangle nullptr\n");
@@ -240,8 +240,8 @@ void TestGlobal(xlua::xLuaState* l) {
         lua_gc(l->GetState(), LUA_GCCOLLECT, 0);
     }
     {
-        ObjectBase o;
-        Quard q;
+        ShapeBase o;
+        Square q;
 
         l->Call("TestExtend", std::tie(), &o);
         l->Call("TestExtend", std::tie(), &q);

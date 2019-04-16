@@ -9,30 +9,6 @@ namespace detail {
     typedef const TypeInfo* (*fnTypeInfo)();
     typedef const ConstInfo* (*fnConstInfo)();
 
-    inline const char* PerifyMemberName(const char* name) {
-        while (const char* sub = ::strstr(name, "::"))
-            name = sub + 2;
-
-        // remove prefix: &
-        if (name[0] == '&')
-            ++name;
-
-        // remove prefix: "m_"
-        if (name[0] == 'm' && name[1] == '_')
-            name += 2;
-
-        // remove prefix: "lua_"
-        if ((name[0] == 'l' || name[0] == 'L') &&
-            (name[1] == 'u' || name[1] == 'U') &&
-            (name[2] == 'a' || name[2] == 'A')
-            ) {
-            name += 3;
-            if (name[0] == '_')
-                ++name;
-        }
-        return name;
-    }
-
     inline void* GetMetaCallObj(xLuaState* l, const TypeInfo* info) {
         UserDataInfo ud_info;
         if (!GetUserDataInfo(l->GetState(), 1, &ud_info))

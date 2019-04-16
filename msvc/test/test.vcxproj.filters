@@ -8,19 +8,22 @@
     <Filter Include="src\lua">
       <UniqueIdentifier>{468d8559-fd9a-4d05-b41c-b641e6c073e0}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\module">
+    <Filter Include="src\class">
       <UniqueIdentifier>{7ca4f568-2fbe-4989-827e-278d73e7c2be}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\test">
+      <UniqueIdentifier>{31caa129-005e-413c-9cd4-ad2a5dc2c24f}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\test\logic.h">
-      <Filter>src\module</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\test\lua_export.h">
       <Filter>src\lua</Filter>
     </ClInclude>
     <ClInclude Include="..\..\test\test.h">
       <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\test\shape.h">
+      <Filter>src\class</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -30,14 +33,14 @@
     <ClCompile Include="..\..\test\lua_export.cpp">
       <Filter>src\lua</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\test\test_export.cpp">
+      <Filter>src\test</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\test\test_global.cpp">
-      <Filter>src</Filter>
+      <Filter>src\test</Filter>
     </ClCompile>
     <ClCompile Include="..\..\test\test_push_load.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\test\test_export.cpp">
-      <Filter>src</Filter>
+      <Filter>src\test</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

@@ -127,26 +127,26 @@ static void sPushLoadExtend(xlua::xLuaState* l) {
 
 static void sPushLoadDeclare(xlua::xLuaState* l) {
     xlua::xLuaGuard guard(l);
-    Quard quard;
-    const ObjectBase* const cbc = &quard;
-    const ObjectBase* cb = &quard;
-    ObjectBase*const bc = &quard;
+    Square quard;
+    const ShapeBase* const cbc = &quard;
+    const ShapeBase* cb = &quard;
+    ShapeBase*const bc = &quard;
 
     l->Push(bc);
     //l->Push(cb);  // can not push const value pointer
     //l->Push(cbc); // can not push const value pointer
 
-    const ObjectBase* const cbc2 = l->Load<decltype(cbc)>(-1);
-    ObjectBase* const bc2 = l->Load<decltype(bc)>(-1);
+    const ShapeBase* const cbc2 = l->Load<decltype(cbc)>(-1);
+    ShapeBase* const bc2 = l->Load<decltype(bc)>(-1);
     cb = l->Load<decltype(cb)>(-1);
 
     assert(cbc == cbc2 && bc2 == bc);
 
     // allow pointer to value, if pointer is nullptr, return default value
-    auto base_value1 = l->Load<ObjectBase>(-1);
-    auto base_value2 = l->Load<const ObjectBase>(-1);
-    auto base_value3 = l->Load<ObjectBase>(-2);         // log error, obj is nil
-    auto base_value4 = l->Load<const ObjectBase>(-2);   // log error, obj is nil
+    auto base_value1 = l->Load<ShapeBase>(-1);
+    auto base_value2 = l->Load<const ShapeBase>(-1);
+    auto base_value3 = l->Load<ShapeBase>(-2);         // log error, obj is nil
+    auto base_value4 = l->Load<const ShapeBase>(-2);   // log error, obj is nil
 
     Triangle* triangle = l->Load<Triangle*>(-1);        // log error, type error
     assert(triangle == nullptr);    // type not allow
@@ -155,7 +155,7 @@ static void sPushLoadDeclare(xlua::xLuaState* l) {
 
     /* 子类能够转换为基类 */
     auto triangle_ptr_2 = l->Load<Triangle*>(-1);
-    auto base_ptr_2 = l->Load<ObjectBase*>(-1);
+    auto base_ptr_2 = l->Load<ShapeBase*>(-1);
 
     /* 这里开启多继承才能正确转换 */
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
@@ -169,11 +169,11 @@ static void sPushLoadDeclare(xlua::xLuaState* l) {
     l->Push(quard);
     /* value -> ptr */
     auto triangle_ptr_3 = l->Load<Triangle*>(-1);
-    auto base_ptr_3 = l->Load<ObjectBase*>(-1);
+    auto base_ptr_3 = l->Load<ShapeBase*>(-1);
 
     /* to super type value */
     auto triangle_3 = l->Load<Triangle>(-1);
-    auto base_3 = l->Load<ObjectBase>(-1);
+    auto base_3 = l->Load<ShapeBase>(-1);
 
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
     assert(base_ptr_3 == triangle_ptr_3);
@@ -181,25 +181,25 @@ static void sPushLoadDeclare(xlua::xLuaState* l) {
     assert(base_ptr_3 != triangle_ptr_3);
 #endif
 
-    auto s_q = std::make_shared<Quard>();
+    auto s_q = std::make_shared<Square>();
     l->Push(s_q);
 
     auto triangle_ptr_4 = l->Load<Triangle*>(-1);
-    auto base_ptr_4 = l->Load<ObjectBase*>(-1);
+    auto base_ptr_4 = l->Load<ShapeBase*>(-1);
 
     /* ptr->value, to super type value */
     auto triangle_4 = l->Load<Triangle>(-1);
-    auto base_4 = l->Load<ObjectBase>(-1);
-    auto quard_4 = l->Load<Quard>(-1);
+    auto base_4 = l->Load<ShapeBase>(-1);
+    auto quard_4 = l->Load<Square>(-1);
 
-    auto s_q_2 = l->Load<std::shared_ptr<Quard>>(-1);
-    auto s_q_3 = l->Load<std::shared_ptr<const Quard>>(-1);
+    auto s_q_2 = l->Load<std::shared_ptr<Square>>(-1);
+    auto s_q_3 = l->Load<std::shared_ptr<const Square>>(-1);
     assert(s_q == s_q_2);
     assert(s_q_3 == s_q_2);
 
     /* to super type shared_ptr */
     auto s_t_1 = l->Load<std::shared_ptr<Triangle>>(-1);
-    auto s_b_1 = l->Load<std::shared_ptr<ObjectBase>>(-1);
+    auto s_b_1 = l->Load<std::shared_ptr<ShapeBase>>(-1);
 
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
     assert(base_ptr_4 == triangle_ptr_4);
@@ -237,14 +237,14 @@ void sPushLoadFunction(xlua::xLuaState* l) {
         return "xlua";
     };
 
-    bool(*f_3)(const std::shared_ptr<Quard>&)  = [](const std::shared_ptr<Quard>& qa) -> bool {
-        printf("[](const std::shared_ptr<Quard>& qa=0x%p) -> bool\n", qa.get());
+    bool(*f_3)(const std::shared_ptr<Square>&)  = [](const std::shared_ptr<Square>& qa) -> bool {
+        printf("[](const std::shared_ptr<Square>& qa=0x%p) -> bool\n", qa.get());
         return true;
     };
 
-    void(*f_4)(Quard& quard) = [](Quard& quard) -> void {
+    void(*f_4)(Square& quard) = [](Square& quard) -> void {
         quard.obj_id_ = 1;
-        printf("[](Quard& quard) -> void\n");
+        printf("[](Square& squard) -> void\n");
     };
 
     int(*f_5)(lua_State*) = [](lua_State* l) -> int {
@@ -262,8 +262,8 @@ void sPushLoadFunction(xlua::xLuaState* l) {
     };
 
     {
-        Quard quard;
-        auto s_q = std::make_shared<Quard>();
+        Square quard;
+        auto s_q = std::make_shared<Square>();
         int int_val = 0;
         bool bool_val = false;
         float float_val = 0.0f;

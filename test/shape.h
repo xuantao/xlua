@@ -2,15 +2,15 @@
 #include <xlua_def.h>
 #include <memory>
 
-enum class ObjType {
+enum class ShapeType {
     kUnknown,
     kTriangle,
     kQuard,
 };
 
-class ObjectBase {
+class ShapeBase {
 public:
-    virtual ~ObjectBase() {}
+    virtual ~ShapeBase() {}
 
     virtual int AreaSize() const { return 0; }
 
@@ -21,9 +21,9 @@ public:
     int Tag3;
 };
 
-class Triangle : public ObjectBase {
+class Triangle : public ShapeBase {
 public:
-    XLUA_DECLARE_CLASS(Triangle, ObjectBase);
+    XLUA_DECLARE_CLASS(Triangle, ShapeBase);
 public:
     int AreaSize() const override { return line_1_ * line_2_ * line_3_; }
 
@@ -45,10 +45,10 @@ public:
     int type_ = 0;
 };
 
-class Quard : public IName, public Triangle, public ExtType {
+class Square : public IName, public Triangle, public ExtType {
 public:
-    const char* Name() const override { return "Quard"; }
-    XLUA_DECLARE_CLASS(Quard, Triangle);
+    const char* Name() const override { return "Square"; }
+    XLUA_DECLARE_CLASS(Square, Triangle);
 
 public:
     int AreaSize() const override { return width_ * height_; }
@@ -111,12 +111,12 @@ struct PushVal {
 struct WeakObj : public WeakObjBase {
     int index_ = 0;
 
-    void SetArea(ObjectBase* obj) {
-        printf("void SetArea(ObjectBase* obj)");
+    void SetArea(ShapeBase* obj) {
+        printf("void SetArea(ShapeBase* obj)");
     }
 
-    void SetArea2(ObjectBase& obj) {
-        printf("void SetArea(ObjectBase& obj)");
+    void SetArea2(ShapeBase& obj) {
+        printf("void SetArea(ShapeBase& obj)");
     }
 
 public:

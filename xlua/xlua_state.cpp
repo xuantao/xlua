@@ -82,13 +82,16 @@ namespace detail {
     }
 
     static void ContactPath(char* dst, size_t s, const char* module, const char* path) {
+        char tmp[XLUA_MAX_TYPE_NAME_LENGTH];
         if (*path == 0 || ::strcmp(path, "_G") == 0) {
-            snprintf(dst, s, module);
+            snprintf(tmp, XLUA_MAX_TYPE_NAME_LENGTH, module);
         } else if (module == nullptr || *module == 0) {
-            snprintf(dst, s, path);
+            snprintf(tmp, XLUA_MAX_TYPE_NAME_LENGTH, path);
         } else {
-            snprintf(dst, s, "%s.%s", module, path);
+            snprintf(tmp, XLUA_MAX_TYPE_NAME_LENGTH, "%s.%s", module, path);
         }
+
+        PerifyTypeName(dst, s, tmp);
     }
 
     static bool MakeGlobal(lua_State* l, const char* path) {
@@ -1033,7 +1036,7 @@ void xLuaState::InitConsts(const char* export_module, const std::vector<const de
         }
 
         if (*type_name != 0) {
-            lua_pushstring(state_, info->name);
+            lua_pushstring(state_, type_name);
             lua_setfield(state_, -2, "__name");
 
             lua_pushvalue(state_, -2);      // copy meta table to top

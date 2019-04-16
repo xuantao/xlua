@@ -8,20 +8,9 @@
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {
-    std::string PerifyTypeName(const char* name) {
+    static std::string PerifyTypeName(const char* name) {
         char buf[XLUA_MAX_TYPE_NAME_LENGTH];
-        snprintf(buf, XLUA_MAX_TYPE_NAME_LENGTH, name);
-
-        // replace "::" as '.'
-        const char* sub = buf;
-        while (sub = strstr(sub, "::")) {
-            char* tmp = const_cast<char*>(sub);
-            *tmp = '.';
-            ++tmp;
-            for (; tmp[0]; ++tmp) {
-                tmp[0] = tmp[1];
-            }
-        }
+        PerifyTypeName(buf, XLUA_MAX_TYPE_NAME_LENGTH, name);
         return std::string(buf);
     }
 

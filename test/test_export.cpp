@@ -71,7 +71,7 @@ void TestExport(xlua::xLuaState* l)
     l->Call("TraverseMeta", std::tie(), "Triangle");
     l->Call("AddExntedMeta", std::tie());
     l->Call("TraverseMeta", std::tie(), "Triangle");
-    l->Call("TraverseMeta", std::tie(), "Quard");
+    l->Call("TraverseMeta", std::tie(), "Square");
     l->Call("AddExntedMeta2", std::tie());
 
     TestGetType(l);

@@ -1,7 +1,7 @@
 ﻿#pragma once
-#include "logic.h"
+#include "shape.h"
 
-XLUA_DECLARE_EXTERNAL(ObjectBase);
+XLUA_DECLARE_EXTERNAL(ShapeBase);
 XLUA_DECLARE_EXTERNAL(TestExportParams);
 XLUA_DECLARE_EXTERNAL(Global::TestStaticParams);
 
