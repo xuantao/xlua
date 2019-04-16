@@ -16,6 +16,9 @@ public:
 
     int obj_id_ = 0;
     char name_[32] ={0};
+    int Tag1;
+    int Tag2;
+    int Tag3;
 };
 
 class Triangle : public ObjectBase {

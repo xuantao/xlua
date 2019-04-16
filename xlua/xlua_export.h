@@ -1,5 +1,7 @@
-﻿#pragma once
-#include "xlua_def.h"
+﻿/* 导出Lua实现
+ * 导出类型、常量、脚本
+*/
+#pragma once
 #include "detail/traits.h"
 #include "detail/export.h"
 #include "detail/extractor.h"
@@ -152,48 +154,35 @@
     }   /* end namespace*/
 
 /* 成员函数, 支持静态成员函数 */
-#define XLUA_MEMBER_FUNC(Func)                  _XLUA_EXPORT_FUNC(Func, _EXTRACT_METHOD(&class_type::Func), MetaFunc)
-#define XLUA_MEMBER_FUNC_AS(Name, Func, ...)    _XLUA_EXPORT_FUNC(Name, _EXTRACT_METHOD(&class_type::Func, __VA_ARGS__), MetaFunc)
+#define XLUA_MEMBER_FUNC(Func)                  _XLUA_EXPORT_FUNC(Func, _EXTRACT_METHOD(Func), MetaFunc)
+#define XLUA_MEMBER_FUNC_AS(Name, Func, ...)    _XLUA_EXPORT_FUNC(Name, _EXTRACT_METHOD(Func, __VA_ARGS__), MetaFunc)
 /* 将外部函数包装为成员函数 */
-#define XLUA_MEMBER_FUNC_EXTEND(Name, Func)     _XLUA_EXPORT_FUNC_(Name, &Func, MetaFuncEx, false)
+#define XLUA_MEMBER_FUNC_EXTEND(Name, Func)     _XLUA_EXPORT_FUNC_(Name, Func, MetaFuncEx, false)
 
 /* 成员变量, 支持静态成员变量 */
-#define XLUA_MEMBER_VAR(Var)                    _XLUA_EXPORT_VAR(Var, &class_type::Var, &class_type::Var, MetaVar)
-#define XLUA_MEMBER_VAR_R(Var, ...)             _XLUA_EXPORT_VAR(Var, _EXTRACT_METHOD(&class_type::Var, __VA_ARGS__)), nullptr, MetaVar)
-#define XLUA_MEMBER_VAR_AS(Name, Var)           _XLUA_EXPORT_VAR(Name, &class_type::Var, &class_type::Var, MetaVar)
-#define XLUA_MEMBER_VAR_AS_R(Name, Var, ...)    _XLUA_EXPORT_VAR(Name, _EXTRACT_METHOD(&class_type::Var, __VA_ARGS__)), nullptr, MetaVar)
-#define XLUA_MEMBER_VAR_AS_W(Name, Var)         _XLUA_EXPORT_VAR(Name, nullptr, &class_type::Var, MetaVar)
-#define XLUA_MEMBER_VAR_WRAP(Name, Get, Set)    _XLUA_EXPORT_VAR(Name, &class_type::Get, &class_type::Set, MetaVar)
+#define XLUA_MEMBER_VAR(Var)                    _XLUA_EXPORT_VAR(Var, Var, Var, MetaVar)
+#define XLUA_MEMBER_VAR_AS(Name, Var)           _XLUA_EXPORT_VAR(Name, Var, Var, MetaVar)
+#define XLUA_MEMBER_VAR_WRAP(Name, Get, Set)    _XLUA_EXPORT_VAR(Name, Get, Set, MetaVar)
 /* 将外部函数导出为成员变量(非静态) */
-#define XLUA_MEMBER_VAR_EXTEND(Name, Get, Set)  _XLUA_EXPORT_VAR_(Name, &Get, &Set, MetaVarEx, false)
-#define XLUA_MEMBER_VAR_EXTEND_R(Name, Get)     _XLUA_EXPORT_VAR_(Name, &Get, nullptr, MetaVarEx, false)
-#define XLUA_MEMBER_VAR_EXTEND_W(Name, Set)     _XLUA_EXPORT_VAR_(Name, nullptr, &Set, MetaVarEx, false)
+#define XLUA_MEMBER_VAR_EXTEND(Name, Get, Set)  _XLUA_EXPORT_VAR_(Name, Get, Set, MetaVarEx, false)
 
 /* 全局函数 */
-#define XLUA_GLOBAL_FUNC(Func)                  _XLUA_EXPORT_FUNC(Func, &Func, MetaFunc)
-#define XLUA_GLOBAL_FUNC_AS(Name, Func)         _XLUA_EXPORT_FUNC(Name, &Func, MetaFunc)
+#define XLUA_GLOBAL_FUNC(Func)                  _XLUA_EXPORT_FUNC(Func, Func, MetaFunc)
+#define XLUA_GLOBAL_FUNC_AS(Name, Func)         _XLUA_EXPORT_FUNC(Name, Func, MetaFunc)
 /* 全局变量 */
-#define XLUA_GLOBAL_VAR(Var)                    _XLUA_EXPORT_VAR(Var, &Var, &Var, MetaVar)
-#define XLUA_GLOBAL_VAR_R(Var)                  _XLUA_EXPORT_VAR(Var, &Var, nullptr, MetaVar)
-#define XLUA_GLOBAL_VAR_AS(Name, Var)           _XLUA_EXPORT_VAR(Name, &Var, &Var, MetaVar)
-#define XLUA_GLOBAL_VAR_AS_R(Name, Var)         _XLUA_EXPORT_VAR(Name, &Var, nullptr, MetaVar)
-#define XLUA_GLOBAL_VAR_AS_W(Name, Var)         _XLUA_EXPORT_VAR(Name, nullptr, &Var, MetaVar)
-#define XLUA_GLOBAL_VAR_WARP(Name, Get, Set)    _XLUA_EXPORT_VAR(Name, &Get, &Set, MetaVar)
-#define XLUA_GLOBAL_VAR_WARP_R(Name, Get)       _XLUA_EXPORT_VAR(Name, &Get, nullptr, MetaVar)
-#define XLUA_GLOBAL_VAR_WARP_W(Name, Set)       _XLUA_EXPORT_VAR(Name, nullptr, &Set, MetaVar)
+#define XLUA_GLOBAL_VAR(Var)                    _XLUA_EXPORT_VAR(Var, Var, Var, MetaVar)
+#define XLUA_GLOBAL_VAR_AS(Name, Var)           _XLUA_EXPORT_VAR(Name, Var, Var, MetaVar)
+#define XLUA_GLOBAL_VAR_WARP(Name, Get, Set)    _XLUA_EXPORT_VAR(Name, Get, Set, MetaVar)
 
 /* 导出常量表 */
-#define _XLUA_EXPORT_CONST_BEGIN(Name)                                                  \
+#define XLUA_EXPORT_CONSTANT_BEGIN(Name)                                                \
     namespace {                                                                         \
-        xlua::detail::ConstNode _XLUA_ANONYMOUS([]() -> const xlua::detail::ConstInfo* {\
+        xlua::detail::ConstNode _XLUA_ANONYMOUS([]()-> const xlua::detail::ConstInfo* { \
             static xlua::detail::ConstInfo info;                                        \
-            info.name = #Name;
-
-#define XLUA_EXPORT_CONST_BEGIN(Name)                                                   \
-    _XLUA_EXPORT_CONST_BEGIN(Name)                                                      \
+            info.name = #Name;                                                          \
             static xlua::detail::ConstValue values[] = {
 
-#define XLUA_EXPORT_CONST_END()                                                         \
+#define XLUA_EXPORT_CONSTANT_END()                                                      \
                 xlua::detail::MakeConstValue()                                          \
             };                                                                          \
             info.values = values;                                                       \
@@ -201,19 +190,8 @@
         }); /* end function */                                                          \
     } /* end namespace*/
 
-#define XLUA_CONST_VAR(Name, Val) xlua::detail::MakeConstValue(#Name, Val),
-
-/* 导出枚举表 */
-#define XLUA_EXPORT_ENUM_BEGIN_AS(Name, EnumType)                                       \
-    _XLUA_EXPORT_CONST_BEGIN(Name)                                                      \
-            using enum_type = EnumType;                                                 \
-            static xlua::detail::ConstValue values[] = {
-
-#define XLUA_EXPORT_ENUM_BEGIN(EnumType)    XLUA_EXPORT_ENUM_BEGIN_AS(EnumType, EnumType)
-#define XLUA_EXPORT_ENUM_END()              XLUA_EXPORT_CONST_END()
-
-#define XLUA_ENUM_VAR_AS(Name, Val)         XLUA_CONST_VAR(Name, (int)enum_type::Val)
-#define XLUA_ENUM_VAR(Val)                  XLUA_ENUM_VAR_AS(Val, Val)
+#define XLUA_CONST_VAR(Var)             xlua::detail::MakeConstValue(#Var, Var),
+#define XLUA_CONST_VAR_AS(Name, Var)    xlua::detail::MakeConstValue(#Name, Var),
 
 /* 导出预设脚本 */
 #define XLUA_EXPORT_SCRIPT(Str)                                                         \

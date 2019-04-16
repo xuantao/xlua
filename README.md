@@ -12,6 +12,7 @@
 /* file: obj.h */
 
 #include <xlua_def.h>
+
 namespace test {
   class Obj {
   public:
@@ -34,7 +35,7 @@ XLUA_EXPORT_CLASS_BEGIN(test::Obj)
 XLUA_EXPORT_CLASS_END() 
 ```
 - 类型导出方式二  
-在一个统一的头文件中声明导出外部类型
+在一个统一的文件中声明、实现导出外部类型
 ```cpp
 /* file: obj.h */
 namespace test {
@@ -68,8 +69,9 @@ XLUA_EXPORT_EXTERNAL_END()
 外部类行式导出：
 1. 无需更改源代码。
 2. 导出对象的生命期由使用者保证。
+3. 不能访问受保护成员。
 
-##### C++对象到Lua
+##### C++对象到 Lua
 当类型被声明导出以后，便可以通过xlua::xLuaState对象将对应类型的对象、指针、共享指针传递到Lua中。
 ```cpp
 xlua::xLuaState* l;
@@ -91,5 +93,6 @@ obj_ptr2 = l->Load<std::shared_ptr<Obj>>(-1);
 3. 共享指针->指针
 4. 共享指针->值类型
 5. 共享指针->共享指针  
-###### 注意：
+
+#### 注意：
 由于共享指针、值数据->指针时，涉及到对象生命期管理问题，需确保使用对应指针lua栈未被清空，以免照成未定义行为。

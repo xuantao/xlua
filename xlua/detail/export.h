@@ -9,6 +9,40 @@ namespace detail {
     typedef const TypeInfo* (*fnTypeInfo)();
     typedef const ConstInfo* (*fnConstInfo)();
 
+    inline const char* PerifyMemberName(const char* name) {
+        while (const char* sub = ::strstr(name, "::"))
+            name = sub + 2;
+
+        // remove prefix: &
+        if (name[0] == '&')
+            ++name;
+
+        // remove prefix: "m_"
+        if (name[0] == 'm' && name[1] == '_')
+            name += 2;
+
+        // remove prefix: "lua_"
+        if ((name[0] == 'l' || name[0] == 'L') &&
+            (name[1] == 'u' || name[1] == 'U') &&
+            (name[2] == 'a' || name[2] == 'A')
+            ) {
+            name += 3;
+            if (name[0] == '_')
+                ++name;
+        }
+        return name;
+    }
+
+    inline void* GetMetaCallObj(xLuaState* l, const TypeInfo* info) {
+        UserDataInfo ud_info;
+        if (!GetUserDataInfo(l->GetState(), 1, &ud_info))
+            return nullptr;
+        if (!IsBaseOf(info, ud_info.info))
+            return nullptr;
+
+        return _XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info);
+    }
+
     enum class NodeCategory {
         kType,
         kConst,
@@ -58,7 +92,7 @@ namespace detail {
     inline ConstValue MakeConstValue(const char* name, int val) {
         ConstValue cv;
         cv.category = ConstCategory::kInteger;
-        cv.name = name;
+        cv.name = PerifyMemberName(name);
         cv.int_val = val;
         return cv;
     }
@@ -66,7 +100,7 @@ namespace detail {
     inline ConstValue MakeConstValue(const char* name, float val) {
         ConstValue cv;
         cv.category = ConstCategory::kFloat;
-        cv.name = name;
+        cv.name = PerifyMemberName(name);
         cv.float_val = val;
         return cv;
     }
@@ -74,8 +108,17 @@ namespace detail {
     inline ConstValue MakeConstValue(const char* name, const char* val) {
         ConstValue cv;
         cv.category = ConstCategory::kString;
-        cv.name = name;
+        cv.name = PerifyMemberName(name);
         cv.string_val = val;
+        return cv;
+    }
+
+    template <typename Ty, typename std::enable_if<std::is_enum<Ty>::value, int>::type = 0>
+    inline ConstValue MakeConstValue(const char* name, Ty val) {
+        ConstValue cv;
+        cv.category = ConstCategory::kInteger;
+        cv.name = PerifyMemberName(name);
+        cv.int_val = (int)val;
         return cv;
     }
 
@@ -262,36 +305,6 @@ namespace detail {
     public:
         const TypeInfo* info_ = nullptr;
     };
-
-    inline const char* PerifyMemberName(const char* name) {
-        while (const char* sub = ::strstr(name, "::"))
-            name = sub + 2;
-
-        // remove prefix: "m_"
-        if (name[0] == 'm' && name[1] == '_')
-            name += 2;
-
-        // remove prefix: "lua_"
-        if ((name[0] == 'l' || name[0] == 'L') &&
-            (name[1] == 'u' || name[1] == 'U') &&
-            (name[2] == 'a' || name[2] == 'A')
-            ) {
-            name += 3;
-            if (name[0] == '_')
-                ++name;
-        }
-        return name;
-    }
-
-    inline void* GetMetaCallObj(xLuaState* l, const TypeInfo* info) {
-        UserDataInfo ud_info;
-        if (!GetUserDataInfo(l->GetState(), 1, &ud_info))
-            return nullptr;
-        if (!IsBaseOf(info, ud_info.info))
-            return nullptr;
-
-        return _XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info);
-    }
 
     namespace param {
         template <typename Ry, typename...Args>
