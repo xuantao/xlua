@@ -8,7 +8,7 @@
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {
-#ifdef XLUA_USE_LIGHT_USER_DATA
+#if XLUA_USE_LIGHT_USER_DATA
     inline bool IsValidRawPtr(const void* p) {
         return ((0xff00000000000000 & reinterpret_cast<uint64_t>(p)) == 0);
     }

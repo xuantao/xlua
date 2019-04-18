@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include <stdio.h>
+#include <stdint.h>
 #include <cassert>
 
 /* 64位系统开启LIGHT_USER_DATA
@@ -12,6 +13,7 @@
 /* 检查系统是否支持 */
 #if XLUA_USE_LIGHT_USER_DATA
     #if INTPTR_MAX != INT64_MAX
+        #undef XLUA_USE_LIGHT_USER_DATA
         #define XLUA_USE_LIGHT_USER_DATA 0
     #endif
 #endif
