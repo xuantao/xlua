@@ -3,13 +3,9 @@
 
 XLUA_NAMESPACE_BEGIN
 
-namespace detail {
-    /* 对齐（1，2，4，8...） */
-    inline constexpr size_t AlignSize(size_t sz) {
-        constexpr size_t bound = sizeof(void*);
-        return sz + (bound - sz % bound) % bound;
-    }
+#define _XLUA_ALIGN_SIZE(S) (S + (sizeof(void*) - S % sizeof(void*)) % sizeof(void*))
 
+namespace detail {
     class SerialAllocator {
         struct AllocNode {
             AllocNode* next;
@@ -38,7 +34,7 @@ namespace detail {
     public:
         void* Alloc(size_t s) {
             AllocNode* node = alloc_node_;
-            s = AlignSize(s);
+            s = _XLUA_ALIGN_SIZE(s);
 
             while (node && node->capacity < s)
                 node = node->next;
@@ -57,7 +53,7 @@ namespace detail {
         }
 
     private:
-        static constexpr size_t kNodeSize = AlignSize(sizeof(AllocNode));
+        static constexpr size_t kNodeSize = _XLUA_ALIGN_SIZE(sizeof(AllocNode));
 
     private:
         size_t block_size_;
