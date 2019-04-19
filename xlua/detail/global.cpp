@@ -7,15 +7,16 @@
 
 XLUA_NAMESPACE_BEGIN
 
+xLuaIndex::~xLuaIndex() {
+    auto global = detail::GlobalVar::GetInstance();
+    if (index_ != -1 && global)
+        global->FreeObjIndex(index_);
+}
+
 namespace detail {
     static NodeBase* s_node_head = nullptr;
     static GlobalVar* s_global = nullptr;
     static LogFunc s_log = nullptr;
-}
-
-xLuaIndex::~xLuaIndex() {
-    if (index_ != -1 && detail::s_global)
-        detail::s_global->FreeObjIndex(index_);
 }
 
 namespace detail {
