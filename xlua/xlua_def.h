@@ -105,6 +105,13 @@ private:
 
 XLUA_NAMESPACE_END
 
+/* 扩展类型
+ * 将执行类型转为lua table等对象
+*/
+inline bool xLuaIsType(xlua::xLuaState*, xlua::Identity<std::nullptr_t>) { return true; }
+inline std::nullptr_t xLuaLoad(xlua::xLuaState*, int, xlua::Identity<std::nullptr_t>) { return nullptr; }
+inline void xLuaPush(xlua::xLuaState*, std::nullptr_t) { }
+
 /* 声明导出Lua类, 在类中插入xlua相关信息
  * 可变宏参数用于设置基类类型(不支持多基类)
  * 1. 关联父、子类关系

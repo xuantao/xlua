@@ -9,12 +9,13 @@ XLUA_NAMESPACE_BEGIN
 
 namespace detail {
     template <typename Ty> struct Pusher;
-    template <typename Ty> struct Loader;
-    template <typename Ty> struct TypeChecker;
-
     struct MetaFuncs;
 
     template <typename Fy, typename Ry, typename... Args> int DoFunction(Fy f, xLuaState* l);
+
+    namespace loader {
+        template <typename Ty> Ty LoadValue(xLuaState* l, int index);
+    }
 }
 
 /* 引用Lua对象基类
@@ -313,9 +314,7 @@ public:
 
     template <typename Ty>
     inline Ty Load(int index) {
-        static_assert(!std::is_reference<Ty>::value, "can not load reference value");
-        static_assert(!std::is_same<char*, Ty>::value, "can not load char*, use const char*");
-        return detail::Loader<typename std::decay<Ty>::type>::Do(this, index);
+        return detail::loader::LoadValue<Ty>(this, index);
     }
 
     template<typename... Ty>
@@ -436,32 +435,13 @@ public:
         lua_pushcclosure(state_, f, 2);
     }
 
-    template<> inline bool Load<bool>(int index) { return lua_toboolean(state_, index); }
-    template<> inline char Load<char>(int index) { return (char)lua_tonumber(state_, index); }
-    template<> inline unsigned char Load<unsigned char>(int index) { return (unsigned char)lua_tonumber(state_, index); }
-    template<> inline short Load<short>(int index) { return (short)lua_tonumber(state_, index); }
-    template<> inline unsigned short Load<unsigned short>(int index) { return (unsigned short)lua_tonumber(state_, index); }
-    template<> inline int Load<int>(int index) { return (int)lua_tonumber(state_, index); }
-    template<> inline unsigned int Load<unsigned int>(int index) { return (int)lua_tonumber(state_, index); }
-    template<> inline long Load<long>(int index) { return (long)lua_tonumber(state_, index); }
-    template<> inline unsigned long Load<unsigned long>(int index) { return (unsigned long)lua_tonumber(state_, index); }
-    template<> inline long long Load<long long>(int index) { return (long long)lua_tointeger(state_, index); }
-    template<> inline unsigned long long Load<unsigned long long>(int index) { return (unsigned long long)lua_tointeger(state_, index); }
-    template<> inline float Load<float>(int index) { return (float)lua_tonumber(state_, index); }
-    template<> inline double Load<double>(int index) { return (double)lua_tonumber(state_, index); }
-    template<> inline const char* Load<const char*>(int index) { return lua_tostring(state_, index); }
-    template<> inline void* Load<void*>(int index) { return lua_touserdata(state_, index); }
-    template<> inline const void* Load<const void*>(int index) { return lua_touserdata(state_, index); }
-    template<> inline std::string Load<std::string>(int index) { return std::string(lua_tostring(state_, index)); }
-    template<> inline lua_CFunction Load<lua_CFunction>(int index) { return lua_tocfunction(state_, index); }
-
-    template<> inline xLuaTable Load<xLuaTable>(int index) {
+    inline xLuaTable LoadTable(int index) {
         if (lua_type(state_, index) == LUA_TTABLE)
             return xLuaTable(this, RefLuaObj(index));
         return xLuaTable();
     }
 
-    template<> inline xLuaFunction Load<xLuaFunction>(int index) {
+    inline xLuaFunction LoadFunction(int index) {
         if (lua_type(state_, index) == LUA_TFUNCTION)
             return xLuaFunction(this, RefLuaObj(index));
         return xLuaFunction();
@@ -722,100 +702,129 @@ namespace detail {
         }
     };
 
-    template <typename Ty>
-    struct Loader {
-        typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(IsInternal<value_type>::value
-            || IsExternal<value_type>::value
-            || IsExtendLoad<value_type>::value
-            || std::is_enum<value_type>::value, "only type has declared export to lua accept");
+    namespace loader {
+        template <typename Ty>
+        struct Loader {
+            typedef typename std::remove_cv<Ty>::type value_type;
+            static_assert(IsInternal<value_type>::value
+                || IsExternal<value_type>::value
+                || IsExtendLoad<value_type>::value
+                || std::is_enum<value_type>::value, "only type has declared export to lua accept");
 
-        static inline Ty Do(xLuaState* l, int index) {
-            using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
-                typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_extend>::type>::type;
-            return LoadValue<value_type>(l, index, tag());
-        }
-
-        template <typename U>
-        static inline U LoadValue(xLuaState* l, int index, tag_extend) {
-            return ::xLuaLoad(l, index, Identity<U>());
-        }
-
-        template <typename U>
-        static inline U LoadValue(xLuaState* l, int index, tag_enum) {
-            return (U)static_cast<int>(lua_tonumber(l->GetState(), index));
-        }
-
-        template <typename U>
-        static inline U LoadValue(xLuaState* l, int index, tag_declared) {
-            const TypeInfo* info = GetTypeInfoImpl<U>();
-            UserDataInfo ud_info;
-            if (!GetUserDataInfo(l->GetState(), index, &ud_info) || ud_info.obj == nullptr) {
-                LogError("can not load [%s] value, target is nil", info->type_name);
-                return U();
+            static inline Ty Do(xLuaState* l, int index) {
+                using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
+                    typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_extend>::type>::type;
+                return DoImpl<value_type>(l, index, tag());
             }
 
-            if (!IsBaseOf(info, ud_info.info)) {
-                LogError("can not load [%s] value from:[%s]", info->type_name, ud_info.info->type_name);
-                return U();
+            template <typename U>
+            static inline U DoImpl(xLuaState* l, int index, tag_extend) {
+                return ::xLuaLoad(l, index, Identity<U>());
             }
 
-            return U(*static_cast<U*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info)));
-        }
-    };
-
-    template <typename Ty>
-    struct Loader<Ty*> {
-        typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(!std::is_same<Ty, char>::value, "can not load value as char*, only const char* accept");
-        static_assert(!IsExtendLoad<value_type>::value, "can not load extend type pointer");
-        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
-
-        static Ty* Do(xLuaState* l, int index) {
-            UserDataInfo ud_info;
-            if (!GetUserDataInfo(l->GetState(), index, &ud_info) || ud_info.obj == nullptr)
-                return nullptr;
-
-            const TypeInfo* info = GetTypeInfoImpl<value_type>();
-            if (!IsBaseOf(info, ud_info.info)) {
-                LogError("can not load [%s*] pointer from:[%s*]", info->type_name, ud_info.info->type_name);
-                return nullptr;
+            template <typename U>
+            static inline U DoImpl(xLuaState* l, int index, tag_enum) {
+                return (U)static_cast<int>(lua_tonumber(l->GetState(), index));
             }
 
-            return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info));
-        }
-    };
+            template <typename U>
+            static inline U DoImpl(xLuaState* l, int index, tag_declared) {
+                const TypeInfo* info = GetTypeInfoImpl<U>();
+                UserDataInfo ud_info;
+                if (!GetUserDataInfo(l->GetState(), index, &ud_info) || ud_info.obj == nullptr) {
+                    LogError("can not load [%s] value, target is nil", info->type_name);
+                    return U();
+                }
 
-    template <typename Ty>
-    struct Loader<std::shared_ptr<Ty>> {
-        typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+                if (!IsBaseOf(info, ud_info.info)) {
+                    LogError("can not load [%s] value from:[%s]", info->type_name, ud_info.info->type_name);
+                    return U();
+                }
 
-        static inline std::shared_ptr<Ty> Do(xLuaState* l, int index) {
-            if (lua_type(l->GetState(), index) != LUA_TUSERDATA)
-                return nullptr;
-            auto* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
-            if (ud == nullptr || ud->type_ != UserDataCategory::kSharedPtr)
-                return nullptr;
-            const TypeInfo* info = GetTypeInfoImpl<value_type>();
-            if (!IsBaseOf(info, ud->info_)) {
-                LogError("can not load [%s*] pointer from:[%s*]", info->type_name, ud->info_->type_name);
-                return nullptr;
+                return U(*static_cast<U*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info)));
             }
+        };
 
-            return std::shared_ptr<Ty>(*static_cast<std::shared_ptr<Ty>*>(ud->GetDataPtr()),
-                (Ty*)_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_));
+        template <typename Ty>
+        struct Loader<Ty*> {
+            typedef typename std::remove_cv<Ty>::type value_type;
+            static_assert(!std::is_same<Ty, char>::value, "can not load value as char*, only const char* accept");
+            static_assert(!IsExtendLoad<value_type>::value, "can not load extend type pointer");
+            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+
+            static Ty* Do(xLuaState* l, int index) {
+                UserDataInfo ud_info;
+                if (!GetUserDataInfo(l->GetState(), index, &ud_info) || ud_info.obj == nullptr)
+                    return nullptr;
+
+                const TypeInfo* info = GetTypeInfoImpl<value_type>();
+                if (!IsBaseOf(info, ud_info.info)) {
+                    LogError("can not load [%s*] pointer from:[%s*]", info->type_name, ud_info.info->type_name);
+                    return nullptr;
+                }
+
+                return static_cast<Ty*>(_XLUA_TO_SUPER_PTR(info, ud_info.obj, ud_info.info));
+            }
+        };
+
+        template <typename Ty>
+        struct Loader<std::shared_ptr<Ty>> {
+            typedef typename std::remove_cv<Ty>::type value_type;
+            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+
+            static inline std::shared_ptr<Ty> Do(xLuaState* l, int index) {
+                if (lua_type(l->GetState(), index) != LUA_TUSERDATA)
+                    return nullptr;
+                auto* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
+                if (ud == nullptr || ud->type_ != UserDataCategory::kSharedPtr)
+                    return nullptr;
+                const TypeInfo* info = GetTypeInfoImpl<value_type>();
+                if (!IsBaseOf(info, ud->info_)) {
+                    LogError("can not load [%s*] pointer from:[%s*]", info->type_name, ud->info_->type_name);
+                    return nullptr;
+                }
+
+                return std::shared_ptr<Ty>(*static_cast<std::shared_ptr<Ty>*>(ud->GetDataPtr()),
+                    (Ty*)_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_));
+            }
+        };
+
+        template <typename Ty>
+        struct Loader<xLuaWeakObjPtr<Ty>> {
+            static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "only type has declared export to lua accept");
+
+            static inline xLuaWeakObjPtr<Ty> Do(xLuaState* l, int index) {
+                return xLuaWeakObjPtr<Ty>(l->Load<Ty*>(index));
+            }
+        };
+
+        template<> inline bool LoadValue<bool>(xLuaState* l, int index) { return lua_toboolean(l->GetState(), index); }
+        template<> inline char LoadValue<char>(xLuaState* l, int index) { return (char)lua_tonumber(l->GetState(), index); }
+        template<> inline unsigned char LoadValue<unsigned char>(xLuaState* l, int index) { return (unsigned char)lua_tonumber(l->GetState(), index); }
+        template<> inline short LoadValue<short>(xLuaState* l, int index) { return (short)lua_tonumber(l->GetState(), index); }
+        template<> inline unsigned short LoadValue<unsigned short>(xLuaState* l, int index) { return (unsigned short)lua_tonumber(l->GetState(), index); }
+        template<> inline int LoadValue<int>(xLuaState* l, int index) { return (int)lua_tonumber(l->GetState(), index); }
+        template<> inline unsigned int LoadValue<unsigned int>(xLuaState* l, int index) { return (int)lua_tonumber(l->GetState(), index); }
+        template<> inline long LoadValue<long>(xLuaState* l, int index) { return (long)lua_tonumber(l->GetState(), index); }
+        template<> inline unsigned long LoadValue<unsigned long>(xLuaState* l, int index) { return (unsigned long)lua_tonumber(l->GetState(), index); }
+        template<> inline long long LoadValue<long long>(xLuaState* l, int index) { return (long long)lua_tointeger(l->GetState(), index); }
+        template<> inline unsigned long long LoadValue<unsigned long long>(xLuaState* l, int index) { return (unsigned long long)lua_tointeger(l->GetState(), index); }
+        template<> inline float LoadValue<float>(xLuaState* l, int index) { return (float)lua_tonumber(l->GetState(), index); }
+        template<> inline double LoadValue<double>(xLuaState* l, int index) { return (double)lua_tonumber(l->GetState(), index); }
+        template<> inline const char* LoadValue<const char*>(xLuaState* l, int index) { return lua_tostring(l->GetState(), index); }
+        template<> inline void* LoadValue<void*>(xLuaState* l, int index) { return lua_touserdata(l->GetState(), index); }
+        template<> inline const void* LoadValue<const void*>(xLuaState* l, int index) { return lua_touserdata(l->GetState(), index); }
+        template<> inline std::string LoadValue<std::string>(xLuaState* l, int index) { return std::string(lua_tostring(l->GetState(), index)); }
+        template<> inline lua_CFunction LoadValue<lua_CFunction>(xLuaState* l, int index) { return lua_tocfunction(l->GetState(), index); }
+        template<> inline xLuaTable LoadValue<xLuaTable>(xLuaState* l, int index) { return l->LoadTable(index); }
+        template<> inline xLuaFunction LoadValue<xLuaFunction>(xLuaState* l, int index) { return l->LoadFunction(index); }
+
+        template <typename Ty> Ty LoadValue(xLuaState* l, int index) {
+            static_assert(!std::is_reference<Ty>::value, "can not load reference value");
+            static_assert(!std::is_same<char*, Ty>::value, "can not load char*, use const char*");
+            return Loader<typename std::decay<Ty>::type>::Do(l, index);
         }
-    };
-
-    template <typename Ty>
-    struct Loader<xLuaWeakObjPtr<Ty>> {
-        static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "only type has declared export to lua accept");
-
-        static inline xLuaWeakObjPtr<Ty> Do(xLuaState* l, int index) {
-            return xLuaWeakObjPtr<Ty>(l->Load<Ty*>(index));
-        }
-    };
+    }
 
     namespace param {
         /* 原始类型, 去除所有类型修饰(const, pointer, reference, volatile) */

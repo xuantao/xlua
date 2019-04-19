@@ -1,5 +1,4 @@
-﻿#pragma once
-#include "type_desc.h"
+﻿#include "type_desc.h"
 #include "export.h"
 #include "global.h"
 #include <memory>
