@@ -522,7 +522,7 @@ namespace detail {
     /* 支持类的成员函数, 静态函数 */
     template <typename Ty>
     struct MetaFunc {
-        template <typename Fy, typename EnableIfT<std::is_member_function_pointer<Fy>::value> = 0>
+        template <typename Fy, EnableIfT<std::is_member_function_pointer<Fy>::value> = 0>
         static inline int Call(xLuaState* l, const TypeInfo* info, const char* func_name, Fy f) {
             LogBufCache<> lb;
             Ty* obj = static_cast<Ty*>(GetMetaCallObj(l, info));
@@ -542,7 +542,7 @@ namespace detail {
             return MetaCall(l, obj, f);
         }
 
-        template <typename Fy, typename EnableIfT<!std::is_member_function_pointer<Fy>::value> = 0>
+        template <typename Fy, EnableIfT<!std::is_member_function_pointer<Fy>::value> = 0>
         static inline int Call(xLuaState* l, const TypeInfo* info, const char* func_name, Fy f) {
             LogBufCache<> lb;
             if (!param::CheckMetaParam(l, 1, lb, f)) {
@@ -580,22 +580,22 @@ namespace detail {
 
     template <typename Ty>
     struct MetaVar {
-        template <typename Fy, typename EnableIfT<IsMember<Fy>::value, int> = 0>
+        template <typename Fy, EnableIfT<IsMember<Fy>::value, int> = 0>
         static inline void Get(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, Fy f) {
             MetaGet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
         }
 
-        template <typename Fy, typename EnableIfT<IsMember<Fy>::value, int> = 0>
+        template <typename Fy, EnableIfT<IsMember<Fy>::value, int> = 0>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
             MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
         }
 
-        template <typename Fy, typename EnableIfT<!IsMember<Fy>::value, int> = 0>
+        template <typename Fy, EnableIfT<!IsMember<Fy>::value, int> = 0>
         static inline void Get(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, Fy f) {
             MetaGet(l, f);
         }
 
-        template <typename Fy, typename EnableIfT<!IsMember<Fy>::value, int> = 0>
+        template <typename Fy, EnableIfT<!IsMember<Fy>::value, int> = 0>
         static inline void Set(xLuaState* l, void* obj, const TypeInfo* src, const TypeInfo* dst, const char* var, Fy f) {
             MetaSet(l, f);
         }

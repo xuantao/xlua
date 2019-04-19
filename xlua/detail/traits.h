@@ -23,7 +23,7 @@ namespace detail {
     using make_index_sequence_t = typename make_index_sequence<N>::type;
 
     template<class Ty>
-    struct is_null_pointer : std::is_same<std::nullptr_t, std::remove_cv_t<Ty>> {};
+    struct is_null_pointer : std::is_same<std::nullptr_t, typename std::remove_cv<Ty>::type> {};
 
     template <typename Ty>
     struct AddReference {
