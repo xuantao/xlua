@@ -107,8 +107,8 @@ namespace detail {
     template <typename GetTy, typename SetTy>
     struct IndexerTrait {
     private:
-        static constexpr bool all_nullptr = (std::is_null_pointer<GetTy>::value && std::is_null_pointer<SetTy>::value);
-        static constexpr bool one_nullptr = (std::is_null_pointer<GetTy>::value || std::is_null_pointer<SetTy>::value);
+        static constexpr bool all_nullptr = (is_null_pointer<GetTy>::value && is_null_pointer<SetTy>::value);
+        static constexpr bool one_nullptr = (is_null_pointer<GetTy>::value || is_null_pointer<SetTy>::value);
         static constexpr bool is_get_member = (std::is_member_pointer<GetTy>::value || std::is_member_function_pointer<GetTy>::value);
         static constexpr bool is_set_member = (std::is_member_pointer<SetTy>::value || std::is_member_function_pointer<SetTy>::value);
 
@@ -321,7 +321,7 @@ namespace detail {
     } // namespace param
 
     template <bool value, typename Ty = int>
-    using EnableIfT = typename std::enable_if<value, int>::type;
+    using EnableIfT = typename std::enable_if<value, Ty>::type;
 
     /* global function */
     template <typename Ry, typename... Args, size_t... Idx>

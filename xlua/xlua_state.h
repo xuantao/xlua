@@ -1113,7 +1113,7 @@ namespace detail {
         /* 引用类型 */
         template <typename Ty, typename std::enable_if<std::is_reference<Ty>::value, int>::type = 0>
         inline Ty LoadParamImpl(xLuaState* l, int index, std::true_type) {
-            typedef std::remove_reference<Ty>::type type;
+            using type = typename std::remove_reference<Ty>::type;
             type* p = l->Load<type*>(index);
             assert(p);
             return *p;

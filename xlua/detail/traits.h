@@ -2,7 +2,7 @@
 #include "../xlua_def.h"
 #include <type_traits>
 
-inline const xlua::detail::TypeInfo* xLuaGetTypeInfo(xlua::Identity<std::nullptr_t>) { return nullptr; }
+inline const xlua::detail::TypeInfo* xLuaGetTypeInfo(xlua::Identity<decltype(nullptr)>) { return nullptr; }
 
 XLUA_NAMESPACE_BEGIN
 
@@ -21,6 +21,9 @@ namespace detail {
 
     template <size_t N>
     using make_index_sequence_t = typename make_index_sequence<N>::type;
+
+    template<class Ty>
+    struct is_null_pointer : std::is_same<std::nullptr_t, std::remove_cv_t<Ty>> {};
 
     template <typename Ty>
     struct AddReference {

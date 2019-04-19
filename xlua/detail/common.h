@@ -1,7 +1,6 @@
 ﻿#pragma once
 #include "../xlua_def.h"
 #include "traits.h"
-#include <utility>
 #include <lua.hpp>
 
 XLUA_NAMESPACE_BEGIN
