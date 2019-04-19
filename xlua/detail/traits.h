@@ -2,6 +2,8 @@
 #include "../xlua_def.h"
 #include <type_traits>
 
+inline const xlua::detail::TypeInfo* xLuaGetTypeInfo(xlua::Identity<std::nullptr_t>) { return nullptr; }
+
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {

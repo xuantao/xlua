@@ -1,6 +1,7 @@
 ﻿#include "type_desc.h"
 #include "export.h"
 #include "global.h"
+#include <string.h>
 #include <memory>
 #include <algorithm>
 
@@ -85,10 +86,10 @@ namespace detail {
         const auto& vars = global ? global_vars_: vars_;
 
         auto it_func = std::find_if(funcs.cbegin(), funcs.cend(), [name](const MemberFunc& f) {
-            return strcmp(name, f.name) == 0;
+            return ::strcmp(name, f.name) == 0;
         });
         auto it_var = std::find_if(vars.cbegin(), vars.cend(), [name](const MemberVar& f) {
-            return strcmp(name, f.name) == 0;
+            return ::strcmp(name, f.name) == 0;
         });
 
         if (it_func != funcs.cend() || it_var != vars.cend()) {

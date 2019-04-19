@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "common.h"
 #include <vector>
+#include <string>
 
 XLUA_NAMESPACE_BEGIN
 

@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "xlua_config.h"
+#include <cstddef>
 #include <stdarg.h>
 #include <stdio.h>
 
