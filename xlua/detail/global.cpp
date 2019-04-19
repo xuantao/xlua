@@ -1,6 +1,7 @@
 ﻿#include "global.h"
 #include "type_desc.h"
 #include "../xlua_export.h"
+#include <string.h>
 #include <memory>
 #include <algorithm>
 
@@ -42,7 +43,7 @@ namespace detail {
         // replace "::" as '.'
         snprintf(dst, sz, name);
         const char* sub = dst;
-        while (sub = strstr(sub, "::")) {
+        while (sub = ::strstr(sub, "::")) {
             char* tmp = const_cast<char*>(sub);
             *tmp = '.';
             ++tmp;
@@ -186,7 +187,7 @@ namespace detail {
             return nullptr;
 
         for (const auto* info : types_) {
-            if (0 == strcmp(name, info->type_name))
+            if (0 == ::strcmp(name, info->type_name))
                 return info;
         }
         return nullptr;
