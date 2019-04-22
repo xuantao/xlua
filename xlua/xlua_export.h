@@ -18,7 +18,7 @@
 
 // 导出实现
 #define _XLUA_EXPORT_FUNC_(Name, Func, Meta, IsGlobal)                                  \
-    static_assert(!is_null_pointer<decltype(Func)>::value,                         \
+    static_assert(!xlua::detail::is_null_pointer<decltype(Func)>::value,                \
         "can not export func:"#Name" with null pointer"                                 \
     );                                                                                  \
     struct _XLUA_ANONYMOUS {                                                            \
@@ -48,8 +48,8 @@
         }                                                                               \
     };                                                                                  \
     desc->AddMember(#Name,                                                              \
-        is_null_pointer<decltype(GetOp)>::value ? nullptr : &_XLUA_ANONYMOUS::Get, \
-        is_null_pointer<decltype(SetOp)>::value ? nullptr : &_XLUA_ANONYMOUS::Set, \
+        xlua::detail::is_null_pointer<decltype(GetOp)>::value ? nullptr : &_XLUA_ANONYMOUS::Get,\
+        xlua::detail::is_null_pointer<decltype(SetOp)>::value ? nullptr : &_XLUA_ANONYMOUS::Set,\
         IsGlobal                                                                        \
     );
 
