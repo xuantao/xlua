@@ -1,4 +1,4 @@
-PROJECT(test)
+PROJECT(test_xlua)
 
 SET(TEST_SRC
 	lua_export.cpp
@@ -14,6 +14,8 @@ SET(TEST_SRC
 INCLUDE_DIRECTORIES("../3rd/lua-5.3.5/src/")
 INCLUDE_DIRECTORIES("../xlua/")
 
-ADD_EXECUTABLE(test ${TEST_SRC})
+ADD_EXECUTABLE(test_xlua ${TEST_SRC})
 #ADD_DEPENDENCIES(test lua xlua)
-TARGET_LINK_LIBRARIES(test lua xlua)
+#TARGET_LINK_LIBRARIES(test_xlua lua xlua)
+TARGET_LINK_LIBRARIES(test_xlua xlua lua)
+
