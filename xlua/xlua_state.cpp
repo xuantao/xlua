@@ -1,5 +1,6 @@
 ﻿#include "xlua_state.h"
 #include "detail/global.h"
+#include <string.h>
 
 XLUA_NAMESPACE_BEGIN
 
@@ -713,7 +714,7 @@ const char* xLuaState::GetTypeName(int index) {
 
 bool xLuaState::DoString(const char* buff, const char* chunk) {
     xLuaGuard guard(this);
-    if (luaL_loadbuffer(state_, buff, strlen(buff), chunk) != LUA_OK) {
+    if (luaL_loadbuffer(state_, buff, ::strlen(buff), chunk) != LUA_OK) {
         const char* err = lua_tostring(state_, -1);
         detail::LogError("DoString failed chunk:%s err:%s", chunk ? chunk : "", err ? err : "");
         return false;

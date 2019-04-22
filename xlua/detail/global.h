@@ -22,7 +22,7 @@ namespace detail
     class GlobalVar
     {
         friend struct TypeDesc;
-        friend class xLuaIndex;
+        friend class xlua::xLuaIndex;
     private:
         GlobalVar();
         ~GlobalVar();
