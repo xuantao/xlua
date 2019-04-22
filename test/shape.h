@@ -92,6 +92,10 @@ public:
 };
 
 struct Color {
+    Color() {}
+    Color(int _a, int _r, int _g, int _b) : a(_a), r(_r), g(_g), b(_b)
+    {}
+
     int a = 0;
     int r = 0;
     int g = 0;
@@ -99,11 +103,17 @@ struct Color {
 };
 
 struct Vec2 {
+    Vec2() { }
+    Vec2(float _x, float _y) : x(_x), y(_y) { }
     float x = 0;
     float y = 0;
 };
 
 struct PushVal {
+    PushVal() {}
+    PushVal(int _a, int _b) : a(_a), b(_b)
+    {}
+
     int a = 0;
     int b = 0;
 };
