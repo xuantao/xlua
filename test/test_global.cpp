@@ -1,6 +1,7 @@
 ﻿#include "test.h"
 #include "lua_export.h"
 #include <xlua.h>
+#include <string.h>
 
 static const char* sLuaBuf = R"V0G0N(
 function PrintInfo()

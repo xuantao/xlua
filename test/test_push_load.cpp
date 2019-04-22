@@ -1,6 +1,7 @@
 ﻿#include "test.h"
 #include "lua_export.h"
 #include <xlua_state.h>
+#include <string.h>
 
 static int sLuaCall_1(xlua::xLuaState* l) {
     printf("int sLuaCall_1(xlua::xLuaState* l)\n");

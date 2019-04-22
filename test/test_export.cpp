@@ -43,6 +43,7 @@ end
 #include "test.h"
 #include "lua_export.h"
 #include <xlua_state.h>
+#include <string.h>
 
 static void TestGetType(xlua::xLuaState* l) {
     xlua::xLuaGuard guard(l);
