@@ -478,7 +478,7 @@ namespace detail {
     template <typename Ry>
     inline void MetaSet(xLuaState* l, void(*data)(Ry)) { data(l->Load<typename std::decay<Ry>::type>(1)); }
     template <typename Obj, typename Ty, typename Ry>
-    inline void MetaGet(xLuaState* l, Obj* obj, Ry Ty::* data) { l->Push(static_cast<Ry>(obj->*data)); }
+    inline void MetaGet(xLuaState* l, Obj* obj, Ry Ty::* data) { l->Push(obj->*data); }
     template <typename Obj, typename Ty, typename Ry>
     inline void MetaSet(xLuaState* l, Obj* obj, Ry Ty::*data) { MetaSet_(l, static_cast<Ty*>(obj), data, std::is_array<Ry>()); }
     template <typename Obj, typename Ty, typename Ry>
