@@ -1,16 +1,57 @@
-### xlua
-#### 简介
-- xlua主要用于C++与Lua脚本间的交互。
-1. 方便导出C++类型、函数、变量
-2. 方便C++端调用lua函数、获取lua变量
+## xlua
+### 简介
 
+- 导出C++类型、函数、变量
+- 提供与Lua交互
 
-#### 基本用法，导出类型
-- 类型方式导出一  
-在类中声明导出到Lua
+### C++导出到Lua
+---
+#### 导出常量
+> 导出全局变量，枚举等
+```cpp
+/* file: lua_export.cpp */
+#include <xlua_export.h>
+
+// 在全局表中添加字段Version, Name
+XLUA_EXPORT_CONSTANT_BEGIN(_G)
+  XLUA_CONST_VAR_AS(Version, 1)
+  XLUA_CONST_VAR_AS(Name, "xlua")
+XLUA_EXPORT_CONSTANT_END()
+```
+---
+#### 导出一段Lua脚本
+> XLUA_EXPORT_SCRIPT(Script)
+
+```cpp
+/* file: lua_export.cpp */
+#include <xlua_export.h>
+
+XLUA_EXPORT_SCRIPT(R"V0G0N(
+  function SomeExportFunction()
+    --TODO:
+  end
+)V0G0N");
+```
+当创建lua环境时会执行导出的脚本。  
+
+---
+#### 导出类型一(内部类)  
+使用宏（XLUA_DECLARE_CLASS）在定义类的时声明导出到Lua，并在cpp文件中导出函数、变量（支持静态函数与变量）。  
+> 声明宏：XLUA_DECLARE_CLASS(ClassName, \[SuperClass\])  
+```cpp
+#define XLUA_DECLARE_CLASS(ClassName, ...)  \
+  typedef xlua::detail::Declare<ClassName,  \
+    typename xlua::detail::BaseType<__VA_ARGS__>::type> LuaDeclare;  \
+  xlua::xLuaIndex xlua_obj_index_;          \
+  static const xlua::detail::TypeInfo* xLuaGetTypeInfo()
+```
+- 构建导出类型的继承关系，不支持多继承
+- 定义成员变量xlua_obj_index_（对像引用索引），用以维护导出对象的生命期
+- 定义静态成员函数xLuaGetTypeInfo，以获取导出类型信息
+
+> 导出示例：
 ```cpp
 /* file: obj.h */
-
 #include <xlua_def.h>
 
 namespace test {
@@ -18,112 +59,156 @@ namespace test {
   public:
     XLUA_DECLARE_CLASS(Obj);
   public:
-    void Member() {}
+    void Func() {}
+    static void StaticFunc() {}
   private:
      int val_;
+     static int static_val_;
   }
 }
-
-
+```
+> 在cpp文件中声明导出函数、变量
+```cpp
 /* file: lua_export.cpp */
 #include "obj.h"
 #include <xlua_export.h>
 
 XLUA_EXPORT_CLASS_BEGIN(test::Obj)
-  XLUA_MEMBER_FUNC(&test::Obj::Member)
+  XLUA_MEMBER_FUNC(&test::Obj::Func)
+  XLUA_MEMBER_FUNC(&test::Obj::StaticFunc)
   XLUA_MEMBER_VAR_AS(val, &test::Obj::val_)
+  XLUA_MEMBER_VAR_AS(static_val, &test::Obj::static_val_)
 XLUA_EXPORT_CLASS_END() 
 ```
-- 类型导出方式二  
-在一个统一的文件中声明、实现导出外部类型
+---
+#### 导出类型二（外部类）
+> 在随便头文件中声明导出某一类型
 ```cpp
-/* file: obj.h */
-namespace test {
-  class Obj {
-  public:
-    void Member() {}
-    int val;
-  }
-}
-
-/* file: lua_export.h */
+/* file lua_export.h */
 #include "obj.h"
 #include <xlua_def.h>
 
 XLUA_DECLARE_EXTERNAL(test::Obj);
-
+```
+> 在cpp文件中声明导出函数、变量
+```cpp
 /* file: lua_export.cpp */
 #include "lua_export.h"
 #include <xlua_export.h>
 
 XLUA_EXPORT_EXTERNAL_BEGIN(test::Obj)
-  XLUA_MEMBER_FUNC(&test::Obj::Member)
-  XLUA_MEMBER_VAR(&test::Obj::val)
+  XLUA_MEMBER_FUNC(&test::Obj::Func)
+  XLUA_MEMBER_FUNC(&test::Obj::StaticFunc)
+  /* 外部类型不能导出受保护的成员 */
+  //XLUA_MEMBER_VAR_AS(val, &test::Obj::val_)
+  //XLUA_MEMBER_VAR_AS(static_val, &test::Obj::static_val_)
 XLUA_EXPORT_EXTERNAL_END()
 ```
-这两种导出类型的主要区别：  
-源码声明导出：
-1. 能够导出protected, private成员（变量、函数）。
-2. 增加对象保护功能。当导出的对象被释放以后，lua中的对象会被标记无效，避免访问非法指针。
-  
-外部类行式导出：
-1. 无需更改源代码。
-2. 导出对象的生命期由使用者保证。
-3. 不能访问受保护成员。
-
-##### C++对象到 Lua
-当类型被声明导出以后，便可以通过xlua::xLuaState对象将对应类型的对象、指针、共享指针传递到Lua中。
+---
+#### 导出类型三（obj->table)
+用于将一些类型转换为table
+> 示例类型
 ```cpp
-xlua::xLuaState* l;
-Obj  obj;
-Obj* obj_ptr1;
-std::shared_ptr<Obj> obj_ptr2;
-// 压栈
-l->Push(obj);
-l->Push(obj_ptr1);
-l->Push(obj_ptr2);
-// 读取栈上数据
-obj = l->Load<Obj>(-3);
-obj_ptr1 = l->Load<Obj*>(-2);
-obj_ptr2 = l->Load<std::shared_ptr<Obj>>(-1);
+/* file: vec2.h */
+struct Vec2 {
+    Vec2 Cross(const Vec2& v) { return Vec2(); }
+    int Dot(const Vec2& v) { return 0; }
+    int x;
+    int y;
+}
 ```
-对象在交互传递过程中的类型转换关系  
-1. 子类->父类
-2. 指针<->值类型
-3. 共享指针->指针
-4. 共享指针->值类型
-5. 共享指针->共享指针  
+> 头文件声明
+```cpp
+/* file: lua_export.h */
+#include "vec2.h"
+#include <xlua_def.h>
 
-#### 注意：
-由于共享指针、值数据->指针时，涉及到对象生命期管理问题，需确保使用对应指针时lua栈未被清空，以免照成未定义行为。
-
-
-#### 扩展类的成员
+/* 导出到Lua */
+void xLuaPush(xlua::xLuaState* l, const Vec2& vec);
+/* 从Lua加载 */
+Vec2 xLuaLoad(xlua::xLuaState* l, int i, xlua::Identity<Vec2>);
+/* 可选，用于函数调用时参数类型检测，如果没有定义则默认都返回true */
+bool xLuaIsType(xlua::xLuaState* l, int i, xlua::Identity<Vec2>);
+```
+> 实现cpp
 ```cpp
 /* file: lua_export.cpp */
+#include "lua_export.h"
+#include <xlua_export.h>
 
-static int Obj_Get_Type(Obj* obj) {
-  /* TODO: */ return 0;
+XLUA_EXPORT_SCRIPT(R"V0G0N(
+  Vec2 = {}
+  local vec2Meta = {
+    __index = function (t, key)
+      return Vec2[key]
+    end,
+  }
+  function Vec2.New(x_, y_)
+    return setmettable({x = x_ or 0, y = y_ or 0}, vec2Meta)
+  end
+  function Vec2.Dot(vec1, vec2)
+    --TODO:
+  end
+  function Vec2.Cross(vec1, vec2)
+    --TODO:
+  end
+)V0G0N");
+
+/* 导出到Lua */
+void xLuaPush(xlua::xLuaState* l, const Vec2& vec) {
+  l->NewTable();
+  l->SetField(-1, "x", vec.x);
+  l->SetField(-1, "y", vec.y);
+  //TODO: set metatable
 }
-
-static void Obj_Set_type(Obj* obj, int val) {
-  //TODO:
+/* 从Lua加载 */
+Vec2 xLuaLoad(xlua::xLuaState* l, int i, xlua::Identity<Vec2>){
+  if (l.GetType(i) != LUA_TTABLE)
+    return Vec2();
+  return Vec2(l->GetField<int>(i, "x"), l->GetField<int>(i, "y"));
 }
-
-static bool Obj_DoWork(Obj* obj, int, bool) {
-  //TODO:
+/* 类型检测 */
+bool xLuaIsType(xlua::xLuaState* l, int i, xlua::Identity<Vec2>) {
+    return true;
 }
-
-XLUA_EXPORT_EXTERNAL_BEGIN(test::Obj)
-  /* normal member function */
-  XLUA_MEMBER_FUNC(&test::Obj::Member)
-  /* read only */
-  XLUA_MEMBER_VAR_WRAP(val_1, &test::Obj::val, nullptr)
-  /* set only */
-  XLUA_MEMBER_VAR_WRAP(val_2, nullptr, &test::Obj::val)
-  /* extend member var */
-  XLUA_MEMBER_VAR_EXTEND(type, &Obj_Get_Type, &Obj_Set_type)
-  /* extend member function */
-  XLUA_MEMBER_FUNC_EXTEND(DoWork, &Obj_DoWork)
-XLUA_EXPORT_EXTERNAL_END()
 ```
+
+### 导出细节
+#### 扩展类型成员
+- 成员函数  
+> XLUA_MEMBER_FUNC_EXTEND(Name, Func)  
+函数声明格式：  
+>> Ry func(Obj* obj, Args...)  
+>> int func(Obj* obj, xlua::xLuaState* l)  
+>> int func(Obj* obj, lua_State* l)  
+
+- 成员变量
+> XLUA_MEMBER_VAR_EXTEND(Name, Get, Set)  
+> Get属性声明格式：  
+>> Ry Obj_Get_Func(Obj* obj)  
+>> int Obj_Get_Func(Obj* obj, xlua::xLuaState* l)  
+>> int Obj_Get_Func(Obj* obj, lua_State* l)  
+>
+> Set属性声明格式：  
+>> void Obj_Set_Func(Obj* obj, const Ry& val)  
+>> int Obj_Set_Func(Obj* obj, xlua::xLuaState* l)  
+>> int Obj_Set_Func(Obj* obj, lua_State* l)  
+
+```cpp
+  //TODO: 示例
+```
+---
+#### 类型继承关系
+---
+#### C++对象类型转换
+
+### API介绍
+#### Lua端接口
+#### xLuaState接口
+
+### xlua配置
+#### 使用LightUserData优化
+#### WeakObjPtr扩展
+
+### 部分实现细节
+
