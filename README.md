@@ -205,7 +205,7 @@ C++对象导出到lua的类型可以是指针、值对象、共享指针，由�
 - 对象在通过xLuaState::Load, 以及函数调用时的转换关系  
 - 自动转换到基类  
 
-![类型转换关系](xhttps://github.com/xuantao/xlua/blob/master/doc/img/ptr_value_convent.png?raw=true)
+![类型转换关系](https://github.com/xuantao/xlua/blob/master/doc/img/ptr_value_convent.png?raw=true)
 
 ### API介绍
 全局接口，包含头文件<xlua.h>
