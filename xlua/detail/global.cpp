@@ -113,7 +113,7 @@ namespace detail {
                 s_global->const_infos_.push_back(static_cast<ConstNode*>(node)->func_());
                 break;
             case NodeCategory::kScript:
-                s_global->scripts_.push_back(static_cast<ScriptNode*>(node)->script);
+                s_global->scripts_.push_back(static_cast<ScriptNode*>(node)->info);
                 break;
             default:
                 break;

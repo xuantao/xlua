@@ -54,7 +54,7 @@ namespace detail
         LogFunc fn_log_ = nullptr;
         int type_index_gener_ = 0;                  // 类型编号分配器
         int serial_num_gener_ = 0;                  // lua导出对象序列号分配器
-        std::vector<const char*> scripts_;          // 导出的脚本
+        std::vector<ScriptInfo> scripts_;           // 导出的脚本
         std::vector<const ConstInfo*> const_infos_; // 导出的常量
         std::vector<TypeInfo*> types_;              // 导出的类型
 

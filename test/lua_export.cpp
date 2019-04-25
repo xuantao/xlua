@@ -248,3 +248,9 @@ XLUA_CONST_VAR_AS(Version, 1)
 XLUA_CONST_VAR_AS(Name, "xlua")
 XLUA_EXPORT_CONSTANT_END()
 
+XLUA_EXPORT_SCRIPT("TestExportScript", R"V0G0N(
+print("XLUA_EXPORT_SCRIPT executed")
+function TestExportScript()
+    print("TestExportScript called")
+end
+)V0G0N");

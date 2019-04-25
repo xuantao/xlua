@@ -43,18 +43,18 @@ namespace detail {
 
     struct ConstNode : NodeBase {
         ConstNode(fnConstInfo fn)
-            : NodeBase(NodeCategory::kConst)
-            , func_(fn) {
+            : NodeBase(NodeCategory::kConst) , func_(fn) {
         }
         const fnConstInfo func_;
     };
 
     struct ScriptNode : NodeBase {
-        ScriptNode(const char* s)
-            : NodeBase(NodeCategory::kScript)
-            , script(s) {
+        ScriptNode(const char* name, const char* script)
+            : NodeBase(NodeCategory::kScript) {
+            info.name = name;
+            info.script = script;
         }
-        const char* const script;
+        ScriptInfo info;
     };
 
     inline ConstValue MakeConstValue() {

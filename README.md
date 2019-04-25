@@ -20,13 +20,13 @@ XLUA_EXPORT_CONSTANT_END()
 ```
 ---
 #### 导出一段Lua脚本
-> XLUA_EXPORT_SCRIPT(Script)
+> XLUA_EXPORT_SCRIPT(Name, Script)
 
 ```cpp
 /* file: lua_export.cpp */
 #include <xlua_export.h>
 
-XLUA_EXPORT_SCRIPT(R"V0G0N(
+XLUA_EXPORT_SCRIPT("test", R"V0G0N(
   function SomeExportFunction()
     --TODO:
   end

@@ -587,7 +587,7 @@ private:
     bool InitEnv(const char* export_module,
         const std::vector<const detail::ConstInfo*>& consts,
         const std::vector<detail::TypeInfo*>& types,
-        const std::vector<const char*>& scripts
+        const std::vector<detail::ScriptInfo>& scripts
     );
     void InitConsts(const char* export_module, const std::vector<const detail::ConstInfo*>& consts);
     void CreateTypeMeta(const detail::TypeInfo* info);

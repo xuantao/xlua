@@ -194,8 +194,8 @@
 #define XLUA_CONST_VAR_AS(Name, Var)    xlua::detail::MakeConstValue(#Name, Var),
 
 /* 导出预设脚本 */
-#define XLUA_EXPORT_SCRIPT(Str)                                                         \
+#define XLUA_EXPORT_SCRIPT(Name, Str)                                                   \
     namespace {                                                                         \
-        xlua::detail::ScriptNode _XLUA_ANONYMOUS(Str);                                  \
+        xlua::detail::ScriptNode _XLUA_ANONYMOUS(Name, Str);                            \
     }
 

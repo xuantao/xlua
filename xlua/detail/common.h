@@ -165,6 +165,11 @@ namespace detail {
         const ConstValue* values;
     };
 
+    struct ScriptInfo {
+        const char* name;
+        const char* script;
+    };
+
     struct MemberFunc {
         const char* name;
         LuaFunction func;

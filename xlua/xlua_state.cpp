@@ -927,7 +927,7 @@ void xLuaState::Gc(detail::FullUserData* ud) {
 bool xLuaState::InitEnv(const char* export_module,
     const std::vector<const detail::ConstInfo*>& consts,
     const std::vector<detail::TypeInfo*>& types,
-    const std::vector<const char*>& scripts) {
+    const std::vector<detail::ScriptInfo>& scripts) {
     // user data ref table (weak table)
     lua_createtable(state_, XLUA_CONTAINER_INCREMENTAL, 0);
     lua_createtable(state_, 0, 1);
@@ -1002,8 +1002,8 @@ bool xLuaState::InitEnv(const char* export_module,
             CreateTypeGlobal(export_module, info);
     }
 
-    for (const char* script : scripts) {
-        DoString(script, "InitEnv");
+    for (const detail::ScriptInfo& info : scripts) {
+        DoString(info.script, info.name);
     }
 
     return true;
