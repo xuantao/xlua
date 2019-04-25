@@ -2,7 +2,7 @@
 ### 简介
 
 - 导出C++类型、函数、变量
-- 提供与Lua交互
+- C++与Lua交互
 
 ### C++导出到Lua
 ---
@@ -201,6 +201,8 @@ bool xLuaIsType(xlua::xLuaState* l, int i, xlua::Identity<Vec2>) {
 #### 类型继承关系
 ---
 #### C++对象类型转换
+C++对象导出到lua的类型可以是指针、值对象、共享指针，由此在从Lua加载数据，导出函数调用时需要处理对象的类型关系。  
+flowchard
 
 ### API介绍
 #### Lua端接口
