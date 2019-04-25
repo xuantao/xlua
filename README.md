@@ -172,10 +172,11 @@ bool xLuaIsType(xlua::xLuaState* l, int i, xlua::Identity<Vec2>) {
     return true;
 }
 ```
-[导出相关宏列表](https://github.com/xuantao/xlua/blob/master/doc/MACRO.md)
-
 
 ### 导出细节
+[导出相关宏列表](https://github.com/xuantao/xlua/blob/master/doc/MACRO.md)  
+包含头文件[<xlua_export.h>](https://github.com/xuantao/xlua/blob/master/xlua/xlua_export.h)  
+
 #### 扩展类型成员
 - 成员函数  
 > XLUA_MEMBER_FUNC_EXTEND(Name, Func)  
@@ -208,7 +209,7 @@ C++对象导出到lua的类型可以是指针、值对象、共享指针，由�
 ![类型转换关系](https://github.com/xuantao/xlua/blob/master/doc/img/ptr_value_convent.png?raw=true)
 
 ### API介绍
-全局接口，包含头文件<xlua.h>
+全局接口，包含头文件[<xlua.h>](https://github.com/xuantao/xlua/blob/master/xlua/xlua.h)
 
 - [bool Startup(LogFunc fn);](#api_Startup)
 - [void Shutdown();](#api_Shutdown)
@@ -235,6 +236,7 @@ LogFunc：
 
 ---
 ### xlua提供常用对象  
+包含头文件[<xlua_state.h>](https://github.com/xuantao/xlua/blob/master/xlua/xlua.h)
 #### xLuaState
 提供与Lua交互，将数据压栈、从栈上获取数据、调用Lua函数等。支持传递的数据类型有基础类型、声明导出的类型、lua表、lua函数等。压栈还额外可以压入函数指针、function对象，但不提供获取原始函数指针、function对象的方法。  
 ```cpp
@@ -302,9 +304,61 @@ meta.LuaExtend = function (obj, v)
 end
 ```
 
-### xlua配置
-#### 使用LightUserData优化
-#### WeakObjPtr扩展
 
-### 部分实现细节
+
+
+
+### xlua配置
+包含头文件[<xlua_config.h>](https://github.com/xuantao/xlua/blob/master/xlua/xlua_config.h)  
+- #define XLUA_CONTAINER_INCREMENTAL  1024
+> 配置数据缓存数组每次增量大小  
+缓存数组包含（引用的lua数据，table/function)  
+导出的方式一（内部类）的引用索引  
+
+- #define XLUA_MAX_TYPE_NAME_LENGTH   256
+> 最大类型名字长度
+
+- #define XLUA_MAX_BUFFER_CACHE       1024
+> 最大缓存buff，用来生成输出日志
+
+- #define XLUA_ENABLE_MULTIPLE_INHERITANCE    1
+> 是否开启多继承，当类型存在多继承时，子类指针向基类指针转换时需要显示转换。
+```cpp
+struct A {};
+struct B {};
+struct D : A, B {};
+
+void test() {
+  D d;
+  B* b_ptr = &d;
+  void* v_ptr = &d;
+  assert(v_ptr != d_ptr); // 地址存在偏移
+}
+```
+
+- #define XLUA_USE_LIGHT_USER_DATA 1
+> 开启LightUserData  
+
+在64位系统中，对象地址实际只是用了低48位，高16位空置未被使用，将需要导出的对象指针与对应类型索引打包成LightUserData导出到lua中，可以避免lua的gc提升效率。
+
+- #define XLUA_ENABLE_WEAKOBJ 0
+> 开启弱对象指针支持  
+
+弱对像指针是一种对象生命期管理策略，若要开启对应支持需实现相关中转接口。
+```cpp
+/* 配置基类类型 */
+#define XLUA_WEAK_OBJ_BASE_TYPE
+/* 配置弱对像指针类型 */
+template <typename Ty> using xLuaWeakObjPtr;
+/* 获取对象索引编号 */
+int xLuaAllocWeakObjIndex(XLUA_WEAK_OBJ_BASE_TYPE* val);
+/* 获取对象序列号 */
+int xLuaGetWeakObjSerialNum(int index);
+/* 获取对象指针 */
+XLUA_WEAK_OBJ_BASE_TYPE* xLuaGetWeakObjPtr(int index);
+/* 获取对象指针 */
+template <typename Ty> Ty* xLuaGetPtrByWeakObj(const xLuaWeakObjPtr<Ty>& obj);
+```
+
+### [实现细节](https://github.com/xuantao/xlua/blob/master/xlua/doc/DETAIL.md)
 
