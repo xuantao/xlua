@@ -609,6 +609,7 @@ private:
     int lua_obj_table_ref_ = 0;     // table, function
     int lonly_ud_meta_ref_ = 0;     // 独立user data元表索引
     int next_free_lua_obj_ = -1;    // 下一个的lua对象表空闲槽
+    xLuaFunction type_meta_func_;
     std::vector<LuaObjRef> lua_objs_;
     std::vector<UdCache> lua_obj_ptrs_;
     std::vector<UdCache> weak_obj_ptrs_;

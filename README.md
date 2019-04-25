@@ -172,6 +172,8 @@ bool xLuaIsType(xlua::xLuaState* l, int i, xlua::Identity<Vec2>) {
     return true;
 }
 ```
+[导出相关宏列表](https://github.com/xuantao/xlua/blob/master/doc/MACRO.md)
+
 
 ### 导出细节
 #### 扩展类型成员
@@ -198,15 +200,107 @@ bool xLuaIsType(xlua::xLuaState* l, int i, xlua::Identity<Vec2>) {
   //TODO: 示例
 ```
 ---
-#### 类型继承关系
----
 #### C++对象类型转换
 C++对象导出到lua的类型可以是指针、值对象、共享指针，由此在从Lua加载数据，导出函数调用时需要处理对象的类型关系。  
-flowchard
+- 对象在通过xLuaState::Load, 以及函数调用时的转换关系  
+- 自动转换到基类  
+
+![类型转换关系](xhttps://github.com/xuantao/xlua/blob/master/doc/img/ptr_value_convent.png?raw=true)
 
 ### API介绍
+全局接口，包含头文件<xlua.h>
+
+- [bool Startup(LogFunc fn);](#api_Startup)
+- [void Shutdown();](#api_Shutdown)
+- [xLuaState* Create(const char* export_module);](#api_Create)
+- [xLuaState* Attach(lua_State* l, const char* export_module);](#api_Attach)
+
+<span id="api_Startup">bool Startup(LogFunc fn);  
+LogFunc：
+> typedef void(\*LogFunc)(const char\*);  
+  接受xlua的日志输出
+
+启动xlua，初始化内部数据，如果在已经成功启动xlua以后尝试再此启动，会返回false。
+
+<span id="api_Shutdown">void Shutdown();  
+结束xlua，会销毁xlua创建的所有xLuaState对象。当销毁以后可以再次通过Startup启动xlua。
+
+<span id="api_Create">xLuaState* Create(const char* export_module);  
+创建一个lua状态机，会导出实现的类型、常量和脚本。  
+> export_module：用于指定系统导出的全局变量的顶层表名称，可以为空。  
+
+<span id="api_Attach">xLuaState* Attach(lua_State* l, const char* export_module);  
+向指定lua状态机挂接xlua系统。
+> export_module：用于指定系统导出的全局变量的顶层表名称，可以为空。  
+
+---
+### xlua提供常用对象  
+#### xLuaState
+提供与Lua交互，将数据压栈、从栈上获取数据、调用Lua函数等。支持传递的数据类型有基础类型、声明导出的类型、lua表、lua函数等。压栈还额外可以压入函数指针、function对象，但不提供获取原始函数指针、function对象的方法。  
+```cpp
+
+```
+   
+
+#### xLuaTable
+引用lua表，被引用的table不会被GC。  
+
+#### xLuaFunction
+引用lua函数，被引用的函数不会被GC。  
+
+#### xLuaGuard
+守卫lua栈。
+
+#### xLuaCallGaurd
+守卫lua函数调用栈，当对象释放时清除缓存在栈上的返回值。
+```cpp
+xLuaState* l;
+const char* str = nullptr
+if (auto guard = l->Call("GetSomeString", std::tie(str))) {
+  //TODO:
+}
+```
+> 这里xLuaCallGuard会确保获取的str的值时有效的，避免栈清空的时候lua对象被GC掉。
+
+---
 #### Lua端接口
-#### xLuaState接口
+全局名字table：xlua  
+
+
+- Cast  
+> obj xlua.Cast(obj, type_name)  
+
+将对象转换为指定类型的对象，如果成功返回指定类型对象，反之返回nil  
+在xlua环境中子类能够自动转换为基类，所以使用此接口尝试将子类转换为基类对象仍会直接返回子类对象，此接口的主要用途为将基类转换为子类对象。  
+注意效率，内部实现使用了dynamic_cast校验有效性。  
+
+
+- IsValid
+> boolean xlua.IsValid(obj)  
+
+判定对象有效性，使用类型导出方式一（内部类）或是开启WeakObjPtr，lua中持有的对象可能会变成无效值，使用此接口可以判定对象是否有效。  
+
+- Type
+> string xlua.Type(obj)  
+
+获取对象类型
+
+- GetTypeMeta
+> table xlua.GetTypeMeta(type_name)  
+
+获取指定类型的元表，可能通过元表对象给指定类型扩展成员函数。
+```lua
+local meta = xlua.GetTypeMeta("test.Obj")
+-- visit meta members,
+-- member type is function or light user data
+for k, v in pairs(meta) do
+  print(k, v)
+end
+-- add extend member function
+meta.LuaExtend = function (obj, v)
+  --TODO:
+end
+```
 
 ### xlua配置
 #### 使用LightUserData优化

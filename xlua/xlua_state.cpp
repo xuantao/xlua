@@ -10,8 +10,10 @@ XLUA_NAMESPACE_BEGIN
 #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TUSERDATA)
 #endif
 
-static const char* s_xlua_table =R"V0G0N(
+static const char* s_xlua_table = R"V0G0N(
+local fnExtend = ...
 local tbMeta = {}
+
 tbMeta.__pairs = function (tb)
     local iter = function (meta, k)
         local v
@@ -30,10 +32,14 @@ tbMeta.__index = function (tb, k)
 end
 
 tbMeta.__newindex = function (tb, k, v)
-    xlua.ExtendType(tb.__meta.__name, k, v)
+    fnExtend(tb.__meta.__name, k, v)
 end
 
-xlua.__CreateTypeMetaWrap = function (meta)
+--xlua.__CreateTypeMetaWrap = function (meta)
+--    return setmetatable({__meta = meta}, tbMeta)
+--end
+
+return function (meta)
     return setmetatable({__meta = meta}, tbMeta)
 end
 )V0G0N";
@@ -572,7 +578,7 @@ namespace detail {
                 return 0;
 
             xLuaState* xl = static_cast<xLuaState*>(lua_touserdata(l, lua_upvalueindex(1)));
-            xl->LoadGlobal("xlua.__CreateTypeMetaWrap");
+            xl->Push(xl->type_meta_func_);
             lua_rawgeti(l, LUA_REGISTRYINDEX, xl->meta_table_ref_);
             lua_rawgeti(l, -1, info->index);
             lua_remove(l, -2);
@@ -653,6 +659,8 @@ xLuaState::~xLuaState() {
 void xLuaState::Release() {
     auto global = detail::GlobalVar::GetInstance();
     assert(global != nullptr);
+
+    type_meta_func_ = xLuaFunction();
 
     if (!attach_)
         lua_close(state_);
@@ -940,8 +948,15 @@ bool xLuaState::InitEnv(const char* export_module,
     lua_obj_table_ref_ = luaL_ref(state_, LUA_REGISTRYINDEX);
     assert(lua_obj_table_ref_);
 
+    // 扩展xlua table
+    luaL_loadbuffer(state_, s_xlua_table, ::strlen(s_xlua_table), "xlua");
+    PushClosure(&detail::MetaFuncs::LuaExtendType);
+    lua_pcall(state_, 1, 1, 0);
+    type_meta_func_ = Load<xLuaFunction>(-1);
+    lua_pop(state_, 1);
+
     // xlua table
-    lua_createtable(state_, 0, 5);
+    lua_createtable(state_, 0, 4);
     PushClosure(&detail::MetaFuncs::LuaCast);
     lua_setfield(state_, -2, "Cast");
     PushClosure(&detail::MetaFuncs::LuaIsValid);
@@ -950,12 +965,7 @@ bool xLuaState::InitEnv(const char* export_module,
     lua_setfield(state_, -2, "Type");
     PushClosure(&detail::MetaFuncs::LuaGetTypeMeta);
     lua_setfield(state_, -2, "GetTypeMeta");
-    PushClosure(&detail::MetaFuncs::LuaExtendType);
-    lua_setfield(state_, -2, "ExtendType");
     lua_setglobal(state_, "xlua");
-
-    // 扩展xlua table
-    DoString(s_xlua_table, "xlua");
 
 #if XLUA_USE_LIGHT_USER_DATA
     // light user data metatable
@@ -1190,11 +1200,11 @@ int xLuaState::RefLuaObj(int index) {
     next_free_lua_obj_ = ref.next_free_;
 
     index = lua_absindex(state_, index);
-    lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
-    lua_rotate(state_, index, -1);
-    ref.lua_ref_ = luaL_ref(state_, -2);
+    lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_); // load table
+    lua_pushvalue(state_, index);           // copy value
+    ref.lua_ref_ = luaL_ref(state_, -2);    // ref value
+    lua_pop(state_, 1);                     // pop table
     ref.ref_count_ = 1;
-    lua_pop(state_, 1);
 
     return ary_index;
 }
