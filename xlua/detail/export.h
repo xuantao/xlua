@@ -143,7 +143,7 @@ namespace detail {
             return obj ? dynamic_cast<Ty*>(static_cast<By*>(obj)) : nullptr;
         }
 
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
         bool ToDerived(detail::LightUserData* ud, xLuaLogBuffer& lb) override {
             if (!ud->IsLightData()) {
                 lb.Log("unknown obj");
@@ -204,7 +204,7 @@ namespace detail {
             *ud = MakeLightUserData(d, info_);
             return true;
         }
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
 
         bool ToDerived(detail::FullUserData* ud, xLuaLogBuffer& lb) override {
             if (ud->type_ == UserDataCategory::kValue) {
@@ -273,9 +273,9 @@ namespace detail {
         void* ToWeakPtr(void* obj) override { return obj; }
         void* ToSuper(void* obj, const TypeInfo* dst) override { return obj; }
         void* ToDerived(void* obj, const TypeInfo* src) override { return obj; }
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
         bool ToDerived(detail::LightUserData* ud, xLuaLogBuffer& lb) override { return true; }
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
         bool ToDerived(detail::FullUserData* ud, xLuaLogBuffer& lb) override { return true; }
 
     public:

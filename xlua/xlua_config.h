@@ -26,18 +26,18 @@
     #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          Ptr
 #endif // XLUA_ENABLE_MULTIPLE_INHERITANCE
 
-/* 64位系统开启LIGHT_USER_DATA
+/* 64位系统开启light user data优化
  * 导出对象指针使用LightUserData代替FullUserData, 避免Lua的GC以提升效率
 */
-#ifndef XLUA_USE_LIGHT_USER_DATA
-    #define XLUA_USE_LIGHT_USER_DATA 1
+#ifndef XLUA_ENABLE_LUD_OPTIMIZE
+    #define XLUA_ENABLE_LUD_OPTIMIZE 1
 #endif
 
 /* 检查系统是否支持 */
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
     #if INTPTR_MAX != INT64_MAX
-        #undef XLUA_USE_LIGHT_USER_DATA
-        #define XLUA_USE_LIGHT_USER_DATA 0
+        #undef XLUA_ENABLE_LUD_OPTIMIZE
+        #define XLUA_ENABLE_LUD_OPTIMIZE 0
     #endif
 #endif
 

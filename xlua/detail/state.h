@@ -8,7 +8,7 @@
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
     inline bool IsValidRawPtr(const void* p) {
         return ((0xff00000000000000 & reinterpret_cast<uint64_t>(p)) == 0);
     }
@@ -61,7 +61,7 @@ namespace detail {
             typename std::conditional<IsInternal<Ty>::value, tag_internal, tag_external>::type>::type;
         return MakeLightUserData(obj, info, tag());
     }
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
 
     template <typename Ty>
     inline FullUserData MakeFullUserData(Ty* obj, const TypeInfo* info, tag_weakobj) {
@@ -128,7 +128,7 @@ namespace detail {
         UserDataInfo ud_info{ false, nullptr, nullptr, nullptr };
         int l_ty = lua_type(l, index);
         if (l_ty == LUA_TLIGHTUSERDATA) {
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
             ud_info.is_light = true;
             ud_info.ud = lua_touserdata(l, index);
             if (ud_info.ud == nullptr)
@@ -159,7 +159,7 @@ namespace detail {
             }
 #else
             return false;
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
         } else if (l_ty == LUA_TUSERDATA) {
             ud_info.ud = lua_touserdata(l, index);
             if (ud_info.ud == nullptr)

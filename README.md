@@ -336,7 +336,7 @@ void test() {
 }
 ```
 
-- #define XLUA_USE_LIGHT_USER_DATA 1
+- #define XLUA_ENABLE_LUD_OPTIMIZE 1
 > 开启LightUserData  
 
 在64位系统中，对象地址实际只是用了低48位，高16位空置未被使用，将需要导出的对象指针与对应类型索引打包成LightUserData导出到lua中，可以避免lua的gc提升效率。

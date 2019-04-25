@@ -348,7 +348,7 @@ public:
     inline void Push(const void* val) { Push(const_cast<void*>(val)); }
 
     inline void Push(void* val) {
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
         assert(detail::IsValidRawPtr(val));
 #endif
         if (val == nullptr)
@@ -664,12 +664,12 @@ namespace detail {
                 l->Push(nullptr);
             } else {
                 const TypeInfo* info = GetTypeInfoImpl<value_type>();
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
                 auto ud = MakeLightUserData(val, info);
                 lua_pushlightuserdata(l->GetState(), ud.Ptr());
-#else // XLUA_USE_LIGHT_USER_DATA
+#else // XLUA_ENABLE_LUD_OPTIMIZE
                 l->PushPtrUserData(MakeFullUserData(val, info));
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
             }
         }
     };
@@ -861,7 +861,7 @@ namespace detail {
                 ud_info.is_nil = true;
             }
             else if (l_ty == LUA_TLIGHTUSERDATA) {
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
                 LightUserData ud = MakeLightPtr(lua_touserdata(l->GetState(), index));
                 if (!ud.IsLightData()) {
                     // unknown val
@@ -876,7 +876,7 @@ namespace detail {
                     if (ud_info.info->is_weak_obj && check_nil)
                         ud_info.is_nil = (ud.serial_ == ::xLuaGetWeakObjSerialNum(ud.index_));
                 }
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
             } else if (l_ty == LUA_TUSERDATA) {
                 FullUserData* ud = static_cast<FullUserData*>(lua_touserdata(l->GetState(), index));
                 ud_info.info = ud->info_;

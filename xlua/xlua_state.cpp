@@ -4,7 +4,7 @@
 
 XLUA_NAMESPACE_BEGIN
 
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
 #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TLIGHTUSERDATA || type == LUA_TUSERDATA)
 #else
 #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TUSERDATA)
@@ -137,7 +137,7 @@ namespace detail {
     static bool IsObjValid(lua_State* l) {
         int l_ty = lua_type(l, 1);
         if (l_ty == LUA_TLIGHTUSERDATA) {
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
             auto ud = MakeLightPtr(lua_touserdata(l, 1));
             if (!ud.IsLightData())
                 return false;
@@ -154,7 +154,7 @@ namespace detail {
                     return (ud.serial_ == xLuaGetWeakObjSerialNum(ud.index_));
                 return true;
             }
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
         } else if (l_ty == LUA_TUSERDATA) {
             auto* ud = static_cast<FullUserData*>(lua_touserdata(l, 1));
             if (ud == nullptr)
@@ -279,7 +279,7 @@ namespace detail {
             return 0;
         }
 
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
         // stack info, 1: ud, 2: key
         static int LuaLightPtrIndex(lua_State* l) {
             UserDataInfo ud_info{ false, nullptr, nullptr, nullptr };
@@ -444,7 +444,7 @@ namespace detail {
 
             int l_ty = lua_type(l, 1);
             if (l_ty == LUA_TLIGHTUSERDATA) {
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
                 auto ud = MakeLightPtr(lua_touserdata(l, 1));
                 LogBufCache<> lb;
                 if (ud.Ptr() == nullptr) {
@@ -465,7 +465,7 @@ namespace detail {
                 lua_pushnil(l);
                 LogWithStack(l, "unknown obj");
                 return 1;
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
             } else if (l_ty == LUA_TUSERDATA) {
                 auto* ud = static_cast<FullUserData*>(lua_touserdata(l, 1));
                 LogBufCache<> lb;
@@ -509,7 +509,7 @@ namespace detail {
         static int LuaType(lua_State* l) {
             int l_ty = lua_type(l, 1);
             if (l_ty == LUA_TLIGHTUSERDATA) {
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
                 auto ud = MakeLightPtr(lua_touserdata(l, 1));
                 if (!ud.IsLightData()) {
                     lua_pushstring(l, "Unknown");
@@ -538,10 +538,10 @@ namespace detail {
                     lua_pushstring(l, info->type_name);
                     return 1;
                 }
-#else // XLUA_USE_LIGHT_USER_DATA
+#else // XLUA_ENABLE_LUD_OPTIMIZE
                 lua_pushstring(l, "Unknown");
                 return 1;
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
             } else if (l_ty == LUA_TUSERDATA) {
                 auto* ud = static_cast<FullUserData*>(lua_touserdata(l, 1));
                 if (ud == nullptr) {
@@ -679,7 +679,7 @@ const char* xLuaState::GetTypeName(int index) {
     const char* ret = type_name_buf_;
 
     if (l_ty == LUA_TLIGHTUSERDATA) {
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
         detail::LightUserData ud = detail::MakeLightPtr(lua_touserdata(state_, index));
         if (!ud.IsLightData()) {
             snprintf(type_name_buf_, XLUA_MAX_TYPE_NAME_LENGTH, "light user data");
@@ -696,7 +696,7 @@ const char* xLuaState::GetTypeName(int index) {
             else
                 snprintf(type_name_buf_, XLUA_MAX_TYPE_NAME_LENGTH, "%s*", info->type_name);
         }
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
     } else if (l_ty == LUA_TUSERDATA) {
         detail::FullUserData* ud = static_cast<detail::FullUserData*>(lua_touserdata(state_, index));
         switch (ud->type_) {
@@ -967,7 +967,7 @@ bool xLuaState::InitEnv(const char* export_module,
     lua_setfield(state_, -2, "GetTypeMeta");
     lua_setglobal(state_, "xlua");
 
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
     // light user data metatable
     lua_pushlightuserdata(state_, nullptr);  //修改lightuserdata的metatable
     lua_createtable(state_, 0, 3);
@@ -984,7 +984,7 @@ bool xLuaState::InitEnv(const char* export_module,
     lua_setmetatable(state_, -2);   // set light user data metatable
     lua_pop(state_, 1);             // light user data
     assert(GetTop() == 0);
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
 
     lua_createtable(state_, 0, 2);
     lua_pushstring(state_, "lonly_user_data");

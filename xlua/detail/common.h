@@ -11,7 +11,7 @@ namespace detail {
         static constexpr uint8_t kInternalLightIndex = 0xff;
     };
 
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
     struct LightUserData {
         union {
             struct {
@@ -45,7 +45,7 @@ namespace detail {
                 | (reinterpret_cast<uint64_t>(p) & 0x00ffffffffffffff));
         }
     };
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
 
     enum class UserDataCategory {
         kValue,
@@ -124,9 +124,9 @@ namespace detail {
         virtual void* ToWeakPtr(void* obj) = 0;
         virtual void* ToSuper(void* obj, const TypeInfo* info) = 0;
         virtual void* ToDerived(void* obj, const TypeInfo* info) = 0;
-#if XLUA_USE_LIGHT_USER_DATA
+#if XLUA_ENABLE_LUD_OPTIMIZE
         virtual bool ToDerived(detail::LightUserData* ud, xLuaLogBuffer& lb) = 0;
-#endif // XLUA_USE_LIGHT_USER_DATA
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
         virtual bool ToDerived(detail::FullUserData* ud, xLuaLogBuffer& lb) = 0;
     };
 
