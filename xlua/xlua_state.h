@@ -361,14 +361,14 @@ public:
         if (val.lua_ != this)
             Push(nullptr);
         else
-            PushLuaObj(val.ary_index_);
+            LoadLuaObj(val.ary_index_);
     }
 
     inline void Push(const xLuaFunction& val) {
         if (val.lua_ != this)
             Push(nullptr);
         else
-            PushLuaObj(val.ary_index_);
+            LoadLuaObj(val.ary_index_);
     }
 
     inline void Push(lua_CFunction func) {
@@ -498,6 +498,18 @@ public:
     }
 
 private:
+    bool InitEnv(const char* export_module,
+        const std::vector<const detail::ConstInfo*>& consts,
+        const std::vector<detail::TypeInfo*>& types,
+        const std::vector<detail::ScriptInfo>& scripts
+    );
+    void InitConsts(const char* export_module, const std::vector<const detail::ConstInfo*>& consts);
+    void CreateTypeMeta(const detail::TypeInfo* info);
+    void CreateTypeGlobal(const char* export_module, const detail::TypeInfo* info);
+    void SetTypeMember(const detail::TypeInfo* info);
+    void SetGlobalMember(const detail::TypeInfo* info, bool func, bool var);
+    void PushClosure(lua_CFunction func);
+
     bool DoSetGlobal(const char* path, bool create, bool rawset);
 
     template<typename... Rys, typename... Args>
@@ -583,23 +595,49 @@ private:
     }
 
     void Gc(detail::FullUserData* user_data);
-
-    bool InitEnv(const char* export_module,
-        const std::vector<const detail::ConstInfo*>& consts,
-        const std::vector<detail::TypeInfo*>& types,
-        const std::vector<detail::ScriptInfo>& scripts
-    );
-    void InitConsts(const char* export_module, const std::vector<const detail::ConstInfo*>& consts);
-    void CreateTypeMeta(const detail::TypeInfo* info);
-    void CreateTypeGlobal(const char* export_module, const detail::TypeInfo* info);
-    void SetTypeMember(const detail::TypeInfo* info);
-    void SetGlobalMember(const detail::TypeInfo* info, bool func, bool var);
-    void PushClosure(lua_CFunction func);
-
     int RefLuaObj(int index);
-    void PushLuaObj(int ary_index);
-    void AddObjRef(int ary_index);
-    void UnRefObj(int ary_index);
+
+    inline void LoadLuaObj(int ary_index) {
+        assert(ary_index >= 0 && ary_index < (int)lua_objs_.size());
+        LoadRef(lua_objs_[ary_index].lua_ref_);
+    }
+
+    inline void AddLuaObjRef(int ary_index) {
+        assert(ary_index >= 0 && ary_index < (int)lua_objs_.size());
+        ++lua_objs_[ary_index].ref_count_;
+    }
+
+    inline void ReleaseLuaObj(int ary_index) {
+        assert(ary_index >= 0 && ary_index < (int)lua_objs_.size());
+        auto& ref = lua_objs_[ary_index];
+        -- ref.ref_count_;
+        if (ref.ref_count_ == 0) {
+            UnRef(ref.lua_ref_);
+            ref.next_free_ = next_free_lua_obj_;
+            next_free_lua_obj_ = ary_index;
+        }
+    }
+
+    inline int Ref(int index) {
+        index = lua_absindex(state_, index);
+        lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_); // load table
+        lua_pushvalue(state_, index);           // copy value
+        int ref = luaL_ref(state_, -2);         // ref value
+        lua_pop(state_, 1);                     // pop table
+        return ref;
+    }
+
+    inline void UnRef(int ref) {
+        lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
+        luaL_unref(state_, -1, ref);
+        lua_pop(state_, 1);
+    }
+
+    inline void LoadRef(int ref) {
+        lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
+        lua_rawgeti(state_, -1, ref);
+        lua_remove(state_, -2);
+    }
 
 private:
     bool attach_;
@@ -608,8 +646,8 @@ private:
     int user_data_table_ref_ = 0;   // user data table
     int lua_obj_table_ref_ = 0;     // table, function
     int lonly_ud_meta_ref_ = 0;     // 独立user data元表索引
+    int type_meta_func_ref_ = 0;
     int next_free_lua_obj_ = -1;    // 下一个的lua对象表空闲槽
-    xLuaFunction type_meta_func_;
     std::vector<LuaObjRef> lua_objs_;
     std::vector<UdCache> lua_obj_ptrs_;
     std::vector<UdCache> weak_obj_ptrs_;

@@ -578,7 +578,7 @@ namespace detail {
                 return 0;
 
             xLuaState* xl = static_cast<xLuaState*>(lua_touserdata(l, lua_upvalueindex(1)));
-            xl->Push(xl->type_meta_func_);
+            xl->LoadRef(xl->type_meta_func_ref_);
             lua_rawgeti(l, LUA_REGISTRYINDEX, xl->meta_table_ref_);
             lua_rawgeti(l, -1, info->index);
             lua_remove(l, -2);
@@ -624,12 +624,12 @@ namespace detail {
 
 void xLuaObjBase::AddRef() {
     if (ary_index_ != -1)
-        lua_->AddObjRef(ary_index_);
+        lua_->AddLuaObjRef(ary_index_);
 }
 
 void xLuaObjBase::UnRef() {
     if (ary_index_ != -1) {
-        lua_->UnRefObj(ary_index_);
+        lua_->ReleaseLuaObj(ary_index_);
         ary_index_ = -1;
     }
 }
@@ -660,7 +660,8 @@ void xLuaState::Release() {
     auto global = detail::GlobalVar::GetInstance();
     assert(global != nullptr);
 
-    type_meta_func_ = xLuaFunction();
+    UnRef(type_meta_func_ref_);
+    type_meta_func_ref_ = 0;
 
     if (!attach_)
         lua_close(state_);
@@ -760,49 +761,6 @@ int xLuaState::LoadGlobal(const char* path) {
     return ty;
 }
 
-bool xLuaState::DoSetGlobal(const char* path, bool create, bool rawset) {
-    int top = GetTop();
-    if (top == 0)
-        return false;   // none value
-
-    if (path == nullptr || *path == 0) {
-        lua_pop(state_, 1); // pop value
-        return false;   // wrong name
-    }
-
-    lua_pushglobaltable(state_);
-    while (const char* sub = ::strchr(path, '.')) {
-        lua_pushlstring(state_, path, sub - path);
-        int l_ty = lua_gettable(state_, -2);
-        if (l_ty == LUA_TNIL && create) {
-            lua_pop(state_, 1);                         // pop nil
-            lua_newtable(state_);                       // new table
-            lua_pushlstring(state_, path, sub - path);  // key
-            lua_pushvalue(state_, -2);                  // copy table
-            if (rawset)
-                lua_rawset(state_, -4);
-            else
-                lua_settable(state_, -4);               // set field
-        } else if (!_IS_TABLE_TYPE(l_ty)) {
-            lua_pop(state_, 3); // [1]:value, [2]:table, [3]:unknown value
-            return false;
-        }
-
-        lua_remove(state_, -2);
-        path = sub + 1;
-    }
-
-    lua_pushstring(state_, path);
-    lua_rotate(state_, top, -1);
-    if (rawset)
-        lua_rawset(state_, -3);
-    else
-        lua_settable(state_, -3);   // set field
-
-    lua_pop(state_, 1); // [1]: table
-    return true;
-}
-
 int xLuaState::LoadTableField(int index, int field) {
     int ty = GetType(index);
     if (!_IS_TABLE_TYPE(ty)) {
@@ -845,85 +803,6 @@ bool xLuaState::SetTableField(int index, const char* field) {
     return true;
 }
 
-void xLuaState::PushPtrUserData(const detail::FullUserData& ud) {
-    if (ud.type_ == detail::UserDataCategory::kRawPtr) {
-        void* root = detail::GetRootPtr(ud.obj_, ud.info_);
-        auto it = raw_ptrs_.find(root);
-        if (it != raw_ptrs_.cend()) {
-            UpdateCahce(it->second, ud.obj_, ud.info_);
-            PushUd(it->second);
-        } else {
-            UdCache udc = RefCache(NewUserData<detail::FullUserData>(ud.info_, ud));
-            raw_ptrs_.insert(std::make_pair(root, udc));
-        }
-    } else if (ud.type_ == detail::UserDataCategory::kObjPtr) {
-        if (ud.info_->is_weak_obj) {
-            if ((int)weak_obj_ptrs_.size() <= ud.index_) {
-                weak_obj_ptrs_.resize((1 + ud.index_ / XLUA_CONTAINER_INCREMENTAL) * XLUA_CONTAINER_INCREMENTAL, UdCache{0, nullptr});
-            }
-
-            auto& udc = lua_obj_ptrs_[ud.index_];
-            if (udc.user_data_ != nullptr && udc.user_data_->serial_ == ud.serial_) {
-                UpdateCahce(udc, ud.obj_, ud.info_);
-                PushUd(udc);
-            } else {
-                udc = RefCache(NewUserData<detail::FullUserData>(ud.info_, ud));
-            }
-        } else {
-            if ((int)lua_obj_ptrs_.size() <= ud.index_) {
-                lua_obj_ptrs_.resize((1 + ud.index_ / XLUA_CONTAINER_INCREMENTAL) * XLUA_CONTAINER_INCREMENTAL, UdCache{0, nullptr});
-            }
-
-            auto& udc = lua_obj_ptrs_[ud.index_];
-            if (udc.user_data_ != nullptr && udc.user_data_->serial_ == ud.serial_) {
-                UpdateCahce(udc, ud.obj_, ud.info_);
-                PushUd(udc);
-            } else {
-                udc = RefCache(NewUserData<detail::FullUserData>(ud.info_, ud));
-            }
-        }
-    } else {
-        assert(false);
-    }
-}
-
-void xLuaState::Gc(detail::FullUserData* ud) {
-    switch (ud->type_) {
-    case detail::UserDataCategory::kValue:
-        break;
-    case detail::UserDataCategory::kRawPtr:
-        {
-            auto it = raw_ptrs_.find(detail::GetRootPtr(ud->obj_, ud->info_));
-            UnRefCachce(it->second);
-            raw_ptrs_.erase(it);
-        }
-        break;
-    case detail::UserDataCategory::kSharedPtr:
-        {
-            auto it = shared_ptrs_.find(detail::GetRootPtr(ud->obj_, ud->info_));
-            UnRefCachce(it->second);
-            shared_ptrs_.erase(it);
-        }
-        break;
-    case detail::UserDataCategory::kObjPtr:
-        if (ud->info_->is_weak_obj) {
-            auto& udc = weak_obj_ptrs_[ud->index_];
-            if (ud == udc.user_data_)
-                UnRefCachce(udc);
-        } else {
-            auto& udc = lua_obj_ptrs_[ud->index_];
-            if (ud == udc.user_data_)
-                UnRefCachce(udc);
-        }
-        break;
-    default:
-        assert(false);
-        break;
-    }
-
-    ud->~FullUserData();
-}
-
 bool xLuaState::InitEnv(const char* export_module,
     const std::vector<const detail::ConstInfo*>& consts,
     const std::vector<detail::TypeInfo*>& types,
@@ -952,7 +831,7 @@ bool xLuaState::InitEnv(const char* export_module,
     luaL_loadbuffer(state_, s_xlua_table, ::strlen(s_xlua_table), "xlua");
     PushClosure(&detail::MetaFuncs::LuaExtendType);
     lua_pcall(state_, 1, 1, 0);
-    type_meta_func_ = Load<xLuaFunction>(-1);
+    type_meta_func_ref_ = Ref(-1);
     lua_pop(state_, 1);
 
     // xlua table
@@ -1183,6 +1062,128 @@ void xLuaState::PushClosure(lua_CFunction func) {
     lua_pushcclosure(state_, func, 1);
 }
 
+bool xLuaState::DoSetGlobal(const char* path, bool create, bool rawset) {
+    int top = GetTop();
+    if (top == 0)
+        return false;   // none value
+
+    if (path == nullptr || *path == 0) {
+        lua_pop(state_, 1); // pop value
+        return false;   // wrong name
+    }
+
+    lua_pushglobaltable(state_);
+    while (const char* sub = ::strchr(path, '.')) {
+        lua_pushlstring(state_, path, sub - path);
+        int l_ty = lua_gettable(state_, -2);
+        if (l_ty == LUA_TNIL && create) {
+            lua_pop(state_, 1);                         // pop nil
+            lua_newtable(state_);                       // new table
+            lua_pushlstring(state_, path, sub - path);  // key
+            lua_pushvalue(state_, -2);                  // copy table
+            if (rawset)
+                lua_rawset(state_, -4);
+            else
+                lua_settable(state_, -4);               // set field
+        } else if (!_IS_TABLE_TYPE(l_ty)) {
+            lua_pop(state_, 3); // [1]:value, [2]:table, [3]:unknown value
+            return false;
+        }
+
+        lua_remove(state_, -2);
+        path = sub + 1;
+    }
+
+    lua_pushstring(state_, path);
+    lua_rotate(state_, top, -1);
+    if (rawset)
+        lua_rawset(state_, -3);
+    else
+        lua_settable(state_, -3);   // set field
+
+    lua_pop(state_, 1); // [1]: table
+    return true;
+}
+
+void xLuaState::PushPtrUserData(const detail::FullUserData& ud) {
+    if (ud.type_ == detail::UserDataCategory::kRawPtr) {
+        void* root = detail::GetRootPtr(ud.obj_, ud.info_);
+        auto it = raw_ptrs_.find(root);
+        if (it != raw_ptrs_.cend()) {
+            UpdateCahce(it->second, ud.obj_, ud.info_);
+            PushUd(it->second);
+        } else {
+            UdCache udc = RefCache(NewUserData<detail::FullUserData>(ud.info_, ud));
+            raw_ptrs_.insert(std::make_pair(root, udc));
+        }
+    } else if (ud.type_ == detail::UserDataCategory::kObjPtr) {
+        if (ud.info_->is_weak_obj) {
+            if ((int)weak_obj_ptrs_.size() <= ud.index_) {
+                weak_obj_ptrs_.resize((1 + ud.index_ / XLUA_CONTAINER_INCREMENTAL) * XLUA_CONTAINER_INCREMENTAL, UdCache{0, nullptr});
+            }
+
+            auto& udc = lua_obj_ptrs_[ud.index_];
+            if (udc.user_data_ != nullptr && udc.user_data_->serial_ == ud.serial_) {
+                UpdateCahce(udc, ud.obj_, ud.info_);
+                PushUd(udc);
+            } else {
+                udc = RefCache(NewUserData<detail::FullUserData>(ud.info_, ud));
+            }
+        } else {
+            if ((int)lua_obj_ptrs_.size() <= ud.index_) {
+                lua_obj_ptrs_.resize((1 + ud.index_ / XLUA_CONTAINER_INCREMENTAL) * XLUA_CONTAINER_INCREMENTAL, UdCache{0, nullptr});
+            }
+
+            auto& udc = lua_obj_ptrs_[ud.index_];
+            if (udc.user_data_ != nullptr && udc.user_data_->serial_ == ud.serial_) {
+                UpdateCahce(udc, ud.obj_, ud.info_);
+                PushUd(udc);
+            } else {
+                udc = RefCache(NewUserData<detail::FullUserData>(ud.info_, ud));
+            }
+        }
+    } else {
+        assert(false);
+    }
+}
+
+void xLuaState::Gc(detail::FullUserData* ud) {
+    switch (ud->type_) {
+    case detail::UserDataCategory::kValue:
+        break;
+    case detail::UserDataCategory::kRawPtr:
+        {
+            auto it = raw_ptrs_.find(detail::GetRootPtr(ud->obj_, ud->info_));
+            UnRefCachce(it->second);
+            raw_ptrs_.erase(it);
+        }
+        break;
+    case detail::UserDataCategory::kSharedPtr:
+        {
+            auto it = shared_ptrs_.find(detail::GetRootPtr(ud->obj_, ud->info_));
+            UnRefCachce(it->second);
+            shared_ptrs_.erase(it);
+        }
+        break;
+    case detail::UserDataCategory::kObjPtr:
+        if (ud->info_->is_weak_obj) {
+            auto& udc = weak_obj_ptrs_[ud->index_];
+            if (ud == udc.user_data_)
+                UnRefCachce(udc);
+        } else {
+            auto& udc = lua_obj_ptrs_[ud->index_];
+            if (ud == udc.user_data_)
+                UnRefCachce(udc);
+        }
+        break;
+    default:
+        assert(false);
+        break;
+    }
+
+    ud->~FullUserData();
+}
+
 int xLuaState::RefLuaObj(int index) {
     if (next_free_lua_obj_ == -1) {
         size_t o_s = lua_objs_.size();
@@ -1195,45 +1196,13 @@ int xLuaState::RefLuaObj(int index) {
         lua_objs_.back().next_free_ = -1;
     }
 
-    int ary_index = next_free_lua_obj_;
-    auto& ref = lua_objs_[ary_index];
+    int ary_idx = next_free_lua_obj_;
+    auto& ref = lua_objs_[ary_idx];
     next_free_lua_obj_ = ref.next_free_;
 
-    index = lua_absindex(state_, index);
-    lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_); // load table
-    lua_pushvalue(state_, index);           // copy value
-    ref.lua_ref_ = luaL_ref(state_, -2);    // ref value
-    lua_pop(state_, 1);                     // pop table
+    ref.lua_ref_ = Ref(index);
     ref.ref_count_ = 1;
-
-    return ary_index;
-}
-
-void xLuaState::PushLuaObj(int ary_index) {
-    assert(ary_index >= 0 && ary_index < (int)lua_objs_.size());
-
-    lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
-    lua_rawgeti(state_, -1, lua_objs_[ary_index].lua_ref_);
-    lua_remove(state_, -2);
-}
-
-void xLuaState::AddObjRef(int ary_index) {
-    assert(ary_index >= 0 && ary_index < (int)lua_objs_.size());
-    ++lua_objs_[ary_index].ref_count_;
-}
-
-void xLuaState::UnRefObj(int ary_index) {
-    assert(ary_index >= 0 && ary_index < (int)lua_objs_.size());
-    auto& ref = lua_objs_[ary_index];
-    -- ref.ref_count_;
-    if (ref.ref_count_ == 0) {
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
-        luaL_unref(state_, -1, ref.lua_ref_);
-        lua_pop(state_, 1);
-
-        ref.next_free_ = next_free_lua_obj_;
-        next_free_lua_obj_ = ary_index;
-    }
+    return ary_idx;
 }
 
 XLUA_NAMESPACE_END
