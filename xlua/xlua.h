@@ -3,12 +3,6 @@
 #include "xlua_def.h"
 #include "xlua_state.h"
 
-/* 扩展类型
- * void xLuaPush(xlua::xLuaState* l, const Type& val)
- * Type xLuaLoad(xlua::xLuaState* L, int index, xlua::Identity<Type>);
- * bool xLuaIsType(xlua::xLuaState* L, int index, xlua::Identity<Type>);
-*/
-
 XLUA_NAMESPACE_BEGIN
 
 bool Startup(LogFunc fn);

@@ -7,19 +7,11 @@
 
 XLUA_NAMESPACE_BEGIN
 
-xLuaIndex::~xLuaIndex() {
-    auto global = detail::GlobalVar::GetInstance();
-    if (index_ != -1 && global)
-        global->FreeObjIndex(index_);
-}
-
 namespace detail {
     static NodeBase* s_node_head = nullptr;
     static GlobalVar* s_global = nullptr;
     static LogFunc s_log = nullptr;
-}
 
-namespace detail {
     static bool StateCmp(const std::pair<lua_State*, xLuaState*>& l, const std::pair<lua_State*, xLuaState*>& r) {
         return l.first < r.first;
     }

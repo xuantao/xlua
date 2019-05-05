@@ -72,20 +72,7 @@ public:
     inline size_t Size() const { return write_; }
     inline size_t Capacity() const { return capacity_; }
 
-    void Log(const char* fmt, ...) {
-        if (write_ >= capacity_)
-            return;
-
-        va_list args;
-        va_start(args, fmt);
-        int n = vsnprintf(buf_ + write_, capacity_ - write_, fmt, args);
-        va_end(args);
-        if (n > 0) {
-            write_ += n;
-            if (write_ < capacity_)
-                buf_[write_++] = '\n';
-        }
-    }
+    void Log(const char* fmt, ...);
 
     inline const char* Finalize() {
         if (write_ && write_ <= capacity_ && buf_[write_-1] == '\n')
@@ -111,7 +98,7 @@ XLUA_NAMESPACE_END
 */
 inline bool xLuaIsType(xlua::xLuaState*, xlua::Identity<std::nullptr_t>) { return true; }
 inline std::nullptr_t xLuaLoad(xlua::xLuaState*, int, xlua::Identity<std::nullptr_t>) { return nullptr; }
-inline void xLuaPush(xlua::xLuaState*, std::nullptr_t) { }
+void xLuaPush(xlua::xLuaState*, std::nullptr_t);
 
 /* 声明导出Lua类, 在类中插入xlua相关信息
  * 可变宏参数用于设置基类类型(不支持多基类)
