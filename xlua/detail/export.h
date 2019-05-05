@@ -152,7 +152,7 @@ namespace detail {
 
             const TypeInfo* src = nullptr;
             void* src_ptr = nullptr;
-            if (ud->IsInternalType()) {
+            if (ud->IsObjIndex()) {
                 auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud->index_);
                 if (ary_obj == nullptr || ary_obj->serial_num_ != ud->serial_) {
                     lb.Log("current obj is nil");
@@ -162,7 +162,7 @@ namespace detail {
                 src_ptr = ary_obj->obj_;
                 src = ary_obj->info_;
             } else {
-                const TypeInfo* src_info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud->type_);
+                const TypeInfo* src_info = GlobalVar::GetInstance()->GetLUDTypeInfo(ud->type_);
                 if (src_info == nullptr) {
                     lb.Log("unknown obj type");
                     return false;

@@ -128,8 +128,8 @@ namespace detail {
     GlobalVar::GlobalVar()
         : alloc_(4096) {
         types_.reserve(256);
-        external_types_.reserve(256);
-        external_types_.push_back(nullptr);
+        lud_types_.reserve(256);
+        lud_types_.push_back(nullptr);
     }
 
     GlobalVar::~GlobalVar() {
@@ -169,10 +169,11 @@ namespace detail {
     }
 
     ITypeDesc* GlobalVar::AllocType(TypeCategory category,
-        bool is_weak_obj,
         const char* name,
+        bool has_obj_index,
+        bool is_weak_obj,
         const TypeInfo* super) {
-        return new TypeDesc(s_global, category, is_weak_obj , name, super);
+        return new TypeDesc(s_global, category, name, has_obj_index, is_weak_obj, super);
     }
 
     const TypeInfo* GlobalVar::GetTypeInfo(const char* name) const {
@@ -186,11 +187,11 @@ namespace detail {
         return nullptr;
     }
 
-    const TypeInfo* GlobalVar::GetExternalTypeInfo(int index) const {
-        assert(index < (int)external_types_.size());
-        if (index >= (int)external_types_.size())
+    const TypeInfo* GlobalVar::GetLUDTypeInfo(int index) const {
+        assert(index < (int)lud_types_.size());
+        if (index >= (int)lud_types_.size())
             return nullptr;
-        return external_types_[index];
+        return lud_types_[index];
     }
 
     ArrayObj* GlobalVar::AllocObjIndex(xLuaIndex& obj_index, void* obj, const TypeInfo* info) {
@@ -247,7 +248,6 @@ namespace detail {
     }
 
     void GlobalVar::AddTypeInfo(TypeInfo* info) {
-        assert(types_.size() < 0xff);
         types_.push_back(info);
 
         if (info->category != TypeCategory::kGlobal)
@@ -255,13 +255,15 @@ namespace detail {
         else
             info->index = 0;
 
-        if (info->is_weak_obj || info->category == TypeCategory::kExternal) {
-            info->light_index = (int8_t)external_types_.size();
-            external_types_.push_back(info);
-        } else if (info->category == TypeCategory::kInternal) {
-            info->light_index = TypeInfo::kInternalLightIndex;
+        if (info->is_weak_obj || !info->has_obj_index) {
+            assert(lud_types_.size() < 0xff);
+            info->lud_index = (int8_t)lud_types_.size();
+            lud_types_.push_back(info);
         } else {
-            info->light_index = 0;
+            if (info->has_obj_index)
+                info->lud_index = TypeInfo::kObjRefIndex;
+            else
+                info->lud_index = 0;
         }
     }
 } // namespace detail

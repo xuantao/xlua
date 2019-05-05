@@ -39,26 +39,26 @@ namespace detail {
     template <typename Ty>
     inline LightUserData MakeLightUserData(Ty* obj, const TypeInfo* info, tag_weakobj) {
         int index = ::xLuaAllocWeakObjIndex(obj);
-        return MakeLightPtr(info->light_index, index, ::xLuaGetWeakObjSerialNum(index));
+        return MakeLightPtr(info->lud_index, index, ::xLuaGetWeakObjSerialNum(index));
     }
 
     template <typename Ty>
-    inline LightUserData MakeLightUserData(Ty* obj, const TypeInfo* info, tag_internal) {
-        auto& obj_index = GetRootObjIndex(obj);
+    inline LightUserData MakeLightUserData(Ty* obj, const TypeInfo* info, tag_obj_index) {
+        auto& obj_index = obj->xlua_obj_index_;
         auto* ary_obj = GlobalVar::GetInstance()->AllocObjIndex(obj_index, obj, info);
-        return MakeLightPtr(info->light_index, obj_index.GetIndex(), ary_obj->serial_num_);
+        return MakeLightPtr(info->lud_index, obj_index.GetIndex(), ary_obj->serial_num_);
     }
 
     template <typename Ty>
-    inline LightUserData MakeLightUserData(Ty* obj, const TypeInfo* info, tag_external) {
-        return MakeLightPtr(info->light_index, obj);
+    inline LightUserData MakeLightUserData(Ty* obj, const TypeInfo* info, tag_declared) {
+        return MakeLightPtr(info->lud_index, obj);
     }
 
     template <typename Ty>
     inline LightUserData MakeLightUserData(Ty* obj, const TypeInfo* info) {
         /* 优先弱引用对象 */
         using tag = typename std::conditional<IsWeakObjPtr<Ty>::value, tag_weakobj,
-            typename std::conditional<IsInternal<Ty>::value, tag_internal, tag_external>::type>::type;
+            typename std::conditional<HasObjIndex<Ty>::value, tag_obj_index, tag_declared>::type>::type;
         return MakeLightUserData(obj, info, tag());
     }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
@@ -70,14 +70,14 @@ namespace detail {
     }
 
     template <typename Ty>
-    inline FullUserData MakeFullUserData(Ty* obj, const TypeInfo* info, tag_internal) {
-        auto& obj_index = GetRootObjIndex(obj);
+    inline FullUserData MakeFullUserData(Ty* obj, const TypeInfo* info, tag_obj_index) {
+        auto& obj_index = obj->xlua_obj_index_;
         auto* ary_obj = GlobalVar::GetInstance()->AllocObjIndex(obj_index, obj, info);
         return FullUserData(UserDataCategory::kObjPtr, obj_index.GetIndex(), ary_obj->serial_num_, info);
     }
 
     template <typename Ty>
-    inline FullUserData MakeFullUserData(Ty* obj, const TypeInfo* info, tag_external) {
+    inline FullUserData MakeFullUserData(Ty* obj, const TypeInfo* info, tag_declared) {
         return FullUserData(UserDataCategory::kRawPtr, obj, info);
     }
 
@@ -85,7 +85,7 @@ namespace detail {
     inline FullUserData MakeFullUserData(Ty* obj, const TypeInfo* info) {
         /* 优先弱引用对象 */
         using tag = typename std::conditional<IsWeakObjPtr<Ty>::value, tag_weakobj,
-            typename std::conditional<IsInternal<Ty>::value, tag_internal, tag_external>::type>::type;
+            typename std::conditional<HasObjIndex<Ty>::value, tag_obj_index, tag_declared>::type>::type;
         return MakeFullUserData(obj, info, tag());
     }
 
@@ -138,7 +138,7 @@ namespace detail {
             if (!ud.IsLightData())
                 return false;
 
-            if (ud.IsInternalType()) {
+            if (ud.IsObjIndex()) {
                 auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
                 if (ary_obj == nullptr || ary_obj->serial_num_ != ud.serial_)
                     return false;
@@ -146,7 +146,7 @@ namespace detail {
                 ud_info.obj = ary_obj->obj_;
                 ud_info.info = ary_obj->info_;
             } else {
-                const auto* info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
+                const auto* info = GlobalVar::GetInstance()->GetLUDTypeInfo(ud.type_);
                 if (info->is_weak_obj) {
                     if (ud.serial_ != ::xLuaGetWeakObjSerialNum(ud.index_))
                         return false;

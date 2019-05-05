@@ -82,7 +82,7 @@ XLUA_CONST_VAR(ShapeType::kTriangle)
 XLUA_CONST_VAR(ShapeType::kQuard)
 XLUA_EXPORT_CONSTANT_END()
 
-XLUA_EXPORT_EXTERNAL_BEGIN(ShapeBase)
+XLUA_EXPORT_CLASS_BEGIN(ShapeBase)
 XLUA_MEMBER_VAR_AS(obj_id, &ShapeBase::obj_id_)
 XLUA_MEMBER_VAR_AS(name, &ShapeBase::name_)
 XLUA_MEMBER_FUNC(&ShapeBase::AreaSize)
@@ -93,16 +93,16 @@ XLUA_MEMBER_FUNC_EXTEND(Ext4, &Obj_Ext4)
 XLUA_MEMBER_VAR_EXTEND(Tag1, &Obj_GetTag1, &Obj_SetTag1)
 XLUA_MEMBER_VAR_EXTEND(Tag2, &Obj_GetTag2, &Obj_SetTag2)
 XLUA_MEMBER_VAR_EXTEND(Tag3, &Obj_GetTag3, &Obj_SetTag3)
-XLUA_EXPORT_EXTERNAL_END()
+XLUA_EXPORT_CLASS_END()
 
-XLUA_EXPORT_CLASS_BEGIN(Triangle)
+XLUA_EXPORT_CLASS_BEGIN(Triangle, ShapeBase)
 XLUA_MEMBER_FUNC(&Triangle::AreaSize)
 XLUA_MEMBER_VAR_AS(line_1, &Triangle::line_1_)
 XLUA_MEMBER_VAR_AS(line_2, &Triangle::line_2_)
 XLUA_MEMBER_VAR_AS(line_3, &Triangle::line_3_)
 XLUA_EXPORT_CLASS_END()
 
-XLUA_EXPORT_CLASS_BEGIN(Square)
+XLUA_EXPORT_CLASS_BEGIN(Square, Triangle)
 XLUA_MEMBER_FUNC(&Square::Name)
 XLUA_MEMBER_FUNC(&Square::DoExtWork)
 XLUA_MEMBER_FUNC(&Square::TestParam_1)
@@ -124,7 +124,7 @@ XLUA_MEMBER_FUNC(&WeakObj::SetArea)
 XLUA_MEMBER_FUNC(&WeakObj::SetArea2)
 XLUA_EXPORT_CLASS_END();
 
-XLUA_EXPORT_EXTERNAL_BEGIN(TestExportParams)
+XLUA_EXPORT_CLASS_BEGIN(TestExportParams)
 XLUA_MEMBER_FUNC_AS(TestBool, &TestExportParams::Test, bool)
 XLUA_MEMBER_FUNC_AS(TestChar, &TestExportParams::Test, char)
 XLUA_MEMBER_FUNC_AS(TestUChar, &TestExportParams::Test, unsigned char)
@@ -149,9 +149,9 @@ XLUA_MEMBER_FUNC_AS(TestTriangleValue, &TestExportParams::TestValue)
 //XLUA_MEMBER_FUNC_AS(TestNoneExport2, TestNoneExport, NoneExport*)                 // compile error
 //XLUA_MEMBER_FUNC_AS(TestNoneExport3, TestNoneExport, std::shared_ptr<NoneExport>) // compile error
 //XLUA_MEMBER_FUNC_AS(TestNoneExport4, TestNoneExport, xLuaWeakObjPtr<NoneExport>)  // compile error
-XLUA_EXPORT_EXTERNAL_END()
+XLUA_EXPORT_CLASS_END()
 
-XLUA_EXPORT_EXTERNAL_BEGIN(Global::TestStaticParams)
+XLUA_EXPORT_CLASS_BEGIN(Global::TestStaticParams)
 using cls = Global::TestStaticParams;
 XLUA_MEMBER_FUNC_AS(TestBool, &cls::Test, bool)
 XLUA_MEMBER_FUNC_AS(TestChar, &cls::Test, char)
@@ -177,7 +177,7 @@ XLUA_MEMBER_FUNC_AS(TestTriangleValue, &cls::TestValue)
 //XLUA_MEMBER_FUNC_AS(TestNoneExport2, TestNoneExport, NoneExport*)                 // compile error
 //XLUA_MEMBER_FUNC_AS(TestNoneExport3, TestNoneExport, std::shared_ptr<NoneExport>) // compile error
 //XLUA_MEMBER_FUNC_AS(TestNoneExport4, TestNoneExport, xLuaWeakObjPtr<NoneExport>)  // compile error
-XLUA_EXPORT_EXTERNAL_END()
+XLUA_EXPORT_CLASS_END()
 
 void xLuaPush(xlua::xLuaState* l, const Color& c) {
     l->NewTable();

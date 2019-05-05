@@ -57,53 +57,13 @@
 #define _XLUA_EXPORT_VAR(Name, GetOp, SetOp, Meta)  _XLUA_EXPORT_VAR_(Name, GetOp, SetOp, Meta, _XLUA_IS_STATIC_VAR(GetOp, SetOp))
 
 /* 导出Lua类开始 */
-#define XLUA_EXPORT_CLASS_BEGIN(ClassName)                                              \
-    static_assert(std::is_void<ClassName::LuaDeclare::super>::value                     \
-        || std::is_base_of<ClassName::LuaDeclare::super, ClassName>::value,             \
-        "internal class is not inherited"                                               \
-    );                                                                                  \
-    static_assert(std::is_void<ClassName::LuaDeclare::super>::value                     \
-        || xlua::detail::IsInternal<ClassName::LuaDeclare::super>::value                \
-        || xlua::detail::IsExternal<ClassName::LuaDeclare::super>::value,               \
-        "base type is not declare to export to lua"                                     \
-    );                                                                                  \
-    namespace {                                                                         \
-        xlua::detail::TypeNode _XLUA_ANONYMOUS(&ClassName::xLuaGetTypeInfo);            \
-    } /* end namespace */                                                               \
-    const xlua::detail::TypeInfo* ClassName::xLuaGetTypeInfo() {                        \
-        using class_type = ClassName;                                                   \
-        static const xlua::detail::TypeInfo* s_type_info = nullptr;                     \
-        if (s_type_info)                                                                \
-            return s_type_info;                                                         \
-        auto* global = xlua::detail::GlobalVar::GetInstance();                          \
-        if (global == nullptr)                                                          \
-            return nullptr;                                                             \
-        auto* desc = global->AllocType(xlua::detail::TypeCategory::kInternal,           \
-            xlua::detail::IsWeakObjPtr<ClassName>::value, #ClassName,                   \
-            xlua::detail::GetTypeInfoImpl<LuaDeclare::super>()                          \
-        );                                                                              \
-        if (desc == nullptr)                                                            \
-            return nullptr;                                                             \
-        static xlua::detail::TypeCasterImpl<ClassName, LuaDeclare::super> s_caster;     \
-        desc->SetCaster(&s_caster);
-
-
-/* 导出lua类结束 */
-#define XLUA_EXPORT_CLASS_END()                                                         \
-        s_type_info = desc->Finalize();                                                 \
-        s_caster.info_ = s_type_info;                                                   \
-        return s_type_info;                                                             \
-    }
-
-/* 导出外部类 */
-#define XLUA_EXPORT_EXTERNAL_BEGIN(ClassName, ...)                                      \
-    static_assert(std::is_void<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value                   \
-        || std::is_base_of<_XLUA_SUPER_CLASS(__VA_ARGS__), ClassName>::value,           \
+#define XLUA_EXPORT_CLASS_BEGIN(ClassName, ...)                                         \
+    static_assert(std::is_void<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value ||                \
+        std::is_base_of<_XLUA_SUPER_CLASS(__VA_ARGS__), ClassName>::value,              \
         "external class is not inherited"                                               \
     );                                                                                  \
-    static_assert(std::is_void<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value                   \
-        || xlua::detail::IsInternal<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value              \
-        || xlua::detail::IsExternal<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value,             \
+    static_assert(std::is_void<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value ||                \
+        xlua::detail::IsLuaType<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value,                 \
         "base type is not declare to export to lua"                                     \
     );                                                                                  \
     namespace {                                                                         \
@@ -120,8 +80,9 @@
         auto* global = xlua::detail::GlobalVar::GetInstance();                          \
         if (global == nullptr)                                                          \
             return nullptr;                                                             \
-        auto* desc = global->AllocType(xlua::detail::TypeCategory::kExternal,           \
-            xlua::detail::IsWeakObjPtr<ClassName>::value, #ClassName,                   \
+        auto* desc = global->AllocType(xlua::detail::TypeCategory::kClass, #ClassName,  \
+            xlua::detail::HasObjIndex<ClassName>::value,                                \
+            xlua::detail::IsWeakObjPtr<ClassName>::value,                               \
             xlua::detail::GetTypeInfoImpl<super_type>()                                 \
         );                                                                              \
         if (desc == nullptr)                                                            \
@@ -129,7 +90,12 @@
         static xlua::detail::TypeCasterImpl<ClassName, super_type> s_caster;            \
         desc->SetCaster(&s_caster);
 
-#define XLUA_EXPORT_EXTERNAL_END()    XLUA_EXPORT_CLASS_END()
+/* 导出lua类结束 */
+#define XLUA_EXPORT_CLASS_END()                                                         \
+        s_type_info = desc->Finalize();                                                 \
+        s_caster.info_ = s_type_info;                                                   \
+        return s_type_info;                                                             \
+    }
 
 /* 导出全局表 */
 #define XLUA_EXPORT_GLOBAL_BEGIN(Name)                                                  \
@@ -142,8 +108,8 @@
             auto* global = xlua::detail::GlobalVar::GetInstance();                      \
             if (global == nullptr)                                                      \
                 return nullptr;                                                         \
-            auto* desc = global->AllocType(xlua::detail::TypeCategory::kGlobal,         \
-                false, #Name, nullptr);                                                 \
+            auto* desc = global->AllocType(xlua::detail::TypeCategory::kGlobal, #Name,  \
+                false, false, nullptr);                                                 \
             if (desc == nullptr)                                                        \
                 return nullptr;                                                         \
 

@@ -23,7 +23,7 @@ public:
 
 class Triangle : public ShapeBase {
 public:
-    XLUA_DECLARE_CLASS(Triangle, ShapeBase);
+    XLUA_DECLARE_OBJ_INDEX;
 public:
     int AreaSize() const override { return line_1_ * line_2_ * line_3_; }
 
@@ -48,7 +48,6 @@ public:
 class Square : public IName, public Triangle, public ExtType {
 public:
     const char* Name() const override { return "Square"; }
-    XLUA_DECLARE_CLASS(Square, Triangle);
 
 public:
     int AreaSize() const override { return width_ * height_; }
@@ -128,9 +127,6 @@ struct WeakObj : public WeakObjBase {
     void SetArea2(ShapeBase& obj) {
         printf("void SetArea(ShapeBase& obj)");
     }
-
-public:
-    XLUA_DECLARE_CLASS(WeakObj);
 };
 
 #define _TEST_PARAM(Type)  Type Test(Type val) { printf("Test("#Type" val)\n"); return val; }

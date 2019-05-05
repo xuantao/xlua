@@ -661,14 +661,13 @@ namespace detail {
     template <typename Ty>
     struct Pusher {
         typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(IsInternal<value_type>::value
-            || IsExternal<value_type>::value
+        static_assert(IsLuaType<value_type>::value
             || IsExtendPush<value_type>::value
             || std::is_enum<value_type>::value,
             "only type has declared export to lua accept");
 
         static inline void Do(xLuaState* l, const Ty& val) {
-            using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
+            using tag = typename std::conditional<IsLuaType<value_type>::value, tag_declared,
                 typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_extend>::type>::type;
             PushValue<Ty>(l, val, tag());
         }
@@ -694,7 +693,7 @@ namespace detail {
         typedef typename std::remove_cv<Ty>::type value_type;
         static_assert(!std::is_const<Ty>::value, "can not push const value pointer");
         static_assert(!IsExtendPush<value_type>::value, "can not push extend type pointer");
-        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value,
+        static_assert(IsLuaType<value_type>::value,
             "only type has declared export to lua accept");
 
         static inline void Do(xLuaState* l, Ty* val) {
@@ -715,7 +714,7 @@ namespace detail {
     template <typename Ty>
     struct Pusher<std::shared_ptr<Ty>> {
         typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+        static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
 
         static inline void Do(xLuaState* l, const std::shared_ptr<Ty>& ptr) {
             if (!ptr) {
@@ -729,7 +728,7 @@ namespace detail {
     template <typename Ty>
     struct Pusher<xLuaWeakObjPtr<Ty>> {
         typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+        static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
 
         static inline void Do(xLuaState* l, const xLuaWeakObjPtr<Ty>& obj) {
             Ty* ptr = ::xLuaGetPtrByWeakObj(obj);
@@ -745,13 +744,12 @@ namespace detail {
         template <typename Ty>
         struct Loader {
             typedef typename std::remove_cv<Ty>::type value_type;
-            static_assert(IsInternal<value_type>::value
-                || IsExternal<value_type>::value
+            static_assert(IsLuaType<value_type>::value
                 || IsExtendLoad<value_type>::value
                 || std::is_enum<value_type>::value, "only type has declared export to lua accept");
 
             static inline Ty Do(xLuaState* l, int index) {
-                using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
+                using tag = typename std::conditional<IsLuaType<value_type>::value, tag_declared,
                     typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_extend>::type>::type;
                 return DoImpl<value_type>(l, index, tag());
             }
@@ -789,7 +787,7 @@ namespace detail {
             typedef typename std::remove_cv<Ty>::type value_type;
             static_assert(!std::is_same<Ty, char>::value, "can not load value as char*, only const char* accept");
             static_assert(!IsExtendLoad<value_type>::value, "can not load extend type pointer");
-            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+            static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
 
             static Ty* Do(xLuaState* l, int index) {
                 UserDataInfo ud_info;
@@ -809,7 +807,7 @@ namespace detail {
         template <typename Ty>
         struct Loader<std::shared_ptr<Ty>> {
             typedef typename std::remove_cv<Ty>::type value_type;
-            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+            static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
 
             static inline std::shared_ptr<Ty> Do(xLuaState* l, int index) {
                 if (lua_type(l->GetState(), index) != LUA_TUSERDATA)
@@ -830,7 +828,7 @@ namespace detail {
 
         template <typename Ty>
         struct Loader<xLuaWeakObjPtr<Ty>> {
-            static_assert(IsInternal<Ty>::value || IsExternal<Ty>::value, "only type has declared export to lua accept");
+            static_assert(IsLuaType<Ty>::value, "only type has declared export to lua accept");
 
             static inline xLuaWeakObjPtr<Ty> Do(xLuaState* l, int index) {
                 return xLuaWeakObjPtr<Ty>(l->Load<Ty*>(index));
@@ -880,7 +878,7 @@ namespace detail {
         template <typename Ty>
         struct ParamType {
             typedef typename LiteralType<Ty>::type lit_type;
-            typedef typename std::conditional<IsInternal<lit_type>::value || IsExternal<lit_type>::value,
+            typedef typename std::conditional<IsLuaType<lit_type>::value,
                 typename std::conditional<std::is_pointer<Ty>::value, lit_type*, typename AddReference<lit_type>::type>::type,
                 typename std::remove_volatile<typename std::remove_reference<Ty>::type>::type
             >::type type;
@@ -903,14 +901,14 @@ namespace detail {
                 LightUserData ud = MakeLightPtr(lua_touserdata(l->GetState(), index));
                 if (!ud.IsLightData()) {
                     // unknown val
-                } else if (ud.IsInternalType()) {
+                } else if (ud.IsObjIndex()) {
                     ArrayObj* obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
                     if (obj)
                         ud_info.info = obj->info_;
                     if (check_nil)
                         ud_info.is_nil = (obj == nullptr || obj->serial_num_ != ud.serial_);
                 } else {
-                    ud_info.info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
+                    ud_info.info = GlobalVar::GetInstance()->GetLUDTypeInfo(ud.type_);
                     if (ud_info.info->is_weak_obj && check_nil)
                         ud_info.is_nil = (ud.serial_ == ::xLuaGetWeakObjSerialNum(ud.index_));
                 }
@@ -946,7 +944,7 @@ namespace detail {
         struct ParamChecker {
             typedef typename std::remove_cv<Ty>::type value_type;
             static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
-                using tag = typename std::conditional<IsInternal<value_type>::value || IsExternal<value_type>::value, tag_declared,
+                using tag = typename std::conditional<IsLuaType<value_type>::value, tag_declared,
                     typename std::conditional<IsExtendLoad<value_type>::value, tag_extend,
                     typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_unknown>::type>::type>::type;
                 return Do<value_type>(l, index, param, lb, tag());
@@ -995,7 +993,7 @@ namespace detail {
         template <typename Ty>
         struct ParamChecker<Ty*> {
             typedef typename std::remove_cv<Ty>::type value_type;
-            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+            static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
 
             static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
                 const TypeInfo* info = GetTypeInfoImpl<value_type>();
@@ -1010,7 +1008,7 @@ namespace detail {
         template <typename Ty>
         struct ParamChecker<std::shared_ptr<Ty>> {
             typedef typename std::remove_cv<Ty>::type value_type;
-            static_assert(IsInternal<value_type>::value || IsExternal<value_type>::value, "only type has declared export to lua accept");
+            static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
 
             static inline bool Do(xLuaState* l, int index, int param, xLuaLogBuffer& lb) {
                 int l_ty = l->GetType(index);
@@ -1172,7 +1170,7 @@ namespace detail {
         inline Ty LoadParam(xLuaState* l, int index) {
             using type = typename LiteralType<Ty>::type;
             return LoadParamImpl<Ty>(l, index,
-                std::integral_constant<bool, IsInternal<type>::value || IsExternal<type>::value>());
+                std::integral_constant<bool, IsLuaType<type>::value>());
         }
     } // namespace param
 

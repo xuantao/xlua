@@ -14,9 +14,10 @@ namespace detail {
         return std::string(buf);
     }
 
-    TypeDesc::TypeDesc(GlobalVar* mgr, TypeCategory category, bool is_wak_obj, const char* name, const TypeInfo* super)
+    TypeDesc::TypeDesc(GlobalVar* mgr, TypeCategory category, const char* name, bool has_obj_index, bool is_wak_obj, const TypeInfo* super)
         : mgr_(mgr)
         , category_(category)
+        , has_obj_index_(has_obj_index)
         , is_weak_obj_(is_wak_obj)
         , super_(super) {
         name_ = PerifyTypeName(name);
@@ -42,6 +43,7 @@ namespace detail {
 
         info->category = category_;
         info->super = super_;
+        info->has_obj_index = has_obj_index_;
         info->is_weak_obj = is_weak_obj_;
         info->caster = caster_;
 

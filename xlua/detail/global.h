@@ -38,9 +38,9 @@ namespace detail
         xLuaState* Attach(lua_State* l, const char* export_module);
         void Destory(xLuaState* l);
 
-        ITypeDesc* AllocType(TypeCategory category, bool is_weak_obj, const char* name, const TypeInfo* super);
+        ITypeDesc* AllocType(TypeCategory category, const char* name, bool has_obj_index, bool is_weak_obj, const TypeInfo* super);
         const TypeInfo* GetTypeInfo(const char* name) const;
-        const TypeInfo* GetExternalTypeInfo(int index) const;
+        const TypeInfo* GetLUDTypeInfo(int index) const;
 
         ArrayObj* AllocObjIndex(xLuaIndex& obj_index, void* obj, const TypeInfo* info);
         ArrayObj* GetArrayObj(int index);
@@ -57,8 +57,7 @@ namespace detail
         std::vector<ScriptInfo> scripts_;           // 导出的脚本
         std::vector<const ConstInfo*> const_infos_; // 导出的常量
         std::vector<TypeInfo*> types_;              // 导出的类型
-
-        std::vector<TypeInfo*> external_types_;     // 外部类型编号, 主要用于lightuserdata优化
+        std::vector<TypeInfo*> lud_types_;          // 主要用于lightuserdata优化的类型
 
         std::vector<int> free_index_;               // lua导出对象空闲槽
         std::vector<ArrayObj> obj_array_;           // lua导出对象数组

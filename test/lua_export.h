@@ -1,9 +1,12 @@
 ﻿#pragma once
 #include "shape.h"
 
-XLUA_DECLARE_EXTERNAL(ShapeBase);
-XLUA_DECLARE_EXTERNAL(TestExportParams);
-XLUA_DECLARE_EXTERNAL(Global::TestStaticParams);
+XLUA_DECLARE_CLASS(ShapeBase);
+XLUA_DECLARE_CLASS(Triangle);
+XLUA_DECLARE_CLASS(Square);
+XLUA_DECLARE_CLASS(WeakObj);
+XLUA_DECLARE_CLASS(TestExportParams);
+XLUA_DECLARE_CLASS(Global::TestStaticParams);
 
 void xLuaPush(xlua::xLuaState* l, const Color& c);
 Color xLuaLoad(xlua::xLuaState* l, int i, xlua::Identity<Color>);

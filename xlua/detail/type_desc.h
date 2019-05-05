@@ -11,7 +11,7 @@ namespace detail
     {
         friend class GlobalVar;
     public:
-        TypeDesc(GlobalVar* mgr, TypeCategory category, bool is_wak_obj, const char* name, const TypeInfo* super);
+        TypeDesc(GlobalVar* mgr, TypeCategory category, const char* name, bool has_obj_index, bool is_wak_obj, const TypeInfo* super);
         virtual ~TypeDesc() { }
 
     public:
@@ -27,6 +27,7 @@ namespace detail
         GlobalVar* mgr_ = nullptr;
         TypeCategory category_;
         std::string name_;
+        bool has_obj_index_ = false;
         bool is_weak_obj_ = false;
         const TypeInfo* super_ = nullptr;
         ITypeCaster* caster_ = nullptr;

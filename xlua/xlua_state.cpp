@@ -142,11 +142,11 @@ namespace detail {
             if (!ud.IsLightData())
                 return false;
 
-            if (ud.IsInternalType()) {
+            if (ud.IsObjIndex()) {
                 auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
                 return (ary_obj != nullptr && ary_obj->serial_num_ == ud.serial_);
             } else {
-                const auto* src_info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
+                const auto* src_info = GlobalVar::GetInstance()->GetLUDTypeInfo(ud.type_);
                 if (src_info == nullptr)
                     return false;
 
@@ -515,7 +515,7 @@ namespace detail {
                     lua_pushstring(l, "Unknown");
                     return 1;
                 }
-                if (ud.IsInternalType()) {
+                if (ud.IsObjIndex()) {
                     auto* ary_obj = GlobalVar::GetInstance()->GetArrayObj(ud.index_);
                     if (ary_obj == nullptr || ary_obj->serial_num_ != ud.serial_)
                         lua_pushstring(l, "nil");
@@ -523,7 +523,7 @@ namespace detail {
                         lua_pushstring(l, ary_obj->info_->type_name);
                     return 1;
                 } else {
-                    const auto* info = GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
+                    const auto* info = GlobalVar::GetInstance()->GetLUDTypeInfo(ud.type_);
                     if (info == nullptr) {
                         lua_pushstring(l, "Unknown");
                         return 1;
@@ -684,14 +684,14 @@ const char* xLuaState::GetTypeName(int index) {
         detail::LightUserData ud = detail::MakeLightPtr(lua_touserdata(state_, index));
         if (!ud.IsLightData()) {
             snprintf(type_name_buf_, XLUA_MAX_TYPE_NAME_LENGTH, "light user data");
-        } else if (ud.IsInternalType()) {
+        } else if (ud.IsObjIndex()) {
             detail::ArrayObj* obj = detail::GlobalVar::GetInstance()->GetArrayObj(ud.index_);
             if (obj == nullptr)
                 snprintf(type_name_buf_, XLUA_MAX_TYPE_NAME_LENGTH, "nullptr");
             else
                 snprintf(type_name_buf_, XLUA_MAX_TYPE_NAME_LENGTH, "%s*", obj->info_->type_name);
         } else {
-            const auto* info = detail::GlobalVar::GetInstance()->GetExternalTypeInfo(ud.type_);
+            const auto* info = detail::GlobalVar::GetInstance()->GetLUDTypeInfo(ud.type_);
             if (info == nullptr)
                 snprintf(type_name_buf_, XLUA_MAX_TYPE_NAME_LENGTH, "nullptr");
             else

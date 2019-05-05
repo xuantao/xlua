@@ -7,6 +7,11 @@
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {
+    /* 获取基类信息(宏变参) */
+    template <typename... Tys> struct BaseType { static_assert(sizeof...(Tys) > 1, "not allow multy inherit"); };
+    template <> struct BaseType<> { typedef void type; };
+    template <typename Ty> struct BaseType<Ty> { typedef Ty type; };
+
     struct ConstVals {
         static constexpr uint8_t kInternalLightIndex = 0xff;
     };
@@ -28,7 +33,7 @@ namespace detail {
             return type_ != 0;
         }
 
-        inline bool IsInternalType() const {
+        inline bool IsObjIndex() const {
             return type_ == ConstVals::kInternalLightIndex;
         }
 
@@ -183,23 +188,23 @@ namespace detail {
 
     /* 类型枚举 */
     enum class TypeCategory {
-        kInternal,
-        kExternal,
+        kClass,
         kGlobal,
     };
 
     /* 导出类型信息 */
     struct TypeInfo {
-        static constexpr uint8_t kInternalLightIndex = 0xff;
+        static constexpr uint8_t kObjRefIndex = 0xff;
 
         int index;
         TypeCategory category;
         const char* type_name;
-        bool is_weak_obj;
-        uint8_t light_index;        // 外部类型编号, 用于lightuserdata索引类型
+        bool has_obj_index;         // 拥有引用计数
+        bool is_weak_obj;           // 支持弱对像
+        uint8_t lud_index;          // 用于lightuserdata类型索引
         const TypeInfo* super;      // 父类信息
-        const TypeInfo* brother;    // 兄弟
         const TypeInfo* child;      // 子类
+        const TypeInfo* brother;    // 兄弟
         ITypeCaster* caster;        // 类型转换器
         MemberVar* vars;            // 成员变量
         MemberFunc* funcs;          // 成员函数
@@ -225,11 +230,6 @@ namespace detail {
         while (info && info != base)
             info = info->super;
         return info == base;
-    }
-
-    template <typename Ty>
-    inline xLuaIndex& GetRootObjIndex(Ty* obj) {
-        return static_cast<typename InternalRoot<Ty>::type*>(obj)->xlua_obj_index_;
     }
 
     template <typename Ty, typename std::enable_if<!IsWeakObjPtr<Ty>::value, int>::type = 0>
