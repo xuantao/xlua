@@ -35,20 +35,8 @@ XLUA_EXPORT_SCRIPT("test", R"V0G0N(
 当创建lua环境时会执行导出的脚本。  
 
 ---
-#### 导出类型一(内部类)  
-使用宏（XLUA_DECLARE_CLASS）在定义类的时声明导出到Lua，并在cpp文件中导出函数、变量（支持静态函数与变量）。  
-> 声明宏：XLUA_DECLARE_CLASS(ClassName, \[SuperClass\])  
-```cpp
-#define XLUA_DECLARE_CLASS(ClassName, ...)  \
-  typedef xlua::detail::Declare<ClassName,  \
-    typename xlua::detail::BaseType<__VA_ARGS__>::type> LuaDeclare;  \
-  xlua::xLuaIndex xlua_obj_index_;          \
-  static const xlua::detail::TypeInfo* xLuaGetTypeInfo()
-```
-- 构建导出类型的继承关系，不支持多继承
-- 定义成员变量xlua_obj_index_（对像引用索引），用以维护导出对象的生命期
-- 定义静态成员函数xLuaGetTypeInfo，以获取导出类型信息
-
+#### 导出类型一（class）
+> 在随便头文件中声明导出某一类型
 > 导出示例：
 ```cpp
 /* file: obj.h */
@@ -57,7 +45,7 @@ XLUA_EXPORT_SCRIPT("test", R"V0G0N(
 namespace test {
   class Obj {
   public:
-    XLUA_DECLARE_CLASS(Obj);
+    XLUA_DECLARE_OBJ_INDEX;
   public:
     void Func() {}
     static void StaticFunc() {}
@@ -67,28 +55,12 @@ namespace test {
   }
 }
 ```
-> 在cpp文件中声明导出函数、变量
-```cpp
-/* file: lua_export.cpp */
-#include "obj.h"
-#include <xlua_export.h>
-
-XLUA_EXPORT_CLASS_BEGIN(test::Obj)
-  XLUA_MEMBER_FUNC(&test::Obj::Func)
-  XLUA_MEMBER_FUNC(&test::Obj::StaticFunc)
-  XLUA_MEMBER_VAR_AS(val, &test::Obj::val_)
-  XLUA_MEMBER_VAR_AS(static_val, &test::Obj::static_val_)
-XLUA_EXPORT_CLASS_END() 
-```
----
-#### 导出类型二（外部类）
-> 在随便头文件中声明导出某一类型
 ```cpp
 /* file lua_export.h */
 #include "obj.h"
 #include <xlua_def.h>
 
-XLUA_DECLARE_EXTERNAL(test::Obj);
+XLUA_DECLARE_CLASS(test::Obj);
 ```
 > 在cpp文件中声明导出函数、变量
 ```cpp
@@ -96,16 +68,19 @@ XLUA_DECLARE_EXTERNAL(test::Obj);
 #include "lua_export.h"
 #include <xlua_export.h>
 
-XLUA_EXPORT_EXTERNAL_BEGIN(test::Obj)
+XLUA_EXPORT_CLASS_BEGIN(test::Obj)
   XLUA_MEMBER_FUNC(&test::Obj::Func)
   XLUA_MEMBER_FUNC(&test::Obj::StaticFunc)
-  /* 外部类型不能导出受保护的成员 */
+  /* 不能导出受保护的成员 */
   //XLUA_MEMBER_VAR_AS(val, &test::Obj::val_)
   //XLUA_MEMBER_VAR_AS(static_val, &test::Obj::static_val_)
-XLUA_EXPORT_EXTERNAL_END()
-```
+XLUA_EXPORT_CLASS_END()
+```  
+其中的 XLUA_DECLARE_OBJ_INDEX 为可选配置，添加成员xlua::xLuaObjIndex xlua_obj_index_，成员让xlua能够管理导出对象的生命期，避免出现访问无效对象引起宕机。  
+
+
 ---
-#### 导出类型三（obj->table)
+#### 扩展导出二（obj->table)
 用于将一些类型转换为table
 > 示例类型
 ```cpp
