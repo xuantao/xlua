@@ -77,4 +77,6 @@ void TestExport(xlua::xLuaState* l)
 
     TestGetType(l);
 
+    std::vector<int> v;
+    //l->Push(v);
 }

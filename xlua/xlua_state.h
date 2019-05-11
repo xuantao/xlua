@@ -674,7 +674,7 @@ namespace detail {
 
         template <typename U>
         static inline void PushValue(xLuaState* l, const U& val, tag_extend) {
-            ::xLuaPush(l, val);
+            xLuaPush(l, val);
         }
 
         template <typename U>
@@ -756,7 +756,7 @@ namespace detail {
 
             template <typename U>
             static inline U DoImpl(xLuaState* l, int index, tag_extend) {
-                return ::xLuaLoad(l, index, Identity<U>());
+                return xLuaLoad(l, index, Identity<U>());
             }
 
             template <typename U>
@@ -932,7 +932,7 @@ namespace detail {
 
         template <typename Ty>
         inline bool IsExtendTypeCheck(xLuaState* l, int index, std::true_type) {
-            return ::xLuaIsType(l, index, Identity<Ty>());
+            return xLuaIsType(l, index, Identity<Ty>());
         }
 
         template <typename Ty>

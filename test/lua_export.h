@@ -1,5 +1,7 @@
 ﻿#pragma once
 #include "shape.h"
+#include <vector>
+#include <xlua_state.h>
 
 XLUA_DECLARE_CLASS(ShapeBase);
 XLUA_DECLARE_CLASS(Triangle);
@@ -15,3 +17,9 @@ void xLuaPush(xlua::xLuaState* l, const Vec2& vec);
 Vec2 xLuaLoad(xlua::xLuaState* l, int i, xlua::Identity<Vec2>);
 
 void xLuaPush(xlua::xLuaState* l, const PushVal& vec);
+
+template <typename Ty>
+void xLuaPush(xlua::xLuaState* l, const std::vector<Ty>& vec)
+{
+    //l->NewTable();
+}

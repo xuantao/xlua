@@ -2,8 +2,6 @@
 #include "../xlua_def.h"
 #include <type_traits>
 
-inline const xlua::detail::TypeInfo* xLuaGetTypeInfo(xlua::Identity<decltype(nullptr)>) { return nullptr; }
-
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {
@@ -50,7 +48,7 @@ namespace detail {
 
     template <typename Ty>
     struct IsLuaType {
-        template <typename U> static auto Check(int)->decltype(::xLuaGetTypeInfo(Identity<U>()), std::true_type());
+        template <typename U> static auto Check(int)->decltype(xLuaGetTypeInfo(Identity<U>()), std::true_type());
         template <typename U> static auto Check(...)->std::false_type;
 
         static constexpr bool value = decltype(Check<Ty>(0))::value;
@@ -58,7 +56,7 @@ namespace detail {
 
     template <typename Ty>
     struct IsExtendLoad {
-        template <typename U> static auto Check(int)->decltype(::xLuaLoad(std::declval<xLuaState*>(), (int)0, Identity<U>()), std::true_type());
+        template <typename U> static auto Check(int)->decltype(xLuaLoad(std::declval<xLuaState*>(), (int)0, Identity<U>()), std::true_type());
         template <typename U> static auto Check(...)->std::false_type;
 
         static constexpr bool value = decltype(Check<Ty>(0))::value;
@@ -66,7 +64,7 @@ namespace detail {
 
     template <typename Ty>
     struct IsExtendPush {
-        template <typename U> static auto Check(int)->decltype(::xLuaPush(std::declval<xLuaState*>(), std::declval<const U&>()), std::true_type());
+        template <typename U> static auto Check(int)->decltype(xLuaPush(std::declval<xLuaState*>(), std::declval<const U&>()), std::true_type());
         template <typename U> static auto Check(...)->std::false_type;
 
         static constexpr bool value = decltype(Check<Ty>(0))::value;
@@ -74,7 +72,7 @@ namespace detail {
 
     template <typename Ty>
     struct IsExtendType {
-        template <typename U> static auto Check(int)->decltype(::xLuaIsType(std::declval<xLuaState*>(), (int)0, Identity<U>()), std::true_type());
+        template <typename U> static auto Check(int)->decltype(xLuaIsType(std::declval<xLuaState*>(), (int)0, Identity<U>()), std::true_type());
         template <typename U> static auto Check(...)->std::false_type;
 
         static constexpr bool value = decltype(Check<Ty>(0))::value;
@@ -94,7 +92,7 @@ namespace detail {
 
     template <typename Ty>
     inline auto GetTypeInfoImpl() -> typename std::enable_if<IsLuaType<Ty>::value, const TypeInfo*>::type {
-        return ::xLuaGetTypeInfo(Identity<Ty>());
+        return xLuaGetTypeInfo(Identity<Ty>());
     }
 
     template <typename Ty>

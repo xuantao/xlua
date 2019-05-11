@@ -475,3 +475,4 @@ void TestPushLoad(xlua::xLuaState* l)
 
     assert(top == l->GetTop());
 }
+
