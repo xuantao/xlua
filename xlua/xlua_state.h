@@ -1,83 +1,22 @@
 ﻿#pragma once
 #include "detail/traits.h"
 #include "detail/state.h"
-#include <string>
-#include <functional>
-#include <unordered_map>
 
 XLUA_NAMESPACE_BEGIN
 
 namespace detail {
-    template <typename Ty> struct Pusher;
     struct MetaFuncs;
 
-    template <typename Fy, typename Ry, typename... Args> int DoFunction(Fy f, xLuaState* l);
-
-    namespace loader {
-        template <typename Ty> Ty LoadValue(xLuaState* l, int index);
-    }
+    template <typename Ty> void Push(xLuaState* l, const Ty& val);
+    template <typename Ty> Ty Load(xLuaState* l, int index);
 }
 
-/* 引用Lua对象基类
- * Lua对象主要指Table, Function
-*/
-class xLuaObjBase {
-    friend class xLuaState;
-protected:
-    xLuaObjBase() : ary_index_(-1), lua_(nullptr) {}
-    xLuaObjBase(xLuaState* lua, int index) : lua_(lua), ary_index_(index) {}
-    ~xLuaObjBase() { UnRef(); }
-
-    xLuaObjBase(const xLuaObjBase& other)
-        : lua_(other.lua_)
-        , ary_index_(other.ary_index_) {
-        AddRef();
-    }
-
-    xLuaObjBase(xLuaObjBase&& other)
-        : lua_(other.lua_)
-        , ary_index_(other.ary_index_) {
-        other.ary_index_ = -1;
-    }
-
-public:
-    inline bool IsValid() const { return ary_index_ != -1; }
-
-    xLuaObjBase& operator = (const xLuaObjBase& other) {
-        UnRef();
-        ary_index_ = other.ary_index_;
-        lua_ = other.lua_;
-        AddRef();
-        return *this;
-    }
-
-    xLuaObjBase& operator = (xLuaObjBase&& other) {
-        UnRef();
-        lua_ = other.lua_;
-        ary_index_ = other.ary_index_;
-        other.ary_index_ = -1;
-        return *this;
-    }
-
-    bool operator == (const xLuaObjBase& other) const {
-        return ary_index_ == other.ary_index_;
-    }
-
-private:
-    void AddRef();
-    void UnRef();
-
-private:
-    xLuaState* lua_;
-    int ary_index_;
-};
-
 /* lua table*/
-class xLuaTable : private xLuaObjBase {
-    friend class xLuaState;
-    xLuaTable(xLuaState* l, int index) : xLuaObjBase(l, index) {}
+class xLuaTable : private detail::ObjBase {
 public:
     xLuaTable() = default;
+    xLuaTable(detail::State* s, int index) : detail::ObjBase(s, index) {}
+
     xLuaTable(const xLuaTable&) = default;
     xLuaTable(xLuaTable&&) = default;
 
@@ -86,16 +25,16 @@ public:
     xLuaTable& operator = (xLuaTable&&) = default;
 
 public:
-    inline bool IsValid() const { return xLuaObjBase::IsValid(); }
+    inline bool IsValid() const { return detail::ObjBase::IsValid(); }
     inline operator bool() const { return IsValid(); }
 };
 
 /* lua function */
-class xLuaFunction : private xLuaObjBase {
-    friend class xLuaState;
-    xLuaFunction(xLuaState* l, int index) : xLuaObjBase(l, index) {}
+class xLuaFunction : private detail::ObjBase {
 public:
     xLuaFunction() = default;
+    xLuaFunction(detail::State* s, int index) : detail::ObjBase(s, index) {}
+
     xLuaFunction(const xLuaFunction&) = default;
     xLuaFunction(xLuaFunction&&) = default;
 
@@ -104,7 +43,7 @@ public:
     xLuaFunction& operator = (xLuaFunction&&) = default;
 
 public:
-    inline bool IsValid() const { return xLuaObjBase::IsValid(); }
+    inline bool IsValid() const { return detail::ObjBase::IsValid(); }
     inline operator bool() const { return IsValid(); }
 };
 
@@ -151,29 +90,9 @@ private:
 };
 
 /* lua 状态机扩展 */
-class xLuaState {
-    /* user data cache
-     * 将User data缓存在一个lua table中, 缓存的key值为对象的基类指针
-     * 确保每个对象只构建一个lua user data
-    */
-    struct UdCache {
-        int lua_ref_;
-        detail::FullUserData* user_data_;
-    };
-
-    /* 引用lua对象(table, function)的引用记录 */
-    struct LuaObjRef {
-        union {
-            int lua_ref_;
-            int next_free_;
-        };
-        int ref_count_;
-    };
-
-    template <typename Ty> friend struct detail::Pusher;
+class xLuaState : private detail::State {
     friend struct detail::MetaFuncs;
     friend class detail::GlobalVar;
-    friend class xLuaObjBase;
 
 private:
     xLuaState(lua_State* l, bool attach);
@@ -185,6 +104,8 @@ public:
 
 public:
     inline lua_State* GetState() const { return state_; }
+
+    /* lua栈操作 */
     inline int GetTop() const { return lua_gettop(state_); }
     inline void SetTop(int top) { lua_settop(state_, top); }
     inline void PopTop(int num) { lua_pop(state_, num); }
@@ -215,6 +136,7 @@ public:
 
     /* 将全局变量加载到栈顶, 并返回lua type */
     int LoadGlobal(const char* path);
+
     /* 栈顶元素设置为全局变量 */
     inline bool SetGlobal(const char* path, bool create = false) {
         return DoSetGlobal(path, create, false);
@@ -307,144 +229,27 @@ public:
         return SetTableField(-2, field);
     }
 
-    template <typename Ty, typename std::enable_if<!std::is_function<Ty>::value, int>::type = 0>
+    template <typename Ty>
     inline void Push(const Ty& val) {
-        detail::Pusher<typename std::decay<Ty>::type>::Do(this, val);
+        detail::Push(this, val);
     }
 
     template <typename Ty>
     inline Ty Load(int index) {
-        return detail::loader::LoadValue<Ty>(this, index);
+        return detail::Load<Ty>(this, index);
     }
 
     template<typename... Ty>
     inline void PushMul(Ty&&... vals) {
         using ints = int[];
-        (void)ints { 0, (Push(std::forward<Ty>(vals)), 0)... };
+        (void)ints {
+            0, (Push(std::forward<Ty>(vals)), 0)...
+        };
     }
 
     template <typename... Ty>
     inline void LoadMul(int index, std::tuple<Ty&...> tp) {
         DoLoadMul(index, tp, detail::make_index_sequence_t<sizeof...(Ty)>());
-    }
-
-    inline void Push(bool val) { lua_pushboolean(state_, val); }
-    inline void Push(char val) { lua_pushnumber(state_, val); }
-    inline void Push(unsigned char val) { lua_pushnumber(state_, val); }
-    inline void Push(short val) { lua_pushnumber(state_, val); }
-    inline void Push(unsigned short val) { lua_pushnumber(state_, val); }
-    inline void Push(int val) { lua_pushnumber(state_, val); }
-    inline void Push(unsigned int val) { lua_pushnumber(state_, val); }
-    inline void Push(long val) { lua_pushnumber(state_, val); }
-    inline void Push(unsigned long val) { lua_pushnumber(state_, val); }
-    inline void Push(long long val) { lua_pushinteger(state_, val); }
-    inline void Push(unsigned long long val) { lua_pushinteger(state_, val); }
-    inline void Push(float val) { lua_pushnumber(state_, val); }
-    inline void Push(double val) { lua_pushnumber(state_, val); }
-    inline void Push(char* val) { lua_pushstring(state_, val); }
-    inline void Push(const char* val) { lua_pushstring(state_, val); }
-    inline void Push(const std::string& val) { lua_pushstring(state_, val.c_str()); }
-    inline void Push(std::nullptr_t) { lua_pushnil(state_); }
-    inline void Push(const void* val) { Push(const_cast<void*>(val)); }
-
-    inline void Push(void* val) {
-#if XLUA_ENABLE_LUD_OPTIMIZE
-        assert(detail::IsValidRawPtr(val));
-#endif
-        if (val == nullptr)
-            lua_pushnil(state_);
-        else
-            lua_pushlightuserdata(state_, val);
-    }
-
-    inline void Push(const xLuaTable& val) {
-        if (val.lua_ != this)
-            Push(nullptr);
-        else
-            LoadLuaObj(val.ary_index_);
-    }
-
-    inline void Push(const xLuaFunction& val) {
-        if (val.lua_ != this)
-            Push(nullptr);
-        else
-            LoadLuaObj(val.ary_index_);
-    }
-
-    inline void Push(lua_CFunction func) {
-        lua_pushcfunction(state_, func);
-    }
-
-    inline void Push(int(*func)(xLuaState* l)) {
-        if (func == nullptr) {
-            Push(nullptr);
-            return;
-        }
-
-        static lua_CFunction f = [](lua_State* l) -> int {
-            auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
-            void* f = lua_touserdata(l, lua_upvalueindex(2));
-            return reinterpret_cast<int(*)(xLuaState*)>(f)(static_cast<xLuaState*>(xl));
-        };
-
-        lua_pushlightuserdata(state_, this);
-        lua_pushlightuserdata(state_, reinterpret_cast<void*>(func));
-        lua_pushcclosure(state_, f, 2);
-    }
-
-    template <typename Ry, typename... Args>
-    inline void Push(Ry(*func)(Args...)) {
-        if (func == nullptr) {
-            Push(nullptr);
-            return;
-        }
-
-        static lua_CFunction f = [](lua_State* l) -> int {
-            auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
-            void* f = lua_touserdata(l, lua_upvalueindex(2));
-            return detail::DoFunction<Ry(*)(Args...), Ry, Args...>(reinterpret_cast<Ry(*)(Args...)>(f), xl/*, std::is_same<Ry, void>()*/);
-        };
-
-        lua_pushlightuserdata(state_, this);
-        lua_pushlightuserdata(state_, reinterpret_cast<void*>(func));
-        lua_pushcclosure(state_, f, 2);
-    }
-
-    template <typename Ry, typename... Args>
-    inline void Push(const std::function<Ry(Args...)>& func) {
-        typedef detail::LonelyUserData<std::function<Ry(Args...)>> UdType;
-        if (!func) {
-            Push(nullptr);
-            return;
-        }
-
-        static lua_CFunction f = [](lua_State* l) -> int {
-            auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
-            auto* ud = (UdType*)lua_touserdata(l, lua_upvalueindex(2));
-            return detail::DoFunction<std::function<Ry(Args...)>&, Ry, Args...>(
-                *static_cast<std::function<Ry(Args...)>*>(ud->GetDataPtr()), xl/*, std::is_same<Ry, void>()*/);
-        };
-
-        lua_pushlightuserdata(state_, this);
-
-        void* mem = lua_newuserdata(state_, sizeof(UdType));
-        new (mem) UdType(func);
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, lonly_ud_meta_ref_);
-        lua_setmetatable(state_, -2);
-
-        lua_pushcclosure(state_, f, 2);
-    }
-
-    inline xLuaTable LoadTable(int index) {
-        if (lua_type(state_, index) == LUA_TTABLE)
-            return xLuaTable(this, RefLuaObj(index));
-        return xLuaTable();
-    }
-
-    inline xLuaFunction LoadFunction(int index) {
-        if (lua_type(state_, index) == LUA_TFUNCTION)
-            return xLuaFunction(this, RefLuaObj(index));
-        return xLuaFunction();
     }
 
     /* 调用栈顶的Lua函数 */
@@ -529,216 +334,244 @@ private:
         using ints = int[];
         (void)ints { 0, (std::get<Idxs>(ret) = Load<Ty>(index++), 0)... };
     }
-
-    template <typename Ty, typename... Args>
-    inline Ty* NewUserData(const detail::TypeInfo* info, Args&&... args) {
-        void* mem = lua_newuserdata(state_, sizeof(Ty));
-
-        int ty = 0;
-        ty = lua_rawgeti(state_, LUA_REGISTRYINDEX, meta_table_ref_);    // type metatable table
-        assert(ty == LUA_TTABLE);
-        ty = lua_rawgeti(state_, -1, info->index);  // metatable
-        assert(ty == LUA_TTABLE);
-        lua_remove(state_, -2);                     // remove type table
-        lua_setmetatable(state_, -2);
-        return new (mem) Ty(std::forward<Args>(args)...);
-    }
-
-    void PushPtrUserData(const detail::FullUserData& ud);
-
-    template <typename Ty>
-    void PushValueData(const Ty& val, const detail::TypeInfo* info) {
-        NewUserData<detail::ValueUserData<Ty>>(info, val, info);
-    }
-
-    template <typename Ty>
-    inline void PushSharedPtr(const std::shared_ptr<Ty>& ptr, const detail::TypeInfo* info) {
-        void* root = detail::GetRootPtr(ptr.get(), info);
-        auto it = shared_ptrs_.find(root);
-        if (it != shared_ptrs_.cend()) {
-            UpdateCahce(it->second, ptr.get(), info);
-            PushUd(it->second);
-        } else {
-            UdCache udc = RefCache(NewUserData<detail::ValueUserData<std::shared_ptr<Ty>>>(info, ptr, info));
-            shared_ptrs_.insert(std::make_pair(root, udc));
-        }
-    }
-
-    inline void UpdateCahce(UdCache& cache, void* ptr, const detail::TypeInfo* info) {
-        if (!detail::IsBaseOf(info, cache.user_data_->info_)) {
-            cache.user_data_->obj_ = ptr;
-            cache.user_data_->info_ = info;
-        }
-    }
-
-    inline void PushUd(UdCache& cache) {
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, user_data_table_ref_);
-        lua_rawgeti(state_, -1, cache.lua_ref_);
-        lua_remove(state_, -2);
-    }
-
-    inline UdCache RefCache(detail::FullUserData* data) {
-        UdCache udc ={0, data};
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, user_data_table_ref_);
-        lua_pushvalue(state_, -2);
-        udc.lua_ref_ = luaL_ref(state_, -2);
-        lua_pop(state_, 1);
-        return udc;
-    }
-
-    inline void UnRefCachce(UdCache& cache) {
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, user_data_table_ref_);
-        luaL_unref(state_, -1, cache.lua_ref_);
-        lua_pop(state_, 1);
-        cache.lua_ref_ = 0;
-        cache.user_data_ = nullptr;
-    }
-
-    void Gc(detail::FullUserData* user_data);
-    int RefLuaObj(int index);
-
-    inline void LoadLuaObj(int ary_index) {
-        assert(ary_index >= 0 && ary_index < (int)lua_objs_.size());
-        LoadRef(lua_objs_[ary_index].lua_ref_);
-    }
-
-    inline void AddLuaObjRef(int ary_index) {
-        assert(ary_index >= 0 && ary_index < (int)lua_objs_.size());
-        ++lua_objs_[ary_index].ref_count_;
-    }
-
-    inline void ReleaseLuaObj(int ary_index) {
-        assert(ary_index >= 0 && ary_index < (int)lua_objs_.size());
-        auto& ref = lua_objs_[ary_index];
-        -- ref.ref_count_;
-        if (ref.ref_count_ == 0) {
-            UnRef(ref.lua_ref_);
-            ref.next_free_ = next_free_lua_obj_;
-            next_free_lua_obj_ = ary_index;
-        }
-    }
-
-    inline int Ref(int index) {
-        index = lua_absindex(state_, index);
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_); // load table
-        lua_pushvalue(state_, index);           // copy value
-        int ref = luaL_ref(state_, -2);         // ref value
-        lua_pop(state_, 1);                     // pop table
-        return ref;
-    }
-
-    inline void UnRef(int ref) {
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
-        luaL_unref(state_, -1, ref);
-        lua_pop(state_, 1);
-    }
-
-    inline void LoadRef(int ref) {
-        lua_rawgeti(state_, LUA_REGISTRYINDEX, lua_obj_table_ref_);
-        lua_rawgeti(state_, -1, ref);
-        lua_remove(state_, -2);
-    }
-
-private:
-    bool attach_;
-    lua_State* state_;
-    int meta_table_ref_ = 0;        // 导出元表索引
-    int user_data_table_ref_ = 0;   // user data table
-    int lua_obj_table_ref_ = 0;     // table, function
-    int lonly_ud_meta_ref_ = 0;     // 独立user data元表索引
-    int type_meta_func_ref_ = 0;
-    int next_free_lua_obj_ = -1;    // 下一个的lua对象表空闲槽
-    std::vector<LuaObjRef> lua_objs_;
-    std::vector<UdCache> lua_obj_ptrs_;
-    std::vector<UdCache> weak_obj_ptrs_;
-    std::unordered_map<void*, UdCache> raw_ptrs_;
-    std::unordered_map<void*, UdCache> shared_ptrs_;
-    char type_name_buf_[XLUA_MAX_TYPE_NAME_LENGTH];       // 输出类型名称缓存
 };
 
 namespace detail {
-    /* push operator */
-    template <typename Ty>
-    struct Pusher {
-        typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(IsLuaType<value_type>::value
-            || IsExtendPush<value_type>::value
-            || std::is_enum<value_type>::value,
-            "only type has declared export to lua accept");
+    template <typename Fy, typename Ry, typename... Args>
+    int DoFunction(Fy f, xLuaState* l);
 
-        static inline void Do(xLuaState* l, const Ty& val) {
-            using tag = typename std::conditional<IsLuaType<value_type>::value, tag_declared,
-                typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_extend>::type>::type;
-            PushValue<Ty>(l, val, tag());
-        }
+    inline State* RawState(xLuaState* l) { return (State*)l; }
+    inline ObjBase* RawObj(xLuaTable* t) { return (ObjBase*)t; }
+    inline ObjBase* RawObj(xLuaFunction* f) { return (ObjBase*)f; }
+    inline const ObjBase* RawObj(const xLuaTable* t) { return (const ObjBase*)t; }
+    inline const ObjBase* RawObj(const xLuaFunction* f) { return (const ObjBase*)f; }
 
-        template <typename U>
-        static inline void PushValue(xLuaState* l, const U& val, tag_extend) {
-            xLuaPush(l, val);
-        }
+    namespace pusher {
+        /* push operator */
+        template <typename Ty>
+        struct Pusher {
+            typedef typename std::remove_cv<Ty>::type value_type;
+            static_assert(IsLuaType<value_type>::value
+                || IsExtendPush<value_type>::value
+                || std::is_enum<value_type>::value,
+                "only type has declared export to lua accept");
 
-        template <typename U>
-        static inline void PushValue(xLuaState* l, const U& val, tag_enum) {
-            l->Push(static_cast<int>(val));
-        }
+            static inline void Do(xLuaState* l, const Ty& val) {
+                using tag = typename std::conditional<IsLuaType<value_type>::value, tag_declared,
+                    typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_extend>::type>::type;
+                DoPush<Ty>(l, val, tag());
+            }
 
-        template <typename U>
-        static inline void PushValue(xLuaState* l, const U& val, tag_declared) {
-            l->PushValueData(val, GetTypeInfoImpl<U>());
-        }
-    };
+            template <typename U>
+            static inline void DoPush(xLuaState* l, const U& val, tag_extend) {
+                xLuaPush(l, val);
+            }
 
-    template <typename Ty>
-    struct Pusher<Ty*> {
-        typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(!std::is_const<Ty>::value, "can not push const value pointer");
-        static_assert(!IsExtendPush<value_type>::value, "can not push extend type pointer");
-        static_assert(IsLuaType<value_type>::value,
-            "only type has declared export to lua accept");
+            template <typename U>
+            static inline void DoPush(xLuaState* l, const U& val, tag_enum) {
+                lua_pushnumber(l->GetState(), static_cast<int>(val));
+            }
 
-        static inline void Do(xLuaState* l, Ty* val) {
-            if (val == nullptr) {
-                l->Push(nullptr);
-            } else {
-                const TypeInfo* info = GetTypeInfoImpl<value_type>();
+            template <typename U>
+            static inline void DoPush(xLuaState* l, const U& val, tag_declared) {
+                RawState(l)->PushValueData(val, GetTypeInfoImpl<U>());
+            }
+        };
+
+        template <typename Ty>
+        struct Pusher<Ty*> {
+            typedef typename std::remove_cv<Ty>::type value_type;
+            static_assert(!std::is_const<Ty>::value, "can not push const value pointer");
+            static_assert(!IsExtendPush<value_type>::value, "can not push extend type pointer");
+            static_assert(IsLuaType<value_type>::value,
+                "only type has declared export to lua accept");
+
+            static inline void Do(xLuaState* l, Ty* val) {
+                if (val == nullptr) {
+                    lua_pushnil(l->GetState());
+                } else {
+                    const TypeInfo* info = GetTypeInfoImpl<value_type>();
 #if XLUA_ENABLE_LUD_OPTIMIZE
-                auto ud = MakeLightUserData(val, info);
-                lua_pushlightuserdata(l->GetState(), ud.Ptr());
+                    auto ud = MakeLightUserData(val, info);
+                    lua_pushlightuserdata(l->GetState(), ud.Ptr());
 #else // XLUA_ENABLE_LUD_OPTIMIZE
-                l->PushPtrUserData(MakeFullUserData(val, info));
+                    RawState(l)->PushPtrUserData(MakeFullUserData(val, info));
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
+                }
             }
-        }
-    };
+        };
 
-    template <typename Ty>
-    struct Pusher<std::shared_ptr<Ty>> {
-        typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
+        template <typename Ty>
+        struct Pusher<std::shared_ptr<Ty>> {
+            typedef typename std::remove_cv<Ty>::type value_type;
+            static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
 
-        static inline void Do(xLuaState* l, const std::shared_ptr<Ty>& ptr) {
-            if (!ptr) {
-                l->Push(nullptr);
-            } else {
-                l->PushSharedPtr(ptr, GetTypeInfoImpl<value_type>());
+            static inline void Do(xLuaState* l, const std::shared_ptr<Ty>& ptr) {
+                if (!ptr) {
+                    lua_pushnil(l->GetState());
+                } else {
+                    RawState(l)->PushSharedPtr(ptr, GetTypeInfoImpl<value_type>());
+                }
             }
-        }
-    };
+        };
 
-    template <typename Ty>
-    struct Pusher<xLuaWeakObjPtr<Ty>> {
-        typedef typename std::remove_cv<Ty>::type value_type;
-        static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
+        template <typename Ty>
+        struct Pusher<xLuaWeakObjPtr<Ty>> {
+            typedef typename std::remove_cv<Ty>::type value_type;
+            static_assert(IsLuaType<value_type>::value, "only type has declared export to lua accept");
 
-        static inline void Do(xLuaState* l, const xLuaWeakObjPtr<Ty>& obj) {
-            Ty* ptr = ::xLuaGetPtrByWeakObj(obj);
-            if (ptr == nullptr) {
-                l->Push(nullptr);
-            } else {
-                l->Push(ptr);
+            static inline void Do(xLuaState* l, const xLuaWeakObjPtr<Ty>& obj) {
+                Ty* ptr = ::xLuaGetPtrByWeakObj(obj);
+                if (ptr == nullptr) {
+                    lua_pushnil(l->GetState());
+                } else {
+                    Push(l, ptr);
+                }
             }
+        };
+
+        template <typename Ty>
+        void PushValue(xLuaState* l, const Ty& val);
+
+        inline void PushValue(xLuaState* l, bool val) { lua_pushboolean(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, char val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, unsigned char val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, short val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, unsigned short val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, int val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, unsigned int val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, long val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, unsigned long val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, long long val) { lua_pushinteger(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, unsigned long long val) { lua_pushinteger(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, float val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, double val) { lua_pushnumber(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, char* val) { lua_pushstring(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, const char* val) { lua_pushstring(l->GetState(), val); }
+        inline void PushValue(xLuaState* l, const std::string& val) { lua_pushstring(l->GetState(), val.c_str()); }
+        inline void PushValue(xLuaState* l, std::nullptr_t) { lua_pushnil(l->GetState()); }
+
+        inline void PushValue(xLuaState* l, void* val) {
+#if XLUA_ENABLE_LUD_OPTIMIZE
+            assert(detail::IsValidRawPtr(val));
+#endif
+            if (val == nullptr)
+                lua_pushnil(l->GetState());
+            else
+                lua_pushlightuserdata(l->GetState(), val);
         }
-    };
+
+        inline void PushValue(xLuaState* l, const void* val) {
+            PushValue(l, const_cast<void*>(val));
+        }
+
+        inline void PushValue(xLuaState* l, lua_CFunction func) {
+            lua_pushcfunction(l->GetState(), func);
+        }
+
+        inline void PushValue(xLuaState* l, int(*func)(xLuaState* l)) {
+            if (func == nullptr) {
+                PushValue(l, nullptr);
+                return;
+            }
+
+            static lua_CFunction f = [](lua_State* l) -> int {
+                auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
+                void* f = lua_touserdata(l, lua_upvalueindex(2));
+                return reinterpret_cast<int(*)(xLuaState*)>(f)(static_cast<xLuaState*>(xl));
+            };
+
+            lua_pushlightuserdata(l->GetState(), l);
+            lua_pushlightuserdata(l->GetState(), reinterpret_cast<void*>(func));
+            lua_pushcclosure(l->GetState(), f, 2);
+        }
+
+        template <typename Ry, typename... Args>
+        void PushValue(xLuaState* l, Ry(*func)(Args...)) {
+            if (func == nullptr) {
+                PushValue(l, nullptr);
+                return;
+            }
+
+            static lua_CFunction f = [](lua_State* l) -> int {
+                auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
+                void* f = lua_touserdata(l, lua_upvalueindex(2));
+                return DoFunction<Ry(*)(Args...), Ry, Args...>(reinterpret_cast<Ry(*)(Args...)>(f), xl/*, std::is_same<Ry, void>()*/);
+            };
+
+            lua_pushlightuserdata(l->GetState(), l);
+            lua_pushlightuserdata(l->GetState(), reinterpret_cast<void*>(func));
+            lua_pushcclosure(l->GetState(), f, 2);
+        }
+
+        template <typename Ry, typename... Args>
+        void PushValue(xLuaState* l, const std::function<Ry(Args...)>& func) {
+            typedef std::function<Ry(Args...)> func_type;
+            typedef LonelyUserData<func_type> ud_type;
+            if (!func) {
+                PushValue(l, nullptr);
+                return;
+            }
+
+            static lua_CFunction f = [](lua_State* l) -> int {
+                auto* xl = (xLuaState*)lua_touserdata(l, lua_upvalueindex(1));
+                auto* ud = (ud_type*)lua_touserdata(l, lua_upvalueindex(2));
+                return DoFunction<func_type&, Ry, Args...>(
+                    *static_cast<func_type*>(ud->GetDataPtr()), xl);
+            };
+
+            lua_pushlightuserdata(l->GetState(), l);
+            RawState(l)->NewLonlyData(func);
+            lua_pushcclosure(l->GetState(), f, 2);
+        }
+
+        template <typename Ty, typename Alloc = std::allocator<Ty>>
+        void PushValue(xLuaState* l, const std::vector<Ty, Alloc>& vec) {
+            l->NewTable();
+            int i = 0;
+            for (const auto& v : vec)
+                l->SetTableField(-1, ++i, v);
+        }
+
+        template <typename Ty, typename Alloc = std::allocator<Ty>>
+        void PushValue(xLuaState* l, const std::list<Ty, Alloc>& lst) {
+            l->NewTable();
+            int i = 0;
+            for (const auto& v : lst)
+                l->SetTableField(-1, ++i, v);
+        }
+
+        template <typename Ky, typename Ty, typename Alloc = std::allocator<Ty>>
+        void PushValue(xLuaState* l, const std::map<Ky, Ty, Alloc>& map) {
+            l->NewTable();
+            for (const auto& pair : map)
+                l->SetTableField(-1, pair.first, pair.second);
+        }
+
+        inline void PushLuaObj(State* s, const ObjBase* obj) {
+            if (s != obj->state_)
+                lua_pushnil(s->state_);
+            else
+                s->LoadLuaObj(obj->ary_index_);
+        }
+
+        inline void PushValue(xLuaState* l, const xLuaTable& val) {
+            PushLuaObj(RawState(l), RawObj(&val));
+        }
+
+        inline void PushValue(xLuaState* l, const xLuaFunction& val) {
+            PushLuaObj(RawState(l), RawObj(&val));
+        }
+
+        template <typename Ty>
+        inline void PushValue(xLuaState* l, const Ty& val) {
+            Pusher<typename std::decay<Ty>::type>::Do(l, val);
+        }
+    } // namespace pusher
+
+    template <typename Ty> void Push(xLuaState* l, const Ty& val) {
+        pusher::PushValue(l, val);
+    }
 
     namespace loader {
         template <typename Ty>
@@ -751,21 +584,21 @@ namespace detail {
             static inline Ty Do(xLuaState* l, int index) {
                 using tag = typename std::conditional<IsLuaType<value_type>::value, tag_declared,
                     typename std::conditional<std::is_enum<value_type>::value, tag_enum, tag_extend>::type>::type;
-                return DoImpl<value_type>(l, index, tag());
+                return DoLoad<value_type>(l, index, tag());
             }
 
             template <typename U>
-            static inline U DoImpl(xLuaState* l, int index, tag_extend) {
+            static inline U DoLoad(xLuaState* l, int index, tag_extend) {
                 return xLuaLoad(l, index, Identity<U>());
             }
 
             template <typename U>
-            static inline U DoImpl(xLuaState* l, int index, tag_enum) {
+            static inline U DoLoad(xLuaState* l, int index, tag_enum) {
                 return (U)static_cast<int>(lua_tonumber(l->GetState(), index));
             }
 
             template <typename U>
-            static inline U DoImpl(xLuaState* l, int index, tag_declared) {
+            static inline U DoLoad(xLuaState* l, int index, tag_declared) {
                 const TypeInfo* info = GetTypeInfoImpl<U>();
                 UserDataInfo ud_info;
                 if (!GetUserDataInfo(l->GetState(), index, &ud_info) || ud_info.obj == nullptr) {
@@ -835,6 +668,9 @@ namespace detail {
             }
         };
 
+        template <typename Ty>
+        Ty LoadValue(xLuaState* l, int index);
+
         template<> inline bool LoadValue<bool>(xLuaState* l, int index) { return lua_toboolean(l->GetState(), index); }
         template<> inline char LoadValue<char>(xLuaState* l, int index) { return (char)lua_tonumber(l->GetState(), index); }
         template<> inline unsigned char LoadValue<unsigned char>(xLuaState* l, int index) { return (unsigned char)lua_tonumber(l->GetState(), index); }
@@ -853,14 +689,28 @@ namespace detail {
         template<> inline const void* LoadValue<const void*>(xLuaState* l, int index) { return lua_touserdata(l->GetState(), index); }
         template<> inline std::string LoadValue<std::string>(xLuaState* l, int index) { return std::string(lua_tostring(l->GetState(), index)); }
         template<> inline lua_CFunction LoadValue<lua_CFunction>(xLuaState* l, int index) { return lua_tocfunction(l->GetState(), index); }
-        template<> inline xLuaTable LoadValue<xLuaTable>(xLuaState* l, int index) { return l->LoadTable(index); }
-        template<> inline xLuaFunction LoadValue<xLuaFunction>(xLuaState* l, int index) { return l->LoadFunction(index); }
+
+        template<> inline xLuaTable LoadValue<xLuaTable>(xLuaState* l, int index) {
+            if (lua_type(l->GetState(), index) == LUA_TTABLE)
+                return xLuaTable(RawState(l), RawState(l)->RefLuaObj(index));
+            return xLuaTable();
+        }
+
+        template<> inline xLuaFunction LoadValue<xLuaFunction>(xLuaState* l, int index) {
+            if (lua_type(l->GetState(), index) == LUA_TFUNCTION)
+                return xLuaFunction(RawState(l), RawState(l)->RefLuaObj(index));
+            return xLuaFunction();
+        }
 
         template <typename Ty> Ty LoadValue(xLuaState* l, int index) {
             static_assert(!std::is_reference<Ty>::value, "can not load reference value");
             static_assert(!std::is_same<char*, Ty>::value, "can not load char*, use const char*");
             return Loader<typename std::decay<Ty>::type>::Do(l, index);
         }
+    }
+
+    template <typename Ty> Ty Load(xLuaState* l, int index) {
+        return loader::LoadValue<Ty>(l, index);
     }
 
     namespace param {
@@ -895,8 +745,7 @@ namespace detail {
 
             if (l_ty == LUA_TNIL) {
                 ud_info.is_nil = true;
-            }
-            else if (l_ty == LUA_TLIGHTUSERDATA) {
+            } else if (l_ty == LUA_TLIGHTUSERDATA) {
 #if XLUA_ENABLE_LUD_OPTIMIZE
                 LightUserData ud = MakeLightPtr(lua_touserdata(l->GetState(), index));
                 if (!ud.IsLightData()) {
@@ -1130,13 +979,12 @@ namespace detail {
             return IsType_2(l, index, param, lb, LUA_TFUNCTION, "xLuaFunction");
         }
 
-        template <typename... Ty>
-        inline bool CheckParam(xLuaState* l, int index, xLuaLogBuffer& lb) {
+        template <typename... Ty, size_t... Idxs>
+        inline bool CheckParam(xLuaState* l, int index, xLuaLogBuffer& lb, index_sequence<Idxs...>) {
             size_t count = 0;
-            int param = 0;
             using els = int[];
             (void)els {
-                0, (count += IsType<typename std::decay<Ty>::type>(l, index++, ++param, lb) ? 1 : 0, 0)...
+                0, (count += IsType<typename std::decay<Ty>::type>(l, index + Idxs, Idxs + 1, lb) ? 1 : 0, 0)...
             };
             return count == sizeof...(Ty);
         }
@@ -1175,9 +1023,9 @@ namespace detail {
     } // namespace param
 
     template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
-    inline auto DoFunctionImpl(Fy f, xLuaState* l, index_sequence<Idxs...>) -> typename std::enable_if<!std::is_void<Ry>::value, int>::type {
+    inline auto DoFunctionImpl(Fy f, xLuaState* l, index_sequence<Idxs...> idxs) -> typename std::enable_if<!std::is_void<Ry>::value, int>::type {
         LogBufCache<> lb;
-        if (!param::CheckParam<Args...>(l, 1, lb)) {
+        if (!param::CheckParam<Args...>(l, 1, lb, idxs)) {
             l->GetCallStack(lb);
             luaL_error(l->GetState(), "attempt call function failed, parameter is not allow!\n%s", lb.Finalize());
             return 0;
@@ -1188,9 +1036,9 @@ namespace detail {
     }
 
     template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
-    inline auto DoFunctionImpl(Fy f, xLuaState* l, index_sequence<Idxs...>) -> typename std::enable_if<std::is_void<Ry>::value, int>::type {
+    inline auto DoFunctionImpl(Fy f, xLuaState* l, index_sequence<Idxs...> idxs) -> typename std::enable_if<std::is_void<Ry>::value, int>::type {
         LogBufCache<> lb;
-        if (!param::CheckParam<Args...>(l, 1, lb)) {
+        if (!param::CheckParam<Args...>(l, 1, lb, idxs)) {
             l->GetCallStack(lb);
             luaL_error(l->GetState(), "attempt call function failed, parameter is not allow!\n%s", lb.Finalize());
         } else {

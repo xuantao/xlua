@@ -99,7 +99,6 @@ namespace detail {
     class LonelyUserData : public UserDataBase {
     public:
         LonelyUserData(const Ty& val) : val_(val) { }
-        LonelyUserData(Ty&& val) : val_(std::forward<Ty>(val)) { }
         virtual ~LonelyUserData() { }
 
     public:

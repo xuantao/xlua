@@ -285,22 +285,22 @@ namespace detail {
     namespace param {
         template <typename Ry, typename...Args>
         inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, Ry(*func)(Args...)) {
-            return CheckParam<Args...>(l, index, lb);
+            return CheckParam<Args...>(l, index, lb, make_index_sequence_t<sizeof...(Args)>());
         }
 
         template <typename Ty, typename Ry, typename...Args>
         inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, Ry(Ty::*func)(Args...)) {
-            return CheckParam<Args...>(l, index, lb);
+            return CheckParam<Args...>(l, index, lb, make_index_sequence_t<sizeof...(Args)>());
         }
 
         template <typename Ty, typename Ry, typename...Args>
         inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, Ry(Ty::*func)(Args...) const) {
-            return CheckParam<Args...>(l, index, lb);
+            return CheckParam<Args...>(l, index, lb, make_index_sequence_t<sizeof...(Args)>());
         }
 
         template <typename Ty, typename Ry, typename...Args>
         inline bool CheckMetaParamEx(xLuaState* l, int index, xLuaLogBuffer& lb, Ry(*func)(Ty*, Args...)) {
-            return CheckParam<Args...>(l, index, lb);
+            return CheckParam<Args...>(l, index, lb, make_index_sequence_t<sizeof...(Args)>());
         }
 
         inline bool CheckMetaParam(xLuaState* l, int index, xLuaLogBuffer& lb, int(*func)(xLuaState*)) { return true; }
