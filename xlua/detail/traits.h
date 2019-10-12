@@ -12,8 +12,7 @@ namespace detail {
     struct make_index_sequence : make_index_sequence<N - 1, N - 1, Indices...> {};
 
     template<size_t... Indices>
-    struct make_index_sequence<0, Indices...>
-    {
+    struct make_index_sequence<0, Indices...> {
         typedef index_sequence<Indices...> type;
     };
 
