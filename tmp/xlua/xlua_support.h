@@ -4,13 +4,46 @@
 #include <limits>
 #include <string>
 
-#define XLUA_NAMESPACE_BEGIN namespace xlua {
-#define XLUA_NAMESPACE_END }
+#define XLUA_NAMESPACE_BEGIN    namespace xlua {
+#define XLUA_NAMESPACE_END      }
+#define _XLUA_INTERAL_NAMESPACE_BEGIN   namespace internal {
+#define _XLUA_INTERAL_NAMESPACE_END     }
 
 XLUA_NAMESPACE_BEGIN
 
 struct State {
     lua_State* GetState() { return nullptr; }
+};
+
+template <typename Ty>
+struct IsDeclear {
+    static const bool = true;
+};
+
+struct NoSuportTraits {
+    static const bool support = false;
+};
+
+struct SupportTraits {
+    static const bool support = true;
+};
+
+struct ValueTypeTraits : SupportTraits {
+    static const bool is_declared = false;
+    static const bool obj_type = false;
+    static const bool paramenter_ref = false;
+};
+
+struct DeclaerdTypeTraits : SupportTraits {
+    static const bool is_declared = true;
+    static const bool obj_type = true;
+    static const bool paramenter_ref = true;
+};
+
+struct CollectionTraits : SupportTraits {
+    static const bool is_declared = false;
+    static const bool obj_type = true;
+    static const bool paramenter_ref = true;
 };
 
 namespace internal {
@@ -20,7 +53,7 @@ namespace internal {
         static constexpr bool value = std::numeric_limits<Ty>::digits > 32;
     };
 
-    template <typename Ty> struct NumberSupport {
+    template <typename Ty> struct NumberSupport : ValueTypeTraits {
         typedef Ty type;
 
         static inline void Push(State* l, Ty value) {
@@ -68,6 +101,20 @@ namespace internal {
             return static_cast<U>(lua_tointeger(l->GetState(), index));
         }
     };
+
+    template <typename Ty, bool>
+    struct ExportSupport : NoSuportTraits {
+    };
+
+    template <typename Ty>
+    struct ExportSupport<Ty, true> : DeclaerdTypeTraits {
+        typedef Ty type;
+    };
+
+    template <typename Ty>
+    struct ExportSupport<Ty*, true> : DeclaerdTypeTraits {
+        typedef Ty* type;
+    };
 }
 
 #define _XLUA_NUMBER_SUPPORT(Type)                                  \
@@ -92,7 +139,7 @@ _XLUA_NUMBER_SUPPORT(float)
 _XLUA_NUMBER_SUPPORT(double)
 
 template <>
-struct Support<char*> {
+struct Support<char*> : ValueTypeTraits {
     typedef char* type;
 
     static inline const char* Name() {
@@ -120,7 +167,7 @@ struct Support<char*> {
 };
 
 template <class Trait, class Alloc>
-struct Support<std::basic_string<char, Trait, Alloc>> {
+struct Support<std::basic_string<char, Trait, Alloc>> : ValueTypeTraits {
     typedef std::basic_string<char, Trait, Alloc>* type;
 
     static inline const char* Name() {
@@ -151,18 +198,12 @@ template <>
 struct Support<int(lua_State)> {
 };
 
-
 template <typename Ty>
-struct Support {
-    typedef Ty type;
-    static_assert(true, "type is not declerared to lua");
-
-    static inline const char* Name() {
-        return "";
-    }
-
-
+struct Support : internal::ExportSupport<Ty, IsDeclear<Ty>::value> {
 };
 
+template <typename Ty>
+struct Support<Ty*> : internal::ExportSupport<Ty*, IsDeclear<Ty>::value> {
+};
 
 XLUA_NAMESPACE_END
