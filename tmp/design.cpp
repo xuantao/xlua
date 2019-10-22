@@ -185,11 +185,18 @@ struct TypeInfo {
     WeakObjRefProc weak_proc;
 };
 
-enum class Tag {
-    Ptr,        // 指针, 弱引用
-    Value,      // obj, 对应数据
-    SmartPtr,   //
+enum class Tag : int8_t {
+    //Ptr,        // 指针, 弱引用
+    //Value,      // obj, 对应数据
+	Declared,
+    Colletion,	//
     Extend,     // 扩展
+};
+
+enum class OtherTag : int8_t {
+	Ptr,
+	SamrtPtr,
+	Value,
 };
 
 struct ExtendInfo {
@@ -221,6 +228,8 @@ struct UdInfo {
         UserDataObj* user_data;
         void* obj;
     };
+	
+	// shared_ptr tag
 };
 
 struct Lud {
@@ -238,52 +247,44 @@ struct Lud {
 };
 
 struct Ud {
-    Tag tag;
+	struct {
+		const int8_t m = 'x';
+		const int8_t j = 'z';
+		Tag tag;
+		OtherTag mask;
+	};
     union {
         TypeInfo* type_info;
-        const ExtendInfo* extend_info;
+		CollectionInfo* colletion_info;
+        ExtendInfo* extend_info;
     };
     union {
         RefValue ref_value;
-        ExtendVal extend_val;
         void* obj;  // raw ptr, raw value
     };
 };
 
-struct SmartPtrUd : Ud {
+struct ObjUd : Ud {
+	virtual ~ObjUd() {}
+};
+
+struct SmartPtrUd : ObjUd {
+	size_t tag_id;
+	void* data;
 };
 
 template <typename Ty>
-struct SmartPtrUdImpl : Ud {
-    SmartPtrUd(const Ty& v) : ptr(v) {
-        tag = Tag::SmartPtr;
-    }
+struct SmartPtrUdImpl : SmartPtrUd {
+    SmartPtrUd(const Ty& v) : ptr(v) {}
+	virtual ~SmartPtrUd() {}
 
     Ty ptr;
 };
 
-struct ExtendUd : Ud {
-    size_t type_id;
-    void* ud;
-    //metatable
-};
-
 template <typename Ty>
-struct ExtendUdImpl : Ud {
-    ExtendUd(const Ty& v) : val(v) {
-        tag = Tag::Extend;
-    }
-
-    Ty val;
-};
-
-template <typename Ty>
-struct UdImpl : Ud {
-    UdImpl(const Ty& v) : val() {
-    }
-
-    UdImpl(Ty&& v) : val(std::move(v)) {
-    }
+struct UdImpl : ObjUd {
+    UdImpl(const Ty& v) : val() {}
+	virtual ~UdImpl() {}
 
     Ty val;
 };
@@ -312,16 +313,112 @@ void* GetObjPtr() {
 }
 
 struct CollectionTraits {
-    static int Index(lua_State* l) {
-        //return v->operator[](i);
-        return 0;
-    }
-
-    static int NewIndex(lua_State* l) {
-        return 0;
-    }
-
-    static int Length(lua_State* l) {
-        return 0;
-    }
+    virtual int Index(lua_State* l) = 0;
+    virtual int NewIndex(lua_State* l) = 0;
+	virtual int Insert(lua_State* l) = 0;
+    virtual int Length(lua_State* l) = 0;
 };
+
+void* CreateArrayData(const Ty& val, ArrayMeta* meta) {
+	return nullptr;
+}
+
+
+how to build user data?
+what's the user data should be?
+1. need a base description about the full user data info
+	- weak obj
+	- collection type
+	- extend type
+	- shared ptr
+	- value or raw ptr
+2. need support value type convert
+	- dynamic cast(to sub type), ptr/shared_ptr/(need support extend ptr, not necessary)
+	- static case(to base type), ptr/shared_ptr/value/(need support extend ptr, not necessary)
+
+table_conv <-> 转换
+
+template <typename Ty>
+struct TableConv {
+};
+
+template <typename Ty>
+struct Support<TableConv<Ty>> {
+	using category = value_tag;
+	
+	typedef TableConv<Ty> type;
+	static void Push(State* l, const TableConv<Ty>>& val) {
+	}
+	static TableConv<Ty> Load(State* l, int index) {
+		return TableConv<Ty>(); 
+	}
+};
+
+template <typename Ty>
+struct Support<std::shared_ptr<Ty>> {
+	using category = value_tag;
+	
+	static bool Check(State* l, int index) {
+		1. allow nil
+		2. check udinfo
+	}
+	
+	static void Push(State* l, const std::shared_ptr<Ty>& ptr) {
+		
+	}
+	
+	static std::shared<Ty> Load(State* l) {
+		return std::shared_ptr<Ty>();
+	}
+}
+
+template <typename Ty>
+struct Support<std::vector<Ty>> {
+	using category = collection_tag;
+	static const size_t type_hash_id = type_id(std::vector<Ty>().hash_id();
+
+	struct Meta {
+	};
+};
+
+char* 
+void* 
+
+struct Vec3 {};
+
+template <>
+struct Support<Vec3> {
+	using category = extend_tag;
+	static const size_t type_hash_id = 0;
+	
+	struct const ExtendDesc* GetDesc() {
+		return nullptr;
+	};
+};
+
+declear traits {
+}
+声明行为?
+
+SharedPtr data
+CollectionVar data
+
+struct nonsupport{};	// compile time check type support
+struct value_tag{};		// not support pointer and reference
+struct obj_tag{};		// support pointer get, reference?
+struct declear_tag {};	// type has declared to export lua
+struct extend_tag {};	// runtime export type to lua(used for template export)
+struct table_tag {};	// user for and has some interface?
+struct collection_tag{};// 容器
+
+
+
+
+
+
+
+
+
+
+
+
