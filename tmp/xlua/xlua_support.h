@@ -235,7 +235,7 @@ struct Support<std::basic_string<char, Trait, Alloc>> {
     }
 	
 	static inline bool Check(State* l, int index) {
-        return Support<const char*>::Check<const char*>(l, index);
+        return Support<const char*>::Check(l, index);
     }
 
     static inline value_type Load(State* l, int index) {
@@ -247,7 +247,7 @@ struct Support<std::basic_string<char, Trait, Alloc>> {
     }
 	
     static inline void Push(State* l, const value_type& str) {
-        lua_pushstring(l->GetState(), str.c_str());
+        lua_pushlstring(l->GetState(), str.c_str(), str.size());
     }
 };
 
@@ -258,7 +258,7 @@ struct Support<void*> {
     typedef ValueCategory category;
 
     static inline const char* Name() {
-        return "char*";
+        return "void*";
     }
 
     static inline bool Check(State* l, int index) {
