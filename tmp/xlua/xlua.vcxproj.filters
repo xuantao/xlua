@@ -15,5 +15,11 @@
     <ClInclude Include="xlua_support.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="state.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="common.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
