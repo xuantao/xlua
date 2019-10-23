@@ -12,13 +12,22 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="xlua_support.h">
-      <Filter>src</Filter>
-    </ClInclude>
     <ClInclude Include="state.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="common.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="state_data.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="support.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="xlua_def.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="xlua_config.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

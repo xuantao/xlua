@@ -1,6 +1,10 @@
 #pragma once
 #include "common.h"
 #include "state.h"
+#include <functional>
+#include <vector>
+#include <list>
+#include <map>
 
 XLUA_NAMESPACE_BEGIN
 
@@ -8,11 +12,6 @@ struct Variant {};
 struct Table {};
 struct Function {};
 struct UserVar {};
-
-template <typename Ty>
-struct IsDeclear {
-    static const bool = true;
-};
 
 namespace internal {
     template <typename Ty, bool>
@@ -25,51 +24,42 @@ namespace internal {
         typedef Ty value_type;
         typedef DeclaredCategory category;
 
-        static inline TypeInfo* Desc() {
-            return nullptr;
-        }
-
-        static inline const char* Name() {
-            //TODO:
-        }
-
+        static inline TypeDesc* Desc() { return xLuaGetTypeDesc(Identity<Ty>()); }
+        static inline const char* Name() { return Desc()->name;  }
         static inline bool Check(State* l, int index) {
-            return true; //TODO:
+            return lua_isnil(l->GetState(), index) || l->state_.IsUd<Ty>(index);
         }
-
-
+        static inline Ty* Load(State* l, int index) {
+            return l->state_.LoadUd<Ty>(index);
+        }
+        static inline bool Push(State* l, Ty* ptr) {
+            l->state_.PushUd(ptr);
+        }
     };
 
     template <typename Ty>
     struct ExportSupport<Ty, true> {
         typedef Ty value_type;
         typedef DeclaredCategory category;
+        typedef ExportSupport<Ty*, true> supporter;
 
-        static inline TypeInfo* Desc() {
-            return ExportSupport<Ty*, true>::Desc();
-        }
-
-        static inline const char* Name() {
-            //TODO:
-        }
-
+        static inline TypeInfo* Desc() { return supporter::Desc(); }
+        static inline const char* Name() { return supporter::Name(); }
         static inline bool Check(State* l, int index) {
-            //TODO:
+            return supporter::Load(l, index) != nullptr;
         }
-
         static inline ObjectWrapper<Ty> Load(State* l, int index) {
-            return ObjectWrapper<Ty>(ExportSupport<Ty*, true>::Load(l, index));
+            return ObjectWrapper<Ty>(supporter::Load(l, index));
         }
-
-        static inline void Push(State* l, const Ty& val) {
-            //TOD:
+        static inline void Push(State* l, const Ty& obj) {
+            l->state_.PushUd(obj);
         }
     };
 } // namespace internal
 
 /* export type support */
 template <typename Ty>
-struct Support<Ty> : internal::ExportSupport<Ty, IsDeclear<Ty>::value> {
+struct Support : internal::ExportSupport<Ty, IsDeclaredType<Ty>::value> {
 };
 
 /* lua var support */
@@ -77,10 +67,10 @@ template <>
 struct Support<Variant> {
     typedef Variant value_type;
     typedef ValueCategory category;
-    static inline constexpr const char* Name() { return "xlua::Variant"; }
-    static inline constexpr bool Check(State* l, int index) { return true; }
-    static inline Variant Load(State* l, int index) { return l->LoadVar(index); }
-    static inline void Push(State* l, const Variant& var) { l->PushVar(var); }
+    static inline const char* Name() { return "xlua::Variant"; }
+    static inline bool Check(State* l, int index) { return true; }
+    //static inline Variant Load(State* l, int index) { return l->LoadVar(index); }
+    //static inline void Push(State* l, const Variant& var) { l->PushVar(var); }
 };
 
 template <>
@@ -88,13 +78,13 @@ struct Support<Table> {
     typedef Table value_type;
     typedef ValueCategory category;
 
-    static inline constexpr const char* Name() { return "xlua::Table"; }
+    static inline const char* Name() { return "xlua::Table"; }
     static inline bool Check(State* l, int index) {
         int lty = lua_type(l->GetState(), index);
         return lty == LUA_TNIL || lty == LUA_TTABLE;
     }
-    static inline Table Load(State* l, int index) { return l->LoadTable(index); }
-    static inline void Push(State* l, const Table& var) { l->PushTable(var); }
+    //static inline Table Load(State* l, int index) { return l->LoadTable(index); }
+    //static inline void Push(State* l, const Table& var) { l->PushTable(var); }
 };
 
 template <>
@@ -102,13 +92,13 @@ struct Support<Function> {
     typedef Function value_type;
     typedef ValueCategory category;
 
-    static inline constexpr const char* Name() { return "xlua::Function"; }
+    static inline const char* Name() { return "xlua::Function"; }
     static inline bool Check(State* l, int index) {
         int lty = lua_type(l->GetState(), index);
         return lty == LUA_TNIL || lty == LUA_TFUNCTION;
     }
-    static inline Function Load(State* l, int index) { return l->LoadFunc(index); }
-    static inline void Push(State* l, const Function& var) { l->PushFunc(var); }
+    //static inline Function Load(State* l, int index) { return l->LoadFunc(index); }
+    //static inline void Push(State* l, const Function& var) { l->PushFunc(var); }
 };
 
 template <>
@@ -116,13 +106,13 @@ struct Support<UserVar> {
     typedef UserVar value_type;
     typedef ValueCategory category;
 
-    static inline constexpr const char* Name() { return "xlua::UserVar"; }
+    static inline const char* Name() { return "xlua::UserVar"; }
     static inline bool Check(State* l, int index) {
         int lty = lua_type(l->GetState(), index);
         return lty == LUA_TNIL || lty == LUA_TUSERDATA;
     }
-    static inline UserVar Load(State* l, int index) { return l->LoadUserVar(index); }
-    static inline void Push(State* l, const UserVar& var) { l->PushUserVar(var); }
+    //static inline UserVar Load(State* l, int index) { return l->LoadUserVar(index); }
+    //static inline void Push(State* l, const UserVar& var) { l->PushUserVar(var); }
 };
 
 /* nil support */
@@ -133,7 +123,7 @@ struct Support<std::nullptr_t> {
 
     static inline bool Check(State*, int) { return false; }
     static inline value_type Load(State*, int) = delete;
-    static inline void Push(State* l) { lus_pushnil(l->GetState()); }
+    static inline void Push(State* l, std::nullptr_t) { lua_pushnil(l->GetState()); }
 };
 
 /* number type support*/
@@ -194,7 +184,7 @@ namespace internal {
 
 #define _XLUA_NUMBER_SUPPORT(Type)                                  \
 template <> struct Support<Type> : internal::NumberSupport<Type> {  \
-    static constexpr const char* Name() { return #Type; }           \
+    static const char* Name() { return #Type; }                     \
 };
 
 _XLUA_NUMBER_SUPPORT(char)
@@ -217,7 +207,7 @@ struct Support<const char*> {
     typedef const char* value_type;
     typedef ValueCategory category;
 
-    static inline constexpr const char* Name() {
+    static inline const char* Name() {
         return "const char*";
     }
 
@@ -241,7 +231,7 @@ struct Support<char*> {
     typedef char* value_type;
     typedef ValueCategory category;
 
-    static inline constexpr const char* Name() {
+    static inline const char* Name() {
         return "char*";
     }
 
@@ -262,7 +252,7 @@ struct Support<std::basic_string<char, Trait, Alloc>> {
     typedef ValueCategory category;
 
     static inline const char* Name() {
-        return "string";
+        return "std::string";
     }
 
     static inline bool Check(State* l, int index) {
@@ -341,22 +331,19 @@ struct Support<int(lua_State*)> {
     typedef int (*value_type)(lua_State*);
     typedef ValueCategory category;
 
+    static inline const char* Name() { return "cfunction"; }
+
     static inline bool Check(State* l, int index) {
-        int lty = lua_type(l->GetState(), index);
-        return lty == LUA_TNIL || lty == LUA_TCFUNCTION;
+        return lua_isnil(l->GetState(), index) ||
+            lua_iscfunction(l->GetState(), index);
     }
 
     static inline void Push(State* l, value_type f) {
-        lua_pushcfunction(l, f);
+        lua_pushcfunction(l->GetState(), f);
     }
 
     static inline value_type Load(State* l, int index) {
         return lua_tocfunction(l->GetState(), index);
-    }
-
-private:
-    static int Call(lua_State* l) {
-        return 0;
     }
 };
 
@@ -365,12 +352,15 @@ struct Support<int(State*)> {
     typedef int (*value_type)(State*);
     typedef ValueCategory category;
 
+    static inline const char* Name() { return "cfunction"; }
+
     static inline bool Check(State* l, int index) {
         return lua_tocfunction(l->GetState(), index) == &Call;
     }
 
     static inline value_type Load(State* l, int index) {
         //TODO:
+        return nullptr;
     }
 
     static inline void Push(State* l, value_type f) {
@@ -380,6 +370,7 @@ struct Support<int(State*)> {
 private:
     static int Call(lua_State* l) {
         //TODO:
+        return 0;
     };
 };
 
@@ -396,6 +387,8 @@ struct Support<Ry(Args...)> {
     }
 };
 
+struct std_shared_ptr_tag {};
+
 /* smart ptr support */
 template <typename Ty>
 struct Support<std::shared_ptr<Ty>> {
@@ -404,9 +397,10 @@ struct Support<std::shared_ptr<Ty>> {
     typedef std::shared_ptr<Ty> value_type;
     typedef ValueCategory category;
 
-    static const size_t tag = 1;
+    static const size_t tag = typeid(std_shared_ptr_tag).hash_code();
 
     static const char* Name() { return "std::shared_ptr"; }
+
     static bool Check(State* l, int index) {
         if (lua_isnil(l->GetState(), index))
             return true;
@@ -415,40 +409,123 @@ struct Support<std::shared_ptr<Ty>> {
         if (ud == nullptr || ud->category != UserDataCategory::SmartPtr)
             return false;
 
-        auto* smart_ud = static_cast<inernal::SmartPtrData*>(ud);
-        if (smart_ud->tag != tag)
+        if (static_cast<inernal::SmartPtrData*>(ud)->tag != tag)
             return false;
 
         return l->IsUd(ud, Support<Ty>::Desc());
     }
 
     static value_type Load(State* l, int index) {
+        if (lua_isnil(l->GetState(), index))
+            return value_type();
+
+        auto* ud = l->LoadUserData(index);
+        if (ud == nullptr || ud->category != UserDataCategory::SmartPtr)
+            return value_type();
+
+        auto* sud = static_cast<inernal::SmartPtrData*>(ud);
+        if (sud->tag != tag)
+            return value_type();
         //TODO:
+        return value_type(*static_cast<value_type*>(sud->data),
+            (Ty*)_XLUA_TO_SUPER_PTR(info, ud->obj_, ud->info_));
     }
 
     static void Push(State* l, const value_type& ptr) {
-        //TODO:
+        if (!ptr)
+            lua_pushnil(l->GetState());
+        else
+            l->state_.PushUd(ptr, ptr->get(), tag);
     }
+};
+
+namespace internal {
+    template <typename Ty>
+    struct UniqueObj {
+        inline Ty& Instance() { return obj; }
+    private:
+        static Ty obj;
+    };
+    template <typename Ty> static Ty UniqueObj<Ty>::obj;
+
+    template <typename Ty>
+    struct VectorCol final : ICollection {
+        typedef std::vector<Ty> vector;
+        typedef Ty value_type;
+
+        int Index(void* obj, State* l) override {
+            return 0;
+        }
+
+        int NewIndex(void* obj, State* l) override {
+            return 0;
+        }
+
+        int Insert(void* obj, State* l) override {
+            return 0;
+        }
+
+        int Remove(void* obj, State* l) override {
+            return 0;
+        }
+
+        int Length(void* obj, State* l) override {
+            return 0;
+        }
+    };
+
+    template <typename Cy, typename Pc>
+    struct CollectionSupport {
+        typedef Cy value_type;
+        typedef CollectionCategory category;
+
+        static inline ICollection* Desc() { return &UniqueObj<Pc>::Instance(); }
+
+        static inline bool Check(State* l, int index) {
+            return Support<Cy*>::Load(l, index) != nullptr;
+        }
+
+        static inline ObjectWrapper<Cy> Load(State* l, index) {
+            return ObjectWrapper<Cy>(Support<Cy*>::Load(l, index));
+        }
+
+        static inline void Push(State* l, const value_type& obj) {
+            l->state_.PushUd(obj);
+        }
+    };
+
+    template <typename Cy, typename Pc>
+    struct CollectionSupport<Cy*, Pc> {
+        typedef Cy* value_type;
+        typedef CollectionCategory category;
+
+        static inline ICollection* Desc() { return &UniqueObj<Pc>::Instance(); }
+
+        static inline bool Check(State* l, int index) {
+            return lua_isnil(l->GetState(), index) || l->state_.IsUd<Cy>(index);
+        }
+
+        static inline value_type Load(State* l, index) {
+            return l->state_.LoadUd<Cy>(index);
+        }
+
+        static inline void Push(State* l, value_type ptr) {
+            l->state_.PushUd(ptr);
+        }
+    };
 }
 
 /* vector support */
-template <typename Ty>
-struct Support<std::vector<Ty>> {
-    typedef std::vector<Ty> value_type;
-    typedef CollectionCategory category;
-
-    static inline constexpr const char* Name() { return "vector"; }
-
-    static inline ICollection* Proc() {
-        static Proc sp;
-        return &sp;
-    }
-
-private:
-    struct Proc_ : ICollection {
-        //TODO:
-    };
+#define _COLLECTION_SUPPORT(Cy, Py)                                     \
+template <typename Ty>                                                  \
+struct Support<Cy<Ty>> : internal::CollectionSupport<Cy<Ty>, Py<Ty>> {  \
+    static inline const char* Name() { return #Cy; }                    \
+};                                                                      \
+template <typename Ty>                                                  \
+struct Support<Cy<Ty>*> : internal::CollectionSupport<Cy<Ty>*, Py<Ty>> {\
+    static inline const char* Name() { return #Cy "*"; }                \
 };
 
+_COLLECTION_SUPPORT(std::vector, internal::VectorCol)
 
 XLUA_NAMESPACE_END

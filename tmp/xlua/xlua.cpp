@@ -1,14 +1,12 @@
-#include "xlua_support.h"
+#include "support.h"
+#include "xlua.h"
 
-int main(int argc, char* argv[]) {
-    xlua::State s;
-    xlua::Support<int>::Check<int>(&s, 1);
-    //xlua::Support<int>::Check<int&>(&s, 1);
+XLUA_NAMESPACE_BEGIN
 
-    //xlua::Support<char*>::Check<const char*>(&s, 1);
-    xlua::Support<char*>::Check<const char*>(&s, 1);
 
-    xlua::Support<std::string>::Check<std::string>(&s, 1);
 
-    return 0;
+void FreeObjectIndex(ObjectIndex& index) {
+    //TODO:
 }
+
+XLUA_NAMESPACE_END

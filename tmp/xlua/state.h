@@ -4,24 +4,6 @@
 
 XLUA_NAMESPACE_BEGIN
 
-struct State;
-
-struct DeclaredDesc;
-struct ExtendDesc;
-
-/* market type is not support */
-struct NoneCategory {};
-/* value type */
-struct ValueCategory {};
-/* object type, support to push/load with pointer/reference */
-struct _ObjectCategory {};
-/* type has declared export to lua */
-struct DeclaredCategory : _ObjectCategory {};
-/* collection type, as vector/list/map... */
-struct CollectionCategory : _ObjectCategory {};
-/* user defined export type at runtime */
-struct ExtendCategory : _ObjectCategory {};
-
 /* get the support type */
 template <typename Ty>
 struct TypeTrait {
@@ -29,6 +11,8 @@ struct TypeTrait {
 };
 
 class State {
+    template <typename Ty> friend struct Support;
+
 public:
     lua_State* GetState() { return nullptr; }
 

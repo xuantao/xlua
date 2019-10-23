@@ -3,91 +3,153 @@
 #include <type_traits>
 #include <limits>
 #include <string>
+#include "xlua_def.h"
 
-#define XLUA_NAMESPACE_BEGIN    namespace xlua {
-#define XLUA_NAMESPACE_END      }
-#define _XLUA_INTERAL_NAMESPACE_BEGIN   namespace internal {
-#define _XLUA_INTERAL_NAMESPACE_END     }
-
-#define _XLUA_TAG_1  'x'
-#define _XLUA_TAG_2  'l'
+XLUA_NAMESPACE_BEGIN
 
 // predefine
 template <typename Ty> struct Support;
-
 class State;
 
-struct ICollection {
-    virtual int Index(State* l) = 0;
-    virtual int NewIndex(State* l) = 0;
-    virtual int Insert(State* l) = 0;
-    virtual int Remove(State* l) = 0;
-    virtual int Length(State* l) = 0;
+/* market type is not support */
+struct NoneCategory {};
+/* value type */
+struct ValueCategory {};
+/* object type, support to push/load with pointer/reference */
+struct ObjectCategory_ {};
+/* type has declared export to lua */
+struct DeclaredCategory : ObjectCategory_ {};
+/* collection type, as vector/list/map... */
+struct CollectionCategory : ObjectCategory_ {};
+/* user defined export type at runtime */
+struct ExtendCategory : ObjectCategory_ {};
+
+
+/* 导出到Lua类型 */
+typedef int(*LuaFunction)(lua_State* l);
+typedef void(*LuaIndexer)(State* l, void* obj, const TypeDesc* info);
+
+/* 类型转换器
+ * 基础类型可以子类->基类，基类->子类
+*/
+struct ITypeCaster {
+    virtual ~ITypeCaster() {}
+
+    virtual void* ToSuper(void* obj, const TypeDesc* info) = 0;
+    virtual void* ToDerived(void* obj, const TypeDesc* info) = 0;
+    virtual void* ToDerivedStatic(void* obj, const TypeDesc* info) = 0;
 };
 
-struct TypeDesc;
+struct StringView {
+    const char* str;
+    size_t len;
+};
+
+struct ExportVar {
+    const char* name;
+    LuaIndexer getter;
+    LuaIndexer setter;
+};
+
+struct ExportFunc {
+    const char* name;
+    LuaFunction func;
+};
+
+enum class TypeCategory {
+    kGlobal = 1,
+    kClass,
+    kTemplate,  // type desc register at runtime
+};
+
+/* exoprt type desc */
+struct TypeDesc {
+    static constexpr uint8_t kObjRefIndex = 0xff;
+
+    int id;
+    TypeCategory category;
+    StringView name;
+    bool has_obj_index;         // 拥有引用计数
+    bool is_weak_obj;           // 支持弱对像
+    uint8_t lud_index;          // 用于lightuserdata类型索引
+    uint8_t weak_index;             //
+    const WeakObjProc* weak_proc;   //
+    const TypeDesc* super;          // 父类信息
+    const TypeDesc* child;          // 子类
+    const TypeDesc* brother;        // 兄弟
+    ITypeCaster* caster;        // 类型转换器
+    ExportVar* mem_vars;        // 成员变量
+    ExportVar* global_vars;     // 全局(静态)变量
+    ExportFunc* mem_funcs;      // 成员函数
+    ExportFunc* global_funcs;   // 全局(静态)函数
+};
+
+/* collection interface */
+struct ICollection {
+    virtual int Index(void* obj, State* l) = 0;
+    virtual int NewIndex(void* obj, State* l) = 0;
+    virtual int Length(void* obj, State* l) = 0;
+    virtual int Insert(void* obj, State* l) = 0;
+    virtual int Remove(void* obj, State* l) = 0;
+    virtual int Clear(void* obj, State* l) = 0;
+};
+
 struct ExtendDesc;
 
-struct WeakObjRef {
-    int32_t index;
-    int32_t serial;
-};
-
-enum class UserDataType : int8_t {
-    None = 0,
-    Declared,
-    Collection,
-    Extend,
-};
-
-enum class UserDataCategory : int8_t {
-    Ptr,
-    SmartPtr,
-    Value,
-};
-
-struct LightData {
-    union {
-        // raw ptr
-        struct {
-            int64_t type_index : 8;
-            int64_t ptr : 56;
-        };
-        // weak obj ref
-        struct {
-            int64_t type_index : 8;
-            int64_t index : 24;
-            int64_t serial_num : 32;
-        };
-        // none
-        struct {
-            int64_t value_;
-        };
-    };
-};
-
-struct UserData {
-    // describe user data info
-    struct {
-        int8_t tag_1_;
-        int8_t tag_2_;
-        UserDataType type;
-        UserDataCategory category;
-    };
-    // data information
-    union {
-        const DeclaredDesc* declared_desc;
-        const ExtendDesc* extend_desc;
-        ICollection* collection;
-    };
-    // own data
-    union {
-        WeakObjRef ref;
-        void* obj;
-    };
-};
-
 namespace internal {
+    enum class UdType : int8_t {
+        None = 0,
+        kDeclaredType,
+        kCollection,
+    };
+
+    enum class UvType : int8_t {
+        kNone = 0,
+        kPtr,
+        kSmartPtr,
+        kValue,
+    };
+
+    struct LightData {
+        union {
+            // raw ptr
+            struct {
+                int64_t type_index : 8;
+                int64_t ptr : 56;
+            };
+            // weak obj ref
+            struct {
+                int64_t type_index : 8;
+                int64_t index : 24;
+                int64_t serial_num : 32;
+            };
+            // none
+            struct {
+                int64_t value_;
+            };
+        };
+    };
+
+    struct UserData {
+        // describe user data info
+        struct {
+            int8_t tag_1_;
+            int8_t tag_2_;
+            UdType dc;
+            UvType vc;
+        };
+        // data information
+        union {
+            const TypeDesc* desc;
+            ICollection* collection;
+        };
+        // own data
+        union {
+            WeakObjRef ref;
+            void* obj;
+        };
+    };
+
     struct ObjData : UserData {
         virtual ~ObjData() { }
     };
@@ -129,3 +191,13 @@ private:
 template <>
 struct ObjectWrapper<void> {
 };
+
+template <typename Ty>
+struct IsDeclaredType {
+    static constexpr bool value = decltype(Check<Ty>(0))::value;
+private:
+    template <typename U> static auto Check(int)->decltype(xLuaGetTypeDesc(Identity<U>()), std::true_type());
+    template <typename U> static auto Check(...)->std::false_type;
+};
+
+XLUA_NAMESPACE_END
