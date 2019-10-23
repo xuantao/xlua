@@ -14,6 +14,10 @@ namespace internal {
         return nullptr;
     }
 
+    const TypeDesc* GetTypeDesc(int lud_index) {
+        return nullptr;
+    }
+
     WeakObjData GetWeakObjData(int weak_index, int obj_index) {
         return WeakObjData{0, 0};
     }
@@ -21,6 +25,11 @@ namespace internal {
     void SetWeakObjData(int weak_idnex, int obj_index, void* obj, const TypeDesc* desc) {
 
     }
+
+    int GetMaxWeakIndex() {
+        return 0;
+    }
+
 
 }
 

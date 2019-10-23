@@ -74,7 +74,7 @@ struct TypeDesc {
     bool is_weak_obj;           // 支持弱对像
     uint8_t lud_index;          // 用于lightuserdata类型索引
     uint8_t weak_index;             //
-    const WeakObjProc* weak_proc;   //
+    const WeakObjProc weak_proc;    //
     const TypeDesc* super;          // 父类信息
     const TypeDesc* child;          // 子类
     const TypeDesc* brother;        // 兄弟
@@ -99,9 +99,12 @@ struct ExtendDesc;
 
 namespace internal {
     enum class UdType : int8_t {
-        None = 0,
+        kNone = 0,
+
         kDeclaredType,
         kCollection,
+
+        kCount,
     };
 
     enum class UvType : int8_t {
