@@ -1,9 +1,10 @@
 #pragma once
+#include "xlua_config.h"
+#include "xlua_def.h"
 #include <lua.hpp>
 #include <type_traits>
 #include <limits>
 #include <string>
-#include "xlua_def.h"
 
 XLUA_NAMESPACE_BEGIN
 
@@ -110,26 +111,6 @@ namespace internal {
         kValue,
     };
 
-    struct LightData {
-        union {
-            // raw ptr
-            struct {
-                int64_t type_index : 8;
-                int64_t ptr : 56;
-            };
-            // weak obj ref
-            struct {
-                int64_t type_index : 8;
-                int64_t index : 24;
-                int64_t serial_num : 32;
-            };
-            // none
-            struct {
-                int64_t value_;
-            };
-        };
-    };
-
     struct UserData {
         // describe user data info
         struct {
@@ -143,11 +124,12 @@ namespace internal {
             const TypeDesc* desc;
             ICollection* collection;
         };
-        // own data
-        union {
-            WeakObjRef ref;
-            void* obj;
-        };
+        // obj data ptr
+        void* obj;
+    };
+
+    struct WeakRefData : UserData {
+        WeakObjRef ref;
     };
 
     struct ObjData : UserData {

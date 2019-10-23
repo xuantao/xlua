@@ -23,9 +23,33 @@ struct State;
 template <typename Ty>
 struct Identity { typedef Ty type; };
 
+struct weak_obj_tag {};
+
+/* weak obj reference */
+struct WeakObjRef {
+    int index;
+    int serial;
+};
+
+struct WeakObjProc {
+    typedef WeakObjRef(*MakeProc)(void* obj);
+    typedef void* (*GetProc)(WeakObjRef);
+
+    size_t tag;
+    MakeProc maker;
+    GetProc getter;
+};
+
+namespace internal {
+    /* xlua weak obj reference support */
+    WeakObjRef MakeWeakObjRef(void* obj, ObjectIndex& index);
+    void* GetWeakObjPtr(WeakObjRef ref);
+}
+
 /* lua weak object reference index */
 class ObjectIndex {
     friend void FreeObjectIndex(ObjectIndex&);
+    friend WeakObjRef internal::MakeWeakObjRef(void*, ObjectIndex&);
 
 public:
     ObjectIndex() = default;
@@ -50,28 +74,6 @@ private:
     template <typename U> static auto Check(...)->std::false_type;
 };
 
-struct WeakObjTag {};
-
-/* weak obj reference */
-struct WeakObjRef {
-    int index;
-    int serial;
-};
-
-struct WeakObjProc {
-    typedef WeakObjRef (*MakeProc)(void* obj);
-    typedef void* (*GetProc)(WeakObjRef);
-
-    size_t tag;
-    MakeProc maker;
-    GetProc getter;
-};
-
-namespace internal {
-    /* xlua weak obj reference support */
-    WeakObjRef MakeWeakObjRef(void* obj, ObjectIndex& index);
-    void* GetWeakObjPtr(WeakObjRef ref);
-}
 
 XLUA_NAMESPACE_END
 
@@ -90,7 +92,7 @@ inline const XLUA_NAMESPACE WeakObjProc* xLuaQueryWeakObjProc(...) { return null
 template <typename Ty, typename std::enable_if<XLUA_NAMESPACE IsWeakObj<Ty>::value, int>::type = 0>
 const XLUA_NAMESPACE WeakObjProc* xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<Ty>) {
     static XLUA_NAMESPACE WeakObjProc proc {
-        typeid(XLUA_NAMESPACE WeakObjTag).hash_code(),
+        typeid(XLUA_NAMESPACE weak_obj_tag).hash_code(),
         [](void* obj) -> WeakObjRef {
             return XLUA_NAMESPACE internal::MakeWeakObjRef(obj, static_cast<Ty*>(obj)->xlua_obj_index_);
         },

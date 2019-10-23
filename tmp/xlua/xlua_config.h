@@ -17,7 +17,7 @@
 #endif
 
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
-    #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, SrcInfo)   (SrcInfo == DstInfo ? Ptr : SrcInfo->caster->ToSuper(Ptr, DstInfo))
+    #define _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, DstInfo)   (SrcInfo == DstInfo ? Ptr : SrcInfo->caster->ToSuper(Ptr, DstInfo))
     #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          DstInfo->caster->ToWeakPtr(Ptr)
 #else // XLUA_ENABLE_MULTIPLE_INHERITANCE
     #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, Info)      Ptr
@@ -28,13 +28,12 @@
  * 导出对象指针使用LightUserData代替FullUserData, 避免Lua的GC以提升效率
 */
 #ifndef XLUA_ENABLE_LUD_OPTIMIZE
-    #define XLUA_ENABLE_LUD_OPTIMIZE 1
-#endif
-
-/* 检查系统是否支持 */
-#if XLUA_ENABLE_LUD_OPTIMIZE
+    ///* 检查系统是否支持 */
+    #if INTPTR_MAX == INT64_MAX
+        #define XLUA_ENABLE_LUD_OPTIMIZE 1
+    #endif
+#elif XLUA_ENABLE_LUD_OPTIMIZE
     #if INTPTR_MAX != INT64_MAX
-        #undef XLUA_ENABLE_LUD_OPTIMIZE
-        #define XLUA_ENABLE_LUD_OPTIMIZE 0
+        //TODO: setup compile error
     #endif
 #endif

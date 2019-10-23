@@ -10,15 +10,12 @@
     <ClCompile Include="xlua.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="mian.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="state.h">
-      <Filter>src</Filter>
-    </ClInclude>
     <ClInclude Include="common.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="state_data.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="support.h">
@@ -28,6 +25,15 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="xlua_config.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="xlua.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="state.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="xlua_state.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

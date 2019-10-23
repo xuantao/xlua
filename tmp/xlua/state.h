@@ -5,6 +5,88 @@
 XLUA_NAMESPACE_BEGIN
 
 namespace internal {
+#if XLUA_ENABLE_LUD_OPTIMIZE
+    struct Env {
+        int max_weak_index = 0;
+    };
+
+    struct WeakObjData {
+        void* obj;
+        const TypeDesc* desc;
+    };
+
+    struct LightData {
+        union {
+            // raw ptr
+            struct {
+                int64_t lud_index : 8;
+                int64_t ptr : 56;
+            };
+            // weak obj ref
+            struct {
+                int64_t lud_index : 8;
+                int64_t index : 24;
+                int64_t serial_num : 32;
+            };
+            // none
+            struct {
+                int64_t value_;
+            };
+        };
+    };
+
+    WeakObjData GetWeakObjData(int weak_index, int obj_index);
+    void SetWeakObjData(int weak_idnex, int obj_index, void* obj, const TypeDesc* desc);
+
+    template <typename Ty, typename std::enable_if<std::is_same<DeclaredCategory, typename Support<Ty>::category>::value, int>::type = 0>
+    inline Ty* As(LightData ud) {
+        const auto* desc = Support<Ty>::Desc();
+        if (ud.lud_index == 0)
+            return nullptr;
+
+        if (ud.lud_index <= UniqueObj<Env>::Instance().max_weak_index) {
+            // weak obj ref
+        }
+        else {
+            // user data ptr
+        }
+
+        return nullptr;
+    }
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+
+    inline bool IsBaseOf(const TypeDesc* base, const TypeDesc* drive) {
+        while (drive && drive != base)
+            drive = drive->super;
+        return drive == base;
+    }
+
+    template <typename Ty>
+    inline Ty* As_(UserData* ud, const TypeDesc* desc) {
+        if (ud->dc != UdType::kDeclaredType)
+            return nullptr;
+        if (!IsBaseOf(desc, ud->desc))
+            return nullptr;
+        if (ud->desc->weak_index != 0) {
+            auto* wud = static_cast<WeakRefData*>(ud);
+            if (ud->desc->weak_proc->getter(wud->ref) == nullptr)
+                return nullptr;
+        }
+        return static_cast<Ty*(_XLUA_TO_SUPER_PTR(ud->obj, ud->desc, desc));
+    }
+
+    template <typename Ty>
+    inline Ty* As_(UserData* ud, ICollection* desc) {
+        if (ud->dc != UdType::kCollection || ud->collection != desc)
+            return nullptr;
+        return static_cast<Ty*>(ud);
+    }
+
+    template <typename Ty, typename std::enable_if<std::is_base_of<ObjectCategory_, typename Support<Ty>::category>::value, int>::type = 0>
+    inline Ty* As(UserData* ud) {
+        return As_(ud, Support<Ty>::Desc());
+    }
+
 
     struct StateData {
         UserData* LoadUserData(int index) {

@@ -1,6 +1,6 @@
 #pragma once
 #include "common.h"
-#include "state_data.h"
+#include "state.h"
 
 XLUA_NAMESPACE_BEGIN
 
@@ -11,18 +11,18 @@ struct TypeTrait {
 };
 
 class State {
-    template <typename Ty> friend struct Support;
+//    template <typename Ty> friend struct Support;
 
 public:
     lua_State* GetState() { return nullptr; }
 
-    UserData* LoadUserData(int index) {
-        return nullptr;
-    }
+    //UserData* LoadUserData(int index) {
+    //    return nullptr;
+    //}
 
-    LightData LoadLightData(int index) {
-        return LightData();
-    }
+    //LightData LoadLightData(int index) {
+    //    return LightData();
+    //}
 
     internal::StateData state_;
 };
