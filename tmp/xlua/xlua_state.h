@@ -4,18 +4,6 @@
 
 XLUA_NAMESPACE_BEGIN
 
-enum class VarType : int8_t {
-    kNil,
-    kBoolean,
-    kNumber,
-    kInteger,
-    kString,
-    kTable,
-    kFunction,
-    kLightUserData,
-    kUserData,
-};
-
 class Variant;
 
 class Object {
@@ -27,15 +15,15 @@ public:
     Object() : ref_(-1), state_(nullptr) {}
     Object(Object&& obj) { Move(obj); }
     Object(const Object& obj) : ref_(obj.ref_), state_(obj.state_) { AddRef(); }
-    ~Object() { Release(); }
+    ~Object() { DecRef(); }
 
     void operator = (Object&& obj) {
-        Release();
+        DecRef();
         Move(obj);
     }
 
     void operator = (const Object& obj) {
-        Release();
+        DecRef();
         ref_ = obj.ref_;
         state_ = obj.state_;
         AddRef();
@@ -54,7 +42,7 @@ private:
     }
 
     void AddRef();
-    void Release();
+    void DecRef();
 
 protected:
     int ref_;
@@ -87,7 +75,7 @@ public:
     Function() {}
 
 public:
-
+    //TODO: call
 };
 
 class UserData : public Object {
@@ -103,11 +91,57 @@ public:
 public:
     inline bool IsValid() const { return state_ != nullptr; }
 
+    template <typename Ty>
+    inline bool IsType() {
+        using purify_type = typename PurifyType<Ty>::type;
+        static_assert(std::is_base_of<ObjectCategory_, Support<purify_type>::category,
+            "not support type");
+        if (!IsValid())
+            return false;
+
+#if XLUA_ENABLE_LUD_OPTIMIZE
+        if (IsLud())
+            return internal::IsUd(Make(ptr_), Support<purify_type>::Desc());
+        else
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+            return internal::IsUd(static_cast<internal::UserData*>(ptr_), Support<purify_type>::Desc());
+    }
+
+    template <typename Ty, typename std::enable_if<std::is_reference<Ty>::value, int>::type = 0>
+    inline Ty As() {
+        using purify_type = typename PurifyType<Ty>::type;
+        static_assert(std::is_base_of<ObjectCategory_, Support<purify_type>::category,
+            "not support type");
+        if (!IsValid())
+            return nullptr;
+
+#if XLUA_ENABLE_LUD_OPTIMIZE
+        if (IsLud())
+            return internal::As<purify_type>(Make(ptr_));
+        else
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+            return internal::As<purify_type>(static_cast<internal::UserData*>(ptr_));
+    }
+
+#if XLUA_ENABLE_LUD_OPTIMIZE
 private:
     inline bool IsLud() const { return IsValid() && ref_ == -1; }
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
 
 private:
     void* ptr_;
+};
+
+enum class VarType : int8_t {
+    kNil,
+    kBoolean,
+    kNumber,
+    kInteger,
+    kString,
+    kTable,
+    kFunction,
+    kLightUserData,
+    kUserData,
 };
 
 class Variant {
@@ -204,8 +238,53 @@ private:
 };
 
 class State {
+    friend class Object;
 public:
     lua_State* GetState() { return nullptr; }
+
+    VarType GetType(int index) {
+        int lty = lua_type(state_.l_, index);
+        void* ptr = nullptr;
+        VarType vt = VarType::kNil;
+
+        switch (lty) {
+        case LUA_TNIL:
+            break;
+        case LUA_TBOOLEAN:
+            vt = VarType::kBoolean;
+            break;
+        case LUA_TLIGHTUSERDATA:
+            ptr = lua_touserdata(state_.l_, index);
+#if XLUA_ENABLE_LUD_OPTIMIZE
+            if (internal::LightData::IsValid(ptr))
+                vt = VarType::kUserData;
+            else
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+                vt = VarType::kLightUserData;
+            break;
+        case LUA_TNUMBER:
+            if (lua_isinteger(state_.l_, index))
+                vt = VarType::kInteger;
+            else
+                vt = VarType::kNumber;
+            break;
+        case LUA_TSTRING:
+            vt = VarType::kString;
+            break;
+        case LUA_TTABLE:
+            vt = VarType::kTable;
+            break;
+        case LUA_TFUNCTION:
+            vt = VarType::kFunction;
+            break;
+        case LUA_TUSERDATA:
+            ptr = lua_touserdata(state_.l_, index);
+            if (internal::IsValid(static_cast<internal::UserData*>(ptr)))
+                vt = VarType::kUserData;
+            break;
+        }
+        return vt;
+    }
 
     Variant LoadVar(int index) {
         auto* l = state_.l_;
@@ -216,17 +295,16 @@ public:
 
         switch (lty) {
         case LUA_TNIL:
-            return Variant();
+            break;
         case LUA_TBOOLEAN:
             return Variant((bool)lua_toboolean(state_.l_, index));
         case LUA_TLIGHTUSERDATA:
             ptr = lua_touserdata(l, index);
 #if XLUA_ENABLE_LUD_OPTIMIZE
             if (internal::LightData::IsValid(ptr))
-                Variant(ptr, Object(-1, this));
+                return Variant(ptr, Object(-1, this));
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
             return Variant(ptr);
-            break;
         case LUA_TNUMBER:
             if (lua_isinteger(l, index))
                 return Variant(lua_tointeger(l, index));
@@ -236,15 +314,14 @@ public:
             str = lua_tolstring(l, index, &len);
             return Variant(str, len);
         case LUA_TTABLE:
-            return Variant(VarType::kTable, Object(-1, this));
+            return Variant(VarType::kTable, Object(state_.RefObj(index), this));
         case LUA_TFUNCTION:
-            return Variant(VarType::kFunction, Object(-1, this));
+            return Variant(VarType::kFunction, Object(state_.RefObj(index), this));
         case LUA_TUSERDATA:
             ptr = lua_touserdata(l, index);
             if (internal::IsValid(static_cast<internal::UserData*>(ptr)))
-                return Variant(VarType::kUserData, Object(-1, this));
-            else
-                return Variant();
+                return Variant(VarType::kUserData, Object(state_.RefObj(index), this));
+            break;
         }
         return Variant();
     }
@@ -270,7 +347,7 @@ public:
             break;
         case VarType::kTable:
         case VarType::kFunction:
-            PushObject_(var.obj_);
+            PushObj_(var.obj_);
             break;
         case VarType::kLightUserData:
             lua_pushlightuserdata(l, var.ptr_);
@@ -281,17 +358,17 @@ public:
                 lua_pushlightuserdata(l, var.ptr_);
             else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-                PushObject_(var.obj_);
+                PushObj_(var.obj_);
             break;
         }
     }
 
     inline void PushVar(const Table& var) {
-        PushObject_(var);
+        PushObj_(var);
     }
 
     inline void PushVar(const Function& var) {
-        PushObject_(var);
+        PushObj_(var);
     }
 
     inline void PushVar(const UserData& var) {
@@ -300,7 +377,7 @@ public:
             lua_pushlightuserdata(state_.l_, var.ptr_);
         else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-            PushObject_(var);
+            PushObj_(var);
     }
 
     template <typename Ty>
@@ -329,12 +406,24 @@ public:
         Support<typename PurifyType<Ty>::type>::Push(this, val);
     }
 
-    void PushObject_(const Object& obj) {
-
+    void PushObj_(const Object& obj) {
+        if (!obj.IsValid())
+            return;
+        state_.LoadRef(obj.ref_);
     }
 
     internal::StateData state_;
 };
+
+inline void Object::AddRef() {
+    if (ref_ != -1)
+        state_->state_.AddRef(ref_);
+}
+
+inline void Object::DecRef() {
+    if (ref_ != -1)
+        state_->state_.DecRef(ref_);
+}
 
 XLUA_NAMESPACE_END
 

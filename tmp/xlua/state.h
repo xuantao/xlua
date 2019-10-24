@@ -92,6 +92,13 @@ namespace internal {
         inline WeakObjRef ToWeakRef() const {
             return WeakObjRef{ref_index, ref_serial};
         }
+
+        static inline LightData Make(void* p) {
+            LightData ld;
+            ld.value_ = p;
+            return ld;
+        }
+
         static inline bool IsValid(void* p) {
             auto val = reinterpret_cast<uint64_t>(p);
             return (val & 0xff00000000000000) != 0;
@@ -237,6 +244,11 @@ namespace internal {
 
         void OnGc(UserData* ud) {
         }
+
+        int RefObj(int index) { return -1; }
+        bool LoadRef(int ref) { return false; }
+        void AddRef(int ref) {}
+        void DecRef(int ref) {}
 
         lua_State* l_;
         std::vector<std::unordered_map<void*, UdCache>> shared_ptrs_;

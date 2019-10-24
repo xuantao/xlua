@@ -64,8 +64,8 @@ struct Support<Variant> {
     typedef ValueCategory category;
     static inline const char* Name() { return "xlua::Variant"; }
     static inline bool Check(State* l, int index) { return true; }
-    //static inline Variant Load(State* l, int index) { return l->LoadVar(index); }
-    //static inline void Push(State* l, const Variant& var) { l->PushVar(var); }
+    static inline Variant Load(State* l, int index) { return l->LoadVar(index); }
+    static inline void Push(State* l, const Variant& var) { l->PushVar(var); }
 };
 
 template <>
@@ -78,8 +78,8 @@ struct Support<Table> {
         int lty = lua_type(l->GetState(), index);
         return lty == LUA_TNIL || lty == LUA_TTABLE;
     }
-    //static inline Table Load(State* l, int index) { return l->LoadTable(index); }
-    //static inline void Push(State* l, const Table& var) { l->PushTable(var); }
+    static inline Table Load(State* l, int index) { return l->LoadVar(index).ToTable(); }
+    static inline void Push(State* l, const Table& var) { l->PushVar(var); }
 };
 
 template <>
@@ -92,22 +92,22 @@ struct Support<Function> {
         int lty = lua_type(l->GetState(), index);
         return lty == LUA_TNIL || lty == LUA_TFUNCTION;
     }
-    //static inline Function Load(State* l, int index) { return l->LoadFunc(index); }
-    //static inline void Push(State* l, const Function& var) { l->PushFunc(var); }
+    static inline Function Load(State* l, int index) { return l->LoadVar(index).ToFunction(); }
+    static inline void Push(State* l, const Function& var) { l->PushVar(var); }
 };
 
 template <>
-struct Support<UserVar> {
-    typedef UserVar value_type;
+struct Support<UserData> {
+    typedef UserData value_type;
     typedef ValueCategory category;
 
     static inline const char* Name() { return "xlua::UserVar"; }
     static inline bool Check(State* l, int index) {
         int lty = lua_type(l->GetState(), index);
-        return lty == LUA_TNIL || lty == LUA_TUSERDATA;
+        return lty == LUA_TNIL || lty == LUA_TUSERDATA || lty == LUA_TLIGHTUSERDATA;
     }
-    //static inline UserVar Load(State* l, int index) { return l->LoadUserVar(index); }
-    //static inline void Push(State* l, const UserVar& var) { l->PushUserVar(var); }
+    static inline UserData Load(State* l, int index) { return l->LoadVar(index).ToUserData(); }
+    static inline void Push(State* l, const UserData& var) { l->PushVar(var); }
 };
 
 /* nil support */
