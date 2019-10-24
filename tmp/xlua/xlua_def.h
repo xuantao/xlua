@@ -6,9 +6,6 @@
 #define XLUA_NAMESPACE_END      }
 #define XLUA_NAMESPACE          xlua::
 
-//#define _XLUA_INTERAL_NAMESPACE_BEGIN   namespace internal {
-//#define _XLUA_INTERAL_NAMESPACE_END     }
-
 #define _XLUA_TAG_1  'x'
 #define _XLUA_TAG_2  'l'
 
@@ -86,12 +83,12 @@ XLUA_NAMESPACE_END
     const XLUA_NAMESPACE TypeDesc* xLuaGetTypeDesc(XLUA_NAMESPACE Identity<ClassName>)
 
 /* default weak obj proc queryer */
-inline const XLUA_NAMESPACE WeakObjProc* xLuaQueryWeakObjProc(...) { return nullptr; }
+inline XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(...) { return XLUA_NAMESPACE WeakObjProc{0, nullptr, nullptr}; }
 
 /* query xlua weak obj proc */
 template <typename Ty, typename std::enable_if<XLUA_NAMESPACE IsWeakObj<Ty>::value, int>::type = 0>
-const XLUA_NAMESPACE WeakObjProc* xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<Ty>) {
-    static XLUA_NAMESPACE WeakObjProc proc {
+const XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<Ty>) {
+    return XLUA_NAMESPACE WeakObjProc proc {
         typeid(XLUA_NAMESPACE weak_obj_tag).hash_code(),
         [](void* obj) -> WeakObjRef {
             return XLUA_NAMESPACE internal::MakeWeakObjRef(obj, static_cast<Ty*>(obj)->xlua_obj_index_);
@@ -100,5 +97,4 @@ const XLUA_NAMESPACE WeakObjProc* xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<T
             return XLUA_NAMESPACE internal::GetWeakObjPtr(ref);
         }
     };
-    return &proc;
 }

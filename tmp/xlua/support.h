@@ -8,11 +8,6 @@
 
 XLUA_NAMESPACE_BEGIN
 
-struct Variant {};
-struct Table {};
-struct Function {};
-struct UserVar {};
-
 namespace internal {
     template <typename Ty, bool>
     struct ExportSupport {
@@ -24,7 +19,7 @@ namespace internal {
         typedef Ty value_type;
         typedef DeclaredCategory category;
 
-        static inline TypeDesc* Desc() { return xLuaGetTypeDesc(Identity<Ty>()); }
+        static inline const TypeDesc* Desc() { return xLuaGetTypeDesc(Identity<Ty>()); }
         static inline const char* Name() { return Desc()->name;  }
         static inline bool Check(State* l, int index) {
             return lua_isnil(l->GetState(), index) || l->state_.IsUd<Ty>(index);
@@ -43,7 +38,7 @@ namespace internal {
         typedef DeclaredCategory category;
         typedef ExportSupport<Ty*, true> supporter;
 
-        static inline TypeInfo* Desc() { return supporter::Desc(); }
+        static inline const TypeInfo* Desc() { return supporter::Desc(); }
         static inline const char* Name() { return supporter::Name(); }
         static inline bool Check(State* l, int index) {
             return supporter::Load(l, index) != nullptr;

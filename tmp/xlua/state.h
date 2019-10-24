@@ -57,6 +57,10 @@ namespace internal {
         return static_cast<Ty*>(As_(ud, Support<Ty>::Desc()));
     }
 
+    inline bool IsValid(const UserData* ud) {
+        return ud->tag_1_ == _XLUA_TAG_1 && ud->tag_2_ == _XLUA_TAG_2;
+    }
+
 #if XLUA_ENABLE_LUD_OPTIMIZE
     struct WeakObjData {
         void* obj;
@@ -84,6 +88,13 @@ namespace internal {
 
         inline void* ToObj() const {
             return reinterpret_cast<void*>(ptr);
+        }
+        inline WeakObjRef ToWeakRef() const {
+            return WeakObjRef{ref_index, ref_serial};
+        }
+        static inline bool IsValid(void* p) {
+            auto val = reinterpret_cast<uint64_t>(p);
+            return (val & 0xff00000000000000) != 0;
         }
     };
 
@@ -117,7 +128,7 @@ namespace internal {
             auto data = GetWeakObjData(ud.weak_index, ud.ref_index);
             if (data.desc == nullptr || !IsBaseOf(desc, data.desc))
                 return nullptr;
-            if (data.desc->weak_proc.getter(WeakObjRef{ ud.ref_index, ud.ref_serial }) == nullptr)
+            if (data.desc->weak_proc.getter(ud.ToWeakRef()) == nullptr)
                 return nullptr;
             return _XLUA_TO_SUPER_PTR(data.obj, data.desc, desc);
         } else {
@@ -191,13 +202,13 @@ namespace internal {
             if (lua_islightuserdata(l_, index)) {
                 LightData ld;
                 ld.value_ = lua_touserdata(l_, index);
-                return As<Ty>(ld, Support<Ty>::Desc());
+                return As<Ty>(ld);
             }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
             auto* ud = LoadUserData(index);
             if (ud == nullptr)
                 return nullptr;
-            return As<Ty>(ud, Support<Ty>::Desc());
+            return As<Ty>(ud);
         }
 
         // value
@@ -206,13 +217,17 @@ namespace internal {
         }
 
         // collection ptr
-        template <typename Ty, typename std::enable_if<std::is_same<CollectionCategory, Support<Ty>::category>::value, int>::type = 0>
+        template <typename Ty, typename std::enable_if<std::is_same<CollectionCategory, typename Support<Ty>::category>::value, int>::type = 0>
         inline void PushUd(Ty* ptr) {
         }
 
         // delcared type ptr
-        template <typename Ty, typename std::enable_if<std::is_same<DeclaredCategory, Support<Ty>::category>::value, int>::type = 0>
+        template <typename Ty, typename std::enable_if<std::is_same<DeclaredCategory, typename Support<Ty>::category>::value, int>::type = 0>
         inline void PushUd(Ty* ptr) {
+#if XLUA_ENABLE_LUD_OPTIMIZE
+            //TODO:
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+            //TODO:
         }
 
         // smart ptr
