@@ -6,6 +6,11 @@
 #include <lua.hpp>
 
 XLUA_NAMESPACE_BEGIN
+#if XLUA_ENABLE_LUD_OPTIMIZE
+    #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TLIGHTUSERDATA || type == LUA_TUSERDATA)
+#else
+    #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TFullData)
+#endif
 
 namespace internal {
     inline bool IsBaseOf(const TypeDesc* base, const TypeDesc* drive) {
@@ -20,7 +25,7 @@ namespace internal {
         return dest;
     }
 
-    inline bool IsUd(UserData* ud, const TypeDesc* desc) {
+    inline bool IsUd(FullData* ud, const TypeDesc* desc) {
         if (ud->dc != UdType::kDeclaredType)
             return false;
         if (!IsBaseOf(desc, ud->desc))
@@ -28,11 +33,11 @@ namespace internal {
         return true;
     }
 
-    inline bool IsUd(UserData* ud, ICollection* collection) {
+    inline bool IsUd(FullData* ud, ICollection* collection) {
         return ud->dc == UdType::kCollection && ud->collection == collection;
     }
 
-    inline void* As(UserData* ud, const TypeDesc* desc) {
+    inline void* As(FullData* ud, const TypeDesc* desc) {
         if (!IsUd(ud, desc))
             return nullptr;
         // check the weak obj ref is valid
@@ -44,25 +49,25 @@ namespace internal {
         return _XLUA_TO_SUPER_PTR(ud->obj, ud->desc, desc);
     }
 
-    inline void* As(UserData* ud, ICollection* desc) {
+    inline void* As(FullData* ud, ICollection* desc) {
         if (!IsUd(ud, desc))
             return nullptr;
         return ud->obj;
     }
 
-    template <typename Ty, typename std::enable_if<std::is_base_of<ObjectCategory_, typename Support<Ty>::category>::value, int>::type = 0>
-    inline Ty* As(UserData* ud) {
+    template <typename Ty, typename std::enable_if<std::is_base_of<object_category_tag_, typename Support<Ty>::category>::value, int>::type = 0>
+    inline Ty* As(FullData* ud) {
         if (ud->tag_1_ != _XLUA_TAG_1 || ud->tag_2_ != _XLUA_TAG_2)
             return nullptr;
         return static_cast<Ty*>(As_(ud, Support<Ty>::Desc()));
     }
 
-    inline bool IsValid(const UserData* ud) {
+    inline bool IsValid(const FullData* ud) {
         return ud->tag_1_ == _XLUA_TAG_1 && ud->tag_2_ == _XLUA_TAG_2;
     }
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
-    struct WeakObjData {
+    struct WeakObjCache {
         void* obj;
         const TypeDesc* desc;
     };
@@ -90,7 +95,7 @@ namespace internal {
             return reinterpret_cast<void*>(ptr);
         }
         inline WeakObjRef ToWeakRef() const {
-            return WeakObjRef{ref_index, ref_serial};
+            return WeakObjRef{(int)ref_index, (int)ref_serial};
         }
 
         static inline LightData Make(void* p) {
@@ -106,7 +111,7 @@ namespace internal {
     };
 
     const TypeDesc* GetTypeDesc(int lud_index);
-    WeakObjData GetWeakObjData(int weak_index, int obj_index);
+    WeakObjCache GetWeakObjData(int weak_index, int obj_index);
     void SetWeakObjData(int weak_idnex, int obj_index, void* obj, const TypeDesc* desc);
     int GetMaxWeakIndex();
 
@@ -178,11 +183,79 @@ namespace internal {
     };
 
     struct StateData {
-        UserData* LoadRawUd(int index) {
+        int LoadGolbal(const char* path) {
+            if (path == nullptr || path[0] == 0) {
+                lua_pushglobaltable(l_);
+                return LUA_TTABLE;
+            }
+
+            lua_pushglobaltable(l_);
+            while (const char* sub = ::strchr(path, '.')) {
+                lua_pushlstring(l_, path, sub - path);
+                if (lua_gettable(l_, -2) != LUA_TTABLE) {
+                    lua_pop(l_, 2);
+                    lua_pushnil(l_);
+                    return LUA_TNIL;
+                }
+
+                lua_remove(l_, -2);
+                path = sub + 1;
+            }
+
+            int ty = lua_getfield(l_, -1, path);
+            lua_remove(l_, -2);
+            return ty;
+        }
+
+        bool SetGlobal(const char* path, bool create, bool rawset) {
+            int top = lua_gettop(l_);
+            if (top == 0)
+                return false;           // none value
+
+            if (path == nullptr || *path == 0) {
+                lua_pop(l_, 1);         // pop value
+                return false;           // wrong name
+            }
+
+            lua_pushglobaltable(l_);
+            while (const char* sub = ::strchr(path, '.')) {
+                lua_pushlstring(l_, path, sub - path);
+                int l_ty = lua_gettable(l_, -2);
+                if (l_ty == LUA_TNIL && create) {
+                    lua_pop(l_, 1);                         // pop nil
+                    lua_newtable(l_);                       // new table
+                    lua_pushlstring(l_, path, sub - path);  // key
+                    lua_pushvalue(l_, -2);                  // copy table
+                    if (rawset)
+                        lua_rawset(l_, -4);
+                    else
+                        lua_settable(l_, -4);               // set field
+                }
+                else if (!_IS_TABLE_TYPE(l_ty)) {
+                    lua_pop(l_, 3);                         // [1]:value, [2]:table, [3]:unknown value
+                    return false;
+                }
+
+                lua_remove(l_, -2);
+                path = sub + 1;
+            }
+
+            lua_pushstring(l_, path);
+            lua_rotate(l_, top, -1);
+            if (rawset)
+                lua_rawset(l_, -3);
+            else
+                lua_settable(l_, -3);    // set field
+
+            lua_pop(l_, 1);              // [1]: table
+            return true;
+        }
+
+        FullData* LoadRawUd(int index) {
             if (lua_type(l_, index) != LUA_TUSERDATA)
                 return nullptr;
 
-            auto* ud = static_cast<UserData*>(lua_touserdata(l_, index));
+            auto* ud = static_cast<FullData*>(lua_touserdata(l_, index));
             if (ud->tag_1_ != _XLUA_TAG_1 || ud->tag_2_ != _XLUA_TAG_2)
                 return nullptr;
             return ud;
@@ -192,12 +265,11 @@ namespace internal {
         inline bool IsUd(int index) {
 #if XLUA_ENABLE_LUD_OPTIMIZE
             if (lua_islightuserdata(l_, index)) {
-                LightData ld;
-                ld.value_ = lua_touserdata(l_, index);
-                return IsUd(ld, Support<Ty>::Desc());
+                return IsUd(LightData::Make(lua_touserdata(l_, index)),
+                    Support<Ty>::Desc());
             }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-            auto* ud = LoadUserData(index);
+            auto* ud = LoadRawUd(index);
             if (ud == nullptr)
                 return false;
             return IsUd(ud, Support<Ty>::Desc());
@@ -207,12 +279,10 @@ namespace internal {
         Ty* LoadUd(int index) {
 #if XLUA_ENABLE_LUD_OPTIMIZE
             if (lua_islightuserdata(l_, index)) {
-                LightData ld;
-                ld.value_ = lua_touserdata(l_, index);
-                return As<Ty>(ld);
+                return As<Ty>(LightData::Make(lua_touserdata(l_, index)));
             }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-            auto* ud = LoadUserData(index);
+            auto* ud = LoadRawUd(index);
             if (ud == nullptr)
                 return nullptr;
             return As<Ty>(ud);
@@ -224,12 +294,12 @@ namespace internal {
         }
 
         // collection ptr
-        template <typename Ty, typename std::enable_if<std::is_same<CollectionCategory, typename Support<Ty>::category>::value, int>::type = 0>
+        template <typename Ty, typename std::enable_if<std::is_same<collection_category_tag, typename Support<Ty>::category>::value, int>::type = 0>
         inline void PushUd(Ty* ptr) {
         }
 
         // delcared type ptr
-        template <typename Ty, typename std::enable_if<std::is_same<DeclaredCategory, typename Support<Ty>::category>::value, int>::type = 0>
+        template <typename Ty, typename std::enable_if<std::is_same<declared_category_tag, typename Support<Ty>::category>::value, int>::type = 0>
         inline void PushUd(Ty* ptr) {
 #if XLUA_ENABLE_LUD_OPTIMIZE
             //TODO:
@@ -239,10 +309,10 @@ namespace internal {
 
         // smart ptr
         template <typename Sty, typename Ty>
-        inline void PushUd(const Sty& s, Ty* ptr, size_t tag) {
+        inline void PushSmartPtr(const Sty& s, Ty* ptr, size_t tag) {
         }
 
-        void OnGc(UserData* ud) {
+        void OnGc(FullData* ud) {
         }
 
         int RefObj(int index) { return -1; }

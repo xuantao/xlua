@@ -1,13 +1,70 @@
 #pragma once
 #include "common.h"
 #include "state.h"
+#include <assert.h>
+#include <functional>
 
 XLUA_NAMESPACE_BEGIN
 
 class Variant;
 
+enum class VarType : int8_t {
+    kNil,
+    kBoolean,
+    kNumber,
+    kInteger,
+    kString,
+    kTable,
+    kFunction,
+    kLightUserData,
+    kUserData,
+};
+
+/* lua stack guarder */
+class StackGuard {
+public:
+    StackGuard() : top_(0), l_(nullptr) {}
+    StackGuard(State* l);
+    StackGuard(State* l, int off);
+    StackGuard(StackGuard&& other) : l_(other.l_), top_(other.top_) {
+        other.l_ = nullptr;
+    }
+
+    ~StackGuard();
+
+    StackGuard(const StackGuard&) = delete;
+    StackGuard& operator = (const StackGuard&) = delete;
+
+protected:
+    int top_;
+    State* l_;
+};
+
+/* lua函数调用堆栈保护
+ * lua函数执行以后返回值存放在栈上, 如果清空栈可能会触发GC
+ * 导致引用的局部变量失效造成未定义行为
+*/
+class CallGuard : private StackGuard {
+    friend class State;
+
+public:
+    CallGuard() : StackGuard() {}
+    CallGuard(State* l) : StackGuard(l) {}
+    CallGuard(State* l, int off) : StackGuard(l, off) {}
+    CallGuard(CallGuard&& other) : StackGuard(std::move(other)), ok_(other.ok_) {}
+
+    CallGuard(const CallGuard&) = delete;
+    void operator = (const CallGuard&) = delete;
+
+public:
+    explicit operator bool() const { return ok_; }
+
+private:
+    bool ok_ = false;
+};
+
+/* lua object */
 class Object {
-    friend class internal::StateData;
     friend class State;
     Object(int ref, State* s) : ref_(ref), state_(s) {}
 
@@ -49,6 +106,7 @@ protected:
     State* state_;
 };
 
+/* lua table */
 class Table : public Object {
     friend class Variant;
     friend class State;
@@ -57,11 +115,28 @@ class Table : public Object {
     Table(const Object& obj) : Object(obj) {}
 
 public:
-    Table() { }
+    Table() {}
 
 public:
-    //TODO:
+    template <typename Ky>
+    VarType LoadFeild(const Ky& key);
 
+    template <typename Ky>
+    void SetFeild(const Ky& key);
+
+    template <typename Ky, typename Ty>
+    Ty GetFeild(const Ky& key);
+
+    template <typename Ky, typename Ty>
+    void SetFeild(const Ky& key, Ty& val);
+
+    template <typename Ky, typename... Rys, typename... Args>
+    CallGuard Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args);
+
+    template <typename Ky, typename... Rys, typename... Args>
+    CallGuard DotCall(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args);
+
+    //TODO: iterator
 };
 
 class Function : public Object {
@@ -75,7 +150,8 @@ public:
     Function() {}
 
 public:
-    //TODO: call
+    template <typename Ky, typename... Rys, typename... Args>
+    CallGuard Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args);
 };
 
 class UserData : public Object {
@@ -89,39 +165,45 @@ public:
     UserData() : ptr_(nullptr) {}
 
 public:
+#if XLUA_ENABLE_LUD_OPTIMIZE
     inline bool IsValid() const { return state_ != nullptr; }
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
 
     template <typename Ty>
     inline bool IsType() {
         using purify_type = typename PurifyType<Ty>::type;
-        static_assert(std::is_base_of<ObjectCategory_, Support<purify_type>::category,
+        static_assert(std::is_base_of<object_category_tag_, Support<purify_type>::category>::value,
             "not support type");
         if (!IsValid())
             return false;
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
         if (IsLud())
-            return internal::IsUd(Make(ptr_), Support<purify_type>::Desc());
+            return internal::IsUd(internal::LightData::Make(ptr_), Support<purify_type>::Desc());
         else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-            return internal::IsUd(static_cast<internal::UserData*>(ptr_), Support<purify_type>::Desc());
+            return internal::IsUd(static_cast<internal::FullData*>(ptr_), Support<purify_type>::Desc());
     }
 
-    template <typename Ty, typename std::enable_if<std::is_reference<Ty>::value, int>::type = 0>
+    template <typename Ty,
+        typename std::enable_if<
+        std::is_base_of<object_category_tag_, typename Support<Ty>::category>::value &&
+        std::is_pointer<Ty>::value, int>::type = 0>
     inline Ty As() {
-        using purify_type = typename PurifyType<Ty>::type;
-        static_assert(std::is_base_of<ObjectCategory_, Support<purify_type>::category,
-            "not support type");
         if (!IsValid())
             return nullptr;
-
 #if XLUA_ENABLE_LUD_OPTIMIZE
         if (IsLud())
-            return internal::As<purify_type>(Make(ptr_));
+            return internal::As<Ty>(internal::LightData::Make(ptr_));
         else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-            return internal::As<purify_type>(static_cast<internal::UserData*>(ptr_));
+            return internal::As<Ty>(static_cast<internal::FullData*>(ptr_));
     }
+
+    template <typename Ty,
+        typename std::enable_if<
+        std::is_same<value_category_tag, typename Support<Ty>::category>::value, int>::type = 0>
+    Ty As();
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
 private:
@@ -130,18 +212,6 @@ private:
 
 private:
     void* ptr_;
-};
-
-enum class VarType : int8_t {
-    kNil,
-    kBoolean,
-    kNumber,
-    kInteger,
-    kString,
-    kTable,
-    kFunction,
-    kLightUserData,
-    kUserData,
 };
 
 class Variant {
@@ -240,7 +310,10 @@ private:
 class State {
     friend class Object;
 public:
-    lua_State* GetState() { return nullptr; }
+    inline lua_State* GetLuaState() const { return state_.l_; }
+    inline int GetTop() { return lua_gettop(state_.l_); }
+    inline void SetTop(int top) { lua_settop(state_.l_, top); }
+    inline void PopTop(int n) { lua_pop(state_.l_, n); }
 
     VarType GetType(int index) {
         int lty = lua_type(state_.l_, index);
@@ -279,7 +352,7 @@ public:
             break;
         case LUA_TUSERDATA:
             ptr = lua_touserdata(state_.l_, index);
-            if (internal::IsValid(static_cast<internal::UserData*>(ptr)))
+            if (internal::IsValid(static_cast<internal::FullData*>(ptr)))
                 vt = VarType::kUserData;
             break;
         }
@@ -319,7 +392,7 @@ public:
             return Variant(VarType::kFunction, Object(state_.RefObj(index), this));
         case LUA_TUSERDATA:
             ptr = lua_touserdata(l, index);
-            if (internal::IsValid(static_cast<internal::UserData*>(ptr)))
+            if (internal::IsValid(static_cast<internal::FullData*>(ptr)))
                 return Variant(VarType::kUserData, Object(state_.RefObj(index), this));
             break;
         }
@@ -347,43 +420,132 @@ public:
             break;
         case VarType::kTable:
         case VarType::kFunction:
-            PushObj_(var.obj_);
+            if (var.obj_.IsValid()) {
+                assert(this == var.obj_.state_);
+                state_.LoadRef(var.obj_.ref_);
+            } else {
+                lua_pushnil(state_.l_);
+            }
             break;
         case VarType::kLightUserData:
             lua_pushlightuserdata(l, var.ptr_);
             break;
         case VarType::kUserData:
+            if (var.obj_.IsValid()) {
+                assert(this == var.obj_.state_);
 #if XLUA_ENABLE_LUD_OPTIMIZE
-            if (var.obj_.ref_ == -1)
-                lua_pushlightuserdata(l, var.ptr_);
-            else
+                if (var.obj_.ref_ == -1)
+                    lua_pushlightuserdata(l, var.ptr_);
+                else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-                PushObj_(var.obj_);
+                    state_.LoadRef(var.obj_.ref_);
+            } else {
+                lua_pushnil(state_.l_);
+            }
             break;
         }
     }
 
     inline void PushVar(const Table& var) {
-        PushObj_(var);
+        if (var.IsValid()) {
+            assert(this == var.state_);
+            state_.LoadRef(var.ref_);
+        } else {
+            lua_pushnil(state_.l_);
+        }
     }
 
     inline void PushVar(const Function& var) {
-        PushObj_(var);
+        if (var.IsValid()) {
+            assert(this == var.state_);
+            state_.LoadRef(var.ref_);
+        } else {
+            lua_pushnil(state_.l_);
+        }
     }
 
     inline void PushVar(const UserData& var) {
+        if (var.IsValid()) {
+            assert(this == var.state_);
 #if XLUA_ENABLE_LUD_OPTIMIZE
-        if (var.IsLud())
-            lua_pushlightuserdata(state_.l_, var.ptr_);
-        else
+            if (var.IsLud())
+                lua_pushlightuserdata(state_.l_, var.ptr_);
+            else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-            PushObj_(var);
+                state_.LoadRef(var.ref_);
+        } else {
+            lua_pushnil(state_.l_);
+        }
+    }
+
+    inline void PushNil() {
+        lua_pushnil(state_.l_);
+    }
+
+    inline void NewTable() {
+        lua_newtable(state_.l_);
+    }
+
+    /* load global var on stack */
+    inline VarType LoadGolbal(const char* path) {
+        state_.LoadGolbal(path);
+        return GetType(-1);
+    }
+
+    template <typename Ty>
+    inline Ty GetGlobal(const char* path) {
+        StackGuard guard(this);
+        LoadGolbal(path);
+        return Load<Ty>(-1);
+    }
+
+    inline bool SetGlobal(const char* path, bool create) {
+        return state_.SetGlobal(path, create, false);
+    }
+
+    template <typename Ty>
+    bool SetGlobal(const char* path, Ty& val, bool create) {
+        StackGuard guard(this);
+        Push(val);
+        return SetGlobal(path, create);
+    }
+
+    template <typename Ky>
+    VarType LoadField(int index, const Ky& key) {
+        if (!lua_istable(state_.l_, index)) {
+            PushNil();
+            return VarType.kNil;
+        }
+
+        index = lua_absindex(state_.l_, index);
+        Push(key);
+        lua_gettable(state_.l_, index);
+        return GetType(-1);
+    }
+
+    template <typename Ky, typename Ty>
+    bool SetFeild(int index, const Ky& key, Ty& val) {
+        if (!lua_istable(state_.l_, index))
+            return false;
+
+        index = lua_absindex(state_.l_, index);
+        Push(key);
+        PushVar(val);
+        lua_settable(state_.l_, index);
+        return true;
+    }
+
+    template <typename Ky, typename Ty>
+    Ty GetFeild(int index, const Ky& key) {
+        StackGuard guard(this);
+        LoadField(index, key);
+        return Load<Ty>(-1);
     }
 
     template <typename Ty>
     bool IsType(int index) const {
         static_assert(IsSupport<Ty>::value, "not support type");
-        return Support<typename PurifyType<Ty>::type;>::Check(this, index);
+        return Support<typename PurifyType<Ty>::type>::Check(this, index);
     }
 
     template <typename Ty, typename std::enable_if<std::is_pointer<Ty>::value, int>::type = 0>
@@ -406,15 +568,59 @@ public:
         Support<typename PurifyType<Ty>::type>::Push(this, val);
     }
 
-    void PushObj_(const Object& obj) {
-        if (!obj.IsValid())
-            return;
-        state_.LoadRef(obj.ref_);
+    template <typename... Ty>
+    inline void LoadMul(int index, std::tuple<Ty&...>&& ret) {
+        LoadMul(index, std::move(ret), make_index_sequence_t<sizeof...(Ty)>());
+    }
+
+    template <typename... Ty, size_t... Idxs>
+    inline void LoadMul(int index, std::tuple<Ty&...>& ret, index_sequence<Idxs...>) {
+        using ints = int[];
+        (void)ints {
+            0, (std::get<Idxs>(ret) = Load<Ty>(index++), 0)...
+        };
+    }
+
+    template<typename... Ty>
+    inline void PushMul(Ty&&... vals) {
+        using ints = int[];
+        (void)ints {
+            0, (Push(std::forward<Ty>(vals)), 0)...
+        };
+    }
+
+    template <typename... Rys, typename... Args>
+    inline CallGuard Call(std::tuple<Rys&...>&& ret, Args&&... args) {
+        int top = GetTop();
+        CallGuard guard(this, -1);
+
+        PushMul(std::forward<Args>(args)...);
+        if (lua_pcall(state_.l_, sizeof...(Args), sizeof...(Rys), 0) == LUA_OK) {
+            LoadMul(top, std::move(ret));
+            guard.ok_ = true;
+        } else {
+            //TODO: log error meesage
+        }
+        return std::move(guard);
     }
 
     internal::StateData state_;
 };
 
+/* lua stack guarder */
+inline StackGuard::StackGuard(State* l) : l_(l) {
+    top_ = l->GetTop();
+}
+
+inline StackGuard::StackGuard(State* l, int off) : l_(l) {
+    top_ = l_->GetTop() + off;
+}
+
+inline StackGuard::~StackGuard() {
+    if (l_) l_->SetTop(top_);
+}
+
+/* lua object */
 inline void Object::AddRef() {
     if (ref_ != -1)
         state_->state_.AddRef(ref_);
@@ -423,6 +629,103 @@ inline void Object::AddRef() {
 inline void Object::DecRef() {
     if (ref_ != -1)
         state_->state_.DecRef(ref_);
+}
+
+/* lua user data */
+template <typename Ty,
+    typename std::enable_if<
+    std::is_same<value_category_tag, typename Support<Ty>::category>::value, int>::type>
+inline Ty UserData::As() {
+    StackGuard guard(state_);
+    if (!IsValid())
+        state_->PushNil();
+    else
+        state_->PushVar(*this);
+    return state_->Load<Ty>();
+}
+
+/* lua table */
+template <typename Ky>
+VarType Table::LoadFeild(const Ky& key) {
+    if (!IsValid())
+        return VarType::kNil;
+
+    StackGuard guard(state_);
+    state_->PushVar(*this);
+    state_->LoadFeild(key, -1);
+    lua_remove(state_->GetLuaState(), -2);
+    return state_->GetType(-1);
+}
+
+template <typename Ky>
+void Table::SetFeild(const Ky& key) {
+    if (!IsValid() || state_->GetTop() == 0)
+        return;
+
+    StackGuard guard(state_);
+    state_->PushVar(*this);
+    state_->Push(key);
+    lua_rotate(state_->state_.l_, -3, 1);   //TODO: 这里还不确定参数是否合法
+    lua_settable(state_->state_.l_, -3);
+}
+
+template <typename Ky, typename Ty>
+Ty Table::GetFeild(const Ky& key) {
+    StackGuard guard(state_);
+    if (!IsValid()) {
+        state_->PushNil();
+    } else {
+        state_->PushVar(*this);
+        state_->LoadField(-1, key);
+    }
+
+    return state_->Load<Ty>(-1);
+}
+
+template <typename Ky, typename Ty>
+void Table::SetFeild(const Ky& key, Ty& val) {
+    if (!IsValid())
+        return;
+
+    StackGuard guard(state_);
+    state_->PushVar(*this);
+    state_->SetFeild(-1, key, val);
+}
+
+template <typename Ky, typename... Rys, typename... Args>
+CallGuard Table::Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args) {
+    if (!IsValid())
+        return CallGuard();
+
+    LoadFeild(key);
+    if (state_->GetType(-1) == VarType::kFunction)
+        return state_->Call(std::move(ret), *this, std::forward<Args>(args)...);
+
+    lua_pop(state_->state_.l_, 1);
+    return CallGuard();
+}
+
+template <typename Ky, typename... Rys, typename... Args>
+CallGuard Table::DotCall(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args) {
+    if (!IsValid())
+        return CallGuard();
+
+    LoadFeild(key);
+    if (state_->GetType(-1) == VarType::kFunction)
+        return state_->Call(std::move(ret), std::forward<Args>(args)...);
+
+    lua_pop(state_->state_.l_, 1);
+    return CallGuard();
+}
+
+/* lua function */
+template <typename Ky, typename... Rys, typename... Args>
+inline CallGuard Function::Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args) {
+    if (!IsValid())
+        return CallGuard();
+
+    state_->PushVar(*this);
+    return state_->Call(std::move(ret), std::forward<Args>(args)...);
 }
 
 XLUA_NAMESPACE_END

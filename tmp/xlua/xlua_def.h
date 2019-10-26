@@ -13,8 +13,9 @@ struct lua_State;
 
 XLUA_NAMESPACE_BEGIN
 
+template <typename Ty> struct Support;
 struct TypeDesc;
-struct State;
+class State;
 
 /* ¼ìË÷ÀàÐÍID */
 template <typename Ty>
@@ -37,6 +38,7 @@ struct WeakObjProc {
     GetProc getter;
 };
 
+class ObjectIndex;
 namespace internal {
     /* xlua weak obj reference support */
     WeakObjRef MakeWeakObjRef(void* obj, ObjectIndex& index);
@@ -50,7 +52,7 @@ class ObjectIndex {
 
 public:
     ObjectIndex() = default;
-    ~ObjectIndex() { FreeObjectIndex(*this); }
+    ~ObjectIndex() { if (index_ >= 0) FreeObjectIndex(*this); }
 
 public:
     ObjectIndex(const ObjectIndex&) { }
@@ -65,12 +67,12 @@ private:
 
 template<typename Ty>
 struct IsWeakObj {
-    static constexpr bool value = std::is_same<decltype(Check<Ty>(0)), ObjectIndex>::value;
 private:
     template <typename U> static auto Check(int)->decltype(std::declval<U>().xlua_obj_index_);
     template <typename U> static auto Check(...)->std::false_type;
+public:
+    static constexpr bool value = std::is_same<decltype(Check<Ty>(0)), ObjectIndex>::value;
 };
-
 
 XLUA_NAMESPACE_END
 
@@ -88,12 +90,12 @@ inline XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(...) { return XLUA_NAMESP
 /* query xlua weak obj proc */
 template <typename Ty, typename std::enable_if<XLUA_NAMESPACE IsWeakObj<Ty>::value, int>::type = 0>
 const XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<Ty>) {
-    return XLUA_NAMESPACE WeakObjProc proc {
+    return XLUA_NAMESPACE WeakObjProc {
         typeid(XLUA_NAMESPACE weak_obj_tag).hash_code(),
-        [](void* obj) -> WeakObjRef {
+        [](void* obj) -> XLUA_NAMESPACE WeakObjRef {
             return XLUA_NAMESPACE internal::MakeWeakObjRef(obj, static_cast<Ty*>(obj)->xlua_obj_index_);
         },
-        [](WeakObjRef ref) -> void* {
+        [](XLUA_NAMESPACE WeakObjRef ref) -> void* {
             return XLUA_NAMESPACE internal::GetWeakObjPtr(ref);
         }
     };

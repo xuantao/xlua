@@ -8,27 +8,36 @@
 
 XLUA_NAMESPACE_BEGIN
 
-// predefine
-template <typename Ty> struct Support;
-class State;
-
 /* market type is not support */
-struct NoneCategory {};
+struct not_support_tag {};
 /* value type */
-struct ValueCategory {};
+struct value_category_tag {};
 /* object type, support to push/load with pointer/reference */
-struct ObjectCategory_ {};
+struct object_category_tag_ {};
 /* type has declared export to lua */
-struct DeclaredCategory : ObjectCategory_ {};
+struct declared_category_tag : object_category_tag_ {};
 /* collection type, as vector/list/map... */
-struct CollectionCategory : ObjectCategory_ {};
+struct collection_category_tag : object_category_tag_ {};
 /* user defined export type at runtime */
-struct ExtendCategory : ObjectCategory_ {};
-
+struct extend_category_tag : object_category_tag_ {};
 
 /* 导出到Lua类型 */
 typedef int(*LuaFunction)(lua_State* l);
-typedef void(*LuaIndexer)(State* l, void* obj, const TypeDesc* info);
+typedef int(*LuaIndexer)(State* l, void* obj, const TypeDesc* info);
+
+template<size_t...>
+struct index_sequence {};
+
+template <size_t N, size_t... Indices>
+struct make_index_sequence : make_index_sequence<N - 1, N - 1, Indices...> {};
+
+template<size_t... Indices>
+struct make_index_sequence<0, Indices...> {
+    typedef index_sequence<Indices...> type;
+};
+
+template <size_t N>
+using make_index_sequence_t = typename make_index_sequence<N>::type;
 
 /* 类型转换器
  * 基础类型可以子类->基类，基类->子类
@@ -87,15 +96,15 @@ struct TypeDesc {
 
 /* collection interface */
 struct ICollection {
-    virtual int Index(void* obj, State* l) = 0;
-    virtual int NewIndex(void* obj, State* l) = 0;
-    virtual int Length(void* obj, State* l) = 0;
+    virtual const char* Name() = 0;
     virtual int Insert(void* obj, State* l) = 0;
     virtual int Remove(void* obj, State* l) = 0;
-    virtual int Clear(void* obj, State* l) = 0;
+    virtual int Index(void* obj, State* l) = 0;
+    virtual int NewIndex(void* obj, State* l) = 0;
+    virtual int Iter(void* obj, State* l) = 0;
+    virtual int Length(void* obj) = 0;
+    virtual void Clear(void* obj) = 0;
 };
-
-struct ExtendDesc;
 
 namespace internal {
     enum class UdType : int8_t {
@@ -114,7 +123,7 @@ namespace internal {
         kValue,
     };
 
-    struct UserData {
+    struct FullData {
         // describe user data info
         struct {
             int8_t tag_1_;
@@ -131,11 +140,13 @@ namespace internal {
         void* obj;
     };
 
-    struct WeakRefData : UserData {
+#define ASSERT_FUD(ud) assert(ud && ud->tag_1_ == _XLUA_TAG_1 && ud->tag_2_ == _XLUA_TAG_2)
+
+    struct WeakRefData : FullData {
         WeakObjRef ref;
     };
 
-    struct ObjData : UserData {
+    struct ObjData : FullData {
         virtual ~ObjData() { }
     };
 
@@ -158,6 +169,18 @@ namespace internal {
         virtual ~ValueData() { }
 
         Ty val;
+    };
+
+    struct IAloneUd {
+        virtual ~IAloneUd() { }
+    };
+
+    template <typename Ty>
+    struct AloneUd {
+        AloneUd(const Ty& v) : obj(v) {}
+        virtual ~AloneUd() {}
+
+        Ty obj;
     };
 
     template <typename Ty, bool>
@@ -207,7 +230,7 @@ struct PurifyType<Ty&> {
 
 template <typename Ty>
 struct IsSupport {
-    static constexpr bool value = !std::is_same<NoneCategory,
+    static constexpr bool value = !std::is_same<not_support_tag,
         typename Support<typename PurifyType<Ty>::type>::type>::value;
 };
 
@@ -231,8 +254,11 @@ template <typename Ty>
 struct IsDeclaredType {
     static constexpr bool value = decltype(Check<Ty>(0))::value;
 private:
-    template <typename U> static auto Check(int)->decltype(xLuaGetTypeDesc(Identity<U>()), std::true_type());
+    template <typename U> static auto Check(int)->decltype(::xLuaGetTypeDesc(Identity<U>()), std::true_type());
     template <typename U> static auto Check(...)->std::false_type;
 };
 
+namespace internal {
+    State* GetState(lua_State* l);
+}
 XLUA_NAMESPACE_END

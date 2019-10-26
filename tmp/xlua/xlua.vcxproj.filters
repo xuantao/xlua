@@ -36,5 +36,11 @@
     <ClInclude Include="xlua_state.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="export.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="scripts.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
