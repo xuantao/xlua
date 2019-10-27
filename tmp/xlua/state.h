@@ -321,7 +321,12 @@ namespace internal {
         void DecRef(int ref) {}
 
         lua_State* l_;
-        std::vector<std::unordered_map<void*, UdCache>> shared_ptrs_;
+        int desc_ref_;
+        int meta_ref_;
+        int collection_meta_ref_;
+        int obj_ref_;
+
+        std::vector<std::unordered_map<void*, UdCache>> smart_ptrs_;
         std::array<std::unordered_map<void*, UdCache>, (int8_t)UdType::kCount - 1> raw_ptrs_;
     };
 

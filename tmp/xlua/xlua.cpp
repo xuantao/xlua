@@ -180,7 +180,49 @@ namespace internal {
     int GetMaxWeakIndex() {
         return 0;
     }
-}
+
+    static bool InitSate(State* l) {
+        return true;
+    }
+
+    static bool RegConst(State* l, const internal::ConstValue* constValue) {
+        return true;
+    }
+
+    static bool RegScript(State* l, const ScriptNode* script) {
+        return true;
+    }
+
+    static bool RegDeclared(State* l, const TypeDesc* desc) {
+        return true;
+    }
+
+    static void Reg(State* l, const char* mod) {
+        auto* node = g_env.node_head;
+        // reg const value and reg type
+        while (node) {
+            if (node->type == NodeType::kConst)
+                RegConst(l, static_cast<ConstValue*>(node));
+            else if (node->type == NodeType::kType)
+                static_cast<TypeNode*>(node)->Reg();
+            node = node->next;
+        }
+
+        // reg liternal script
+        node = g_env.node_head;
+        while (node) {
+            if (node->type == NodeType::kScript)
+                RegScript(l, static_cast<ScriptNode*>(node));
+            node = node->next;
+        }
+
+        // reg declared type
+        for (const auto* desc : g_env.declared.desc_list) {
+            RegDeclared(l, desc);
+        }
+    }
+} // namespace internal
+
 
 State* CreateState(const char* mod) {
     return nullptr;

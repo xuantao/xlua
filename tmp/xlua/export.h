@@ -102,13 +102,13 @@ namespace internal {
 
     struct TypeNode : ExportNode {
         TypeNode() : ExportNode(NodeType::kType) {}
-        virtual const TypeDesc* GetDesc() = 0;
+        virtual void Reg() = 0;
     };
 
     template <typename Ty>
     struct TypeExportNode : TypeNode {
-        const TypeDesc* GetDesc() override {
-            return ::xLuaGetTypeDesc(Identity<Ty>());
+        void Reg() override {
+            ::xLuaGetTypeDesc(Identity<Ty>());
         }
     };
 
