@@ -93,11 +93,20 @@ namespace meta {
 
 namespace internal {
     struct ArrayObj {
-        void* obj;
+        union {
+            void* obj;
+            int next;
+        };
         int serial;
     };
 
     static constexpr int kAryObjInc = 4096;
+
+    //struct ObjectArray {
+    //    int serial_gener = 0;
+    //    int next_slot = 0;
+    //    std::vector<ArrayObj> objs;
+    //};
 
     static struct {
         struct {
@@ -131,6 +140,7 @@ namespace internal {
 
     /* xlua weak obj reference support */
     WeakObjRef MakeWeakObjRef(void* obj, ObjectIndex& index) {
+        //if ()
         auto& ary = g_env.obj_ary;
         int idx = 0;
         if (ary.free_list.empty()) {
@@ -152,13 +162,13 @@ namespace internal {
         return WeakObjRef{idx, ary_obj.serial};
     }
 
-    void* GetWeakObjPtr(WeakObjRef ref) {
+    void* GetWeakObjPtr(WeakObjRef index_) {
         auto& ary = g_env.obj_ary;
-        if (ref.index < 0 && ary.obj_list.size() <= ref.index)
+        if (index_.index < 0 && ary.obj_list.size() <= index_.index)
             return nullptr;
 
-        auto& ary_obj = ary.obj_list[ref.index];
-        return ary_obj.serial == ref.serial ? ary_obj.obj : nullptr;
+        auto& ary_obj = ary.obj_list[index_.index];
+        return ary_obj.serial == index_.serial ? ary_obj.obj : nullptr;
     }
 
     const TypeDesc* GetTypeDesc(int lud_index) {
@@ -181,11 +191,13 @@ namespace internal {
         return 0;
     }
 
+    //static void AddTypeDesc()
+
     static bool InitSate(State* l) {
         return true;
     }
 
-    static bool RegConst(State* l, const internal::ConstValue* constValue) {
+    static bool RegConst(State* l, const ConstValue* constValue) {
         return true;
     }
 
@@ -248,4 +260,42 @@ void FreeObjectIndex(ObjectIndex& index) {
     index.index_ = -1;
 }
 
+namespace internal {
+
+    struct TypeCreator : public ITypeCreator
+    {
+        TypeCreator(const char* name, bool global, const TypeDesc* super) :
+            type_name(name), is_global(global), super(super) {}
+        virtual ~TypeCreator() { }
+
+        void SetCaster(ITypeCaster* cast) override {
+            caster = cast;
+        }
+        void SetWeakProc(WeakObjProc proc) override {
+            weak_proc = proc;
+        }
+        void AddMember(const char* name, LuaFunction func, bool global) override {
+            ((is_global || global) ? global_funcs : funcs).push_back(ExportFunc{name, func});
+        }
+        void AddMember(const char* name, LuaIndexer getter, LuaIndexer setter, bool global) override {
+            ((is_global || global) ? global_vars : vars).push_back(ExportVar{name, getter, setter});
+        }
+        bool CheckRename(const char* name, bool global) const {
+            return true;
+        }
+        const TypeDesc* Finalize() override {
+            return nullptr;
+        }
+
+        const char* type_name;
+        bool is_global;
+        const TypeDesc* super = nullptr;
+        ITypeCaster* caster = nullptr;
+        WeakObjProc weak_proc{0, nullptr, nullptr};
+        std::vector<ExportVar> vars;
+        std::vector<ExportVar> global_vars;
+        std::vector<ExportFunc> funcs;
+        std::vector<ExportFunc> global_funcs;
+    };
+}
 XLUA_NAMESPACE_END

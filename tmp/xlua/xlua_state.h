@@ -66,12 +66,12 @@ private:
 /* lua object */
 class Object {
     friend class State;
-    Object(int ref, State* s) : ref_(ref), state_(s) {}
+    Object(int index, State* s) : index_(index), state_(s) {}
 
 public:
-    Object() : ref_(-1), state_(nullptr) {}
+    Object() : index_(0), state_(nullptr) {}
     Object(Object&& obj) { Move(obj); }
-    Object(const Object& obj) : ref_(obj.ref_), state_(obj.state_) { AddRef(); }
+    Object(const Object& obj) : index_(obj.index_), state_(obj.state_) { AddRef(); }
     ~Object() { DecRef(); }
 
     void operator = (Object&& obj) {
@@ -81,20 +81,20 @@ public:
 
     void operator = (const Object& obj) {
         DecRef();
-        ref_ = obj.ref_;
+        index_ = obj.index_;
         state_ = obj.state_;
         AddRef();
     }
 
 public:
     inline State* GetState() const { return state_; }
-    inline bool IsValid() const { return ref_ != -1 && state_ != nullptr; }
+    inline bool IsValid() const { return index_ > 0 && state_ != nullptr; }
 
 private:
     void Move(Object& obj) {
-        ref_ = obj.ref_;
+        index_ = obj.index_;
         state_ = obj.state_;
-        obj.ref_ = -1;
+        obj.index_ = 0;
         obj.state_ = nullptr;
     }
 
@@ -102,7 +102,7 @@ private:
     void DecRef();
 
 protected:
-    int ref_;
+    int index_;
     State* state_;
 };
 
@@ -207,7 +207,7 @@ public:
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
 private:
-    inline bool IsLud() const { return IsValid() && ref_ == -1; }
+    inline bool IsLud() const { return IsValid() && index_ == -1; }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
 private:
@@ -422,7 +422,7 @@ public:
         case VarType::kFunction:
             if (var.obj_.IsValid()) {
                 assert(this == var.obj_.state_);
-                state_.LoadRef(var.obj_.ref_);
+                state_.LoadRef(var.obj_.index_);
             } else {
                 lua_pushnil(state_.l_);
             }
@@ -434,11 +434,11 @@ public:
             if (var.obj_.IsValid()) {
                 assert(this == var.obj_.state_);
 #if XLUA_ENABLE_LUD_OPTIMIZE
-                if (var.obj_.ref_ == -1)
+                if (var.obj_.index_ == -1)
                     lua_pushlightuserdata(l, var.ptr_);
                 else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-                    state_.LoadRef(var.obj_.ref_);
+                    state_.LoadRef(var.obj_.index_);
             } else {
                 lua_pushnil(state_.l_);
             }
@@ -449,7 +449,7 @@ public:
     inline void PushVar(const Table& var) {
         if (var.IsValid()) {
             assert(this == var.state_);
-            state_.LoadRef(var.ref_);
+            state_.LoadRef(var.index_);
         } else {
             lua_pushnil(state_.l_);
         }
@@ -458,7 +458,7 @@ public:
     inline void PushVar(const Function& var) {
         if (var.IsValid()) {
             assert(this == var.state_);
-            state_.LoadRef(var.ref_);
+            state_.LoadRef(var.index_);
         } else {
             lua_pushnil(state_.l_);
         }
@@ -472,7 +472,7 @@ public:
                 lua_pushlightuserdata(state_.l_, var.ptr_);
             else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-                state_.LoadRef(var.ref_);
+                state_.LoadRef(var.index_);
         } else {
             lua_pushnil(state_.l_);
         }
@@ -622,13 +622,13 @@ inline StackGuard::~StackGuard() {
 
 /* lua object */
 inline void Object::AddRef() {
-    if (ref_ != -1)
-        state_->state_.AddRef(ref_);
+    if (index_ > 0)
+        state_->state_.AddObjRef(index_);
 }
 
 inline void Object::DecRef() {
-    if (ref_ != -1)
-        state_->state_.DecRef(ref_);
+    if (index_ > 0)
+        state_->state_.DecObjRef(index_);
 }
 
 /* lua user data */

@@ -18,9 +18,11 @@
 
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
     #define _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, DstInfo)   (SrcInfo == DstInfo ? Ptr : SrcInfo->caster->ToSuper(Ptr, DstInfo))
+    #define _XLUA_TO_TOP_SUPER_PTR(Ptr, SrcInfo)        _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, nullptr)
     #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          DstInfo->caster->ToWeakPtr(Ptr)
 #else // XLUA_ENABLE_MULTIPLE_INHERITANCE
     #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, Info)      Ptr
+    #define _XLUA_TO_TOP_SUPER_PTR(Ptr, SrcInfo)        Ptr
     #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          Ptr
 #endif // XLUA_ENABLE_MULTIPLE_INHERITANCE
 
@@ -31,8 +33,10 @@
     ///* 检查系统是否支持 */
     #if INTPTR_MAX == INT64_MAX
         #define XLUA_ENABLE_LUD_OPTIMIZE 1
+        #define XLUA_MAX_WEAKOBJ_TYPE_COUNT 4
     #endif
 #elif XLUA_ENABLE_LUD_OPTIMIZE
+    #define XLUA_MAX_WEAKOBJ_TYPE_COUNT 0
     #if INTPTR_MAX != INT64_MAX
         //TODO: setup compile error
     #endif

@@ -72,16 +72,24 @@ enum class TypeCategory {
     kTemplate,  // type desc register at runtime
 };
 
-/* exoprt type desc */
+/* 类型描述, 用于构建导出类型信息 */
+struct ITypeCreator {
+    virtual ~ITypeCreator() { }
+    virtual void SetCaster(ITypeCaster* caster) = 0;
+    virtual void SetWeakProc(WeakObjProc proc) = 0;
+    virtual void AddMember(const char* name, LuaFunction func, bool global) = 0;
+    virtual void AddMember(const char* name, LuaIndexer getter, LuaIndexer setter, bool global) = 0;
+    virtual const TypeDesc* Finalize() = 0;
+};
+
+/* exoprt declared type desc */
 struct TypeDesc {
     static constexpr uint8_t kObjRefIndex = 0xff;
 
     int id;
     TypeCategory category;
     StringView name;
-    bool has_obj_index;         // 拥有引用计数
-    bool is_weak_obj;           // 支持弱对像
-    uint8_t lud_index;          // 用于lightuserdata类型索引
+    uint8_t lud_index;              // 用于lightuserdata类型索引
     uint8_t weak_index;             //
     const WeakObjProc weak_proc;    //
     const TypeDesc* super;          // 父类信息
@@ -109,11 +117,8 @@ struct ICollection {
 namespace internal {
     enum class UdType : int8_t {
         kNone = 0,
-
         kDeclaredType,
         kCollection,
-
-        kCount,
     };
 
     enum class UvType : int8_t {
@@ -126,10 +131,10 @@ namespace internal {
     struct FullData {
         // describe user data info
         struct {
-            int8_t tag_1_;
-            int8_t tag_2_;
-            UdType dc;
-            UvType vc;
+            int8_t tag_1_ = _XLUA_TAG_1;
+            int8_t tag_2_ = _XLUA_TAG_2;
+            UdType dc = UdType::kNone;
+            UvType vc = UvType::kNone;
         };
         // data information
         union {
@@ -137,35 +142,75 @@ namespace internal {
             ICollection* collection;
         };
         // obj data ptr
-        void* obj;
+        union {
+            void* obj;
+            WeakObjRef ref;
+        };
+
+    public:
+        FullData() = default;
+
+        template <typename Ty>
+        FullData(Ty* _obj) {
+            Init(_obj, UvType::kPtr, Support<Ty>::Desc());
+        }
+
+        template <typename Ty>
+        FullData(Ty* _obj, UvType _uv) {
+            Init(_obj, _uv, Support<Ty>::Desc());
+        }
+
+    private:
+        void Init(void* _obj, UvType _uv, ICollection* _col) {
+            dc = UdType::kCollection;
+            vc = _uv;
+            collection = _col;
+            obj = _obj;
+        }
+
+        void Init(void* _obj, UvType _uv, TypeDesc* _desc) {
+            dc = UdType::kDeclaredType;
+            vc = _uv;
+            desc = desc;
+            if (_uv == UvType::kPtr && _desc->weak_index) {
+                ref = _desc->weak_proc.maker(_obj);
+            } else {
+                obj = _obj;
+            }
+        }
     };
 
 #define ASSERT_FUD(ud) assert(ud && ud->tag_1_ == _XLUA_TAG_1 && ud->tag_2_ == _XLUA_TAG_2)
 
-    struct WeakRefData : FullData {
-        WeakObjRef ref;
-    };
-
     struct ObjData : FullData {
+        template <typename Ty>
+        ObjData(Ty* obj, UvType uv) : FullData(obj, uv) { }
         virtual ~ObjData() { }
     };
 
     struct SmartPtrData : ObjData {
+        template <typename Ty>
+        SmartPtrData(Ty* obj, size_t t, void* d) :
+            ObjData(obj, UvType::kSmartPtr), tag(t), data(d) {}
+        virtual ~SmartPtrData() {}
+
         size_t tag;
         void* data;
     };
 
-    template <typename Ty>
+    template <typename Sy>
     struct SmartPtrDataImpl : SmartPtrData {
-        SmartPtrDataImpl(const Ty& v) : val(v) { }
+        template <typename Ty>
+        SmartPtrDataImpl(const Sy& v, Ty* ptr, size_t tag) :
+            SmartPtrData(ptr, tag, &val), val(v) { }
         virtual ~SmartPtrDataImpl() { }
 
-        Ty val;
+        Sy val;
     };
 
     template <typename Ty>
     struct ValueData : ObjData {
-        ValueData(const Ty& v) : val(v) {}
+        ValueData(const Ty& v) : ObjData(&val, UvType::kValue), val(v) {}
         virtual ~ValueData() { }
 
         Ty val;

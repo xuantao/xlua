@@ -42,7 +42,7 @@ class ObjectIndex;
 namespace internal {
     /* xlua weak obj reference support */
     WeakObjRef MakeWeakObjRef(void* obj, ObjectIndex& index);
-    void* GetWeakObjPtr(WeakObjRef ref);
+    void* GetWeakObjPtr(WeakObjRef index_);
 }
 
 /* lua weak object reference index */
@@ -95,8 +95,8 @@ const XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<Ty
         [](void* obj) -> XLUA_NAMESPACE WeakObjRef {
             return XLUA_NAMESPACE internal::MakeWeakObjRef(obj, static_cast<Ty*>(obj)->xlua_obj_index_);
         },
-        [](XLUA_NAMESPACE WeakObjRef ref) -> void* {
-            return XLUA_NAMESPACE internal::GetWeakObjPtr(ref);
+        [](XLUA_NAMESPACE WeakObjRef index_) -> void* {
+            return XLUA_NAMESPACE internal::GetWeakObjPtr(index_);
         }
     };
 }
