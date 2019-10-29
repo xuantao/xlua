@@ -56,13 +56,15 @@ struct StringView {
 };
 
 struct ExportVar {
-    StringView name;
+    //StringView name;
+    const char* name;
     LuaIndexer getter;
     LuaIndexer setter;
 };
 
 struct ExportFunc {
-    StringView name;
+    //StringView name;
+    const char* name;
     LuaFunction func;
 };
 
@@ -88,8 +90,11 @@ struct TypeDesc {
 
     int id;
     TypeCategory category;
-    StringView name;
+    //StringView name;
+    const char* name;
+#if XLUA_ENABLE_LUD_OPTIMIZE
     uint8_t lud_index;              // 用于lightuserdata类型索引
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
     WeakObjProc weak_proc;      //
     TypeDesc* super;            // 父类信息
     TypeDesc* child;            // 子类

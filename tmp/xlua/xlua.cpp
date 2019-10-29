@@ -184,13 +184,21 @@ namespace internal {
         };
     };
 
+    struct TypeData {
+        TypeDesc* desc;
+        std::vector<ExportVar> member_vars;
+        std::vector<ExportFunc> member_funcs;
+        std::vector<ExportVar> global_vars;
+        std::vector<ExportFunc> global_funcs;
+    };
+
     static constexpr int kAryObjInc = 4096;
     static constexpr int kMaxLudIndex = 0xff;
 
     static struct Env {
         struct {
             std::array<LudType, 256> lud_list;
-            std::vector<const TypeDesc*> desc_list{nullptr};
+            std::vector<TypeData> desc_list{ TypeData{ nullptr } };
             // for light userdata weak obj refernce data cache
             std::array<std::vector<WeakObjCache>, 256> weak_data_list;
         } declared;
@@ -205,6 +213,20 @@ namespace internal {
         SerialAllocator allocator{8*1024};
         std::vector<std::pair<lua_State*, State*>> state_list;
     } g_env;
+
+    static size_t GetVarNum(const TypeData& td, bool global) {
+        size_t n = (global ? td.global_vars : td.member_vars).size();
+        if (td.desc->super)
+            return n + GetVarNum(g_env.declared.desc_list[td.desc->id], global);
+        return n;
+    }
+
+    static size_t GetFuncNum(const TypeData& td, bool global) {
+        size_t n = (global ? td.global_funcs : td.member_funcs).size();
+        if (td.desc->super)
+            return n + GetFuncNum(g_env.declared.desc_list[td.desc->id], global);
+        return n;
+    }
 
     /* append export node to list tail */
     void AppendNode(ExportNode* node) {
@@ -330,7 +352,58 @@ namespace internal {
     }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
-    static bool InitSate(State* l) {
+    static void MakeGlobal(StateData& s, const char* path) {
+        if (s.LoadGlobal(path) != LUA_TTABLE) {
+            s.NewTable();
+            s.SetGlobal(path, true, true);
+        }
+    }
+
+    static bool InitState(StateData& s) {
+        // type desc table
+        lua_createtable(s.l_, 0, 0);
+        s.desc_ref_ = luaL_ref(s.l_, LUA_REGISTRYINDEX);
+
+        // type metatable list
+        lua_createtable(s.l_, 0, 0);
+        s.meta_ref_ = luaL_ref(s.l_, LUA_REGISTRYINDEX);
+
+        // collection metatable ref
+        lua_createtable(s.l_, 0, 5);
+        lua_pushcfunction(s.l_, &meta::__index_collection);
+        lua_setfield(s.l_, -2, "__index");
+
+        lua_pushcfunction(s.l_, &meta::__newindex_collection);
+        lua_setfield(s.l_, -2, "__newindex");
+
+        lua_pushcfunction(s.l_, &meta::__pairs_collection);
+        lua_setfield(s.l_, -2, "__paris");
+
+        lua_pushcfunction(s.l_, &meta::__tostring_collection);
+        lua_setfield(s.l_, -2, "__tostring");
+
+        lua_pushcfunction(s.l_, &meta::__gc);
+        lua_setfield(s.l_, -2, "__gc");
+        s.collection_meta_ref_ = luaL_ref(s.l_, LUA_REGISTRYINDEX);
+
+        // alone object metatble
+        lua_createtable(s.l_, 0, 1);
+        lua_pushcfunction(s.l_, &meta::__gc_alone);
+        lua_setfield(s.l_, -2, "__gc");
+        s.alone_meta_ref_ = luaL_ref(s.l_, LUA_REGISTRYINDEX);
+
+        // obj cache table
+        lua_createtable(s.l_, 0, 0);
+        s.obj_ref_ = luaL_ref(s.l_, LUA_REGISTRYINDEX);
+        
+        // lua object cache table
+        lua_createtable(s.l_, 0, 0);
+        lua_createtable(s.l_, 0, 1);
+        lua_pushstring(s.l_, "v");
+        lua_setfield(s.l_, -2, "__mode");
+        lua_setmetatable(s.l_, -2);
+        s.cache_ref_ = luaL_ref(s.l_, LUA_REGISTRYINDEX);
+
         return true;
     }
 
@@ -342,7 +415,77 @@ namespace internal {
         return true;
     }
 
-    static bool RegDeclared(State* l, const TypeDesc* desc) {
+    static void PushFuncs(lua_State* l, const TypeData& td, bool global) {
+        if (td.desc->super)
+            PushFuncs(l, g_env.declared.desc_list[td.desc->super->id], global);
+
+        auto& funcs = global ? td.global_funcs : td.member_funcs;
+        for (const auto& f : funcs) {
+            lua_pushcfunction(l, f.func);
+            lua_setfield(l, -2, f.name);
+        }
+    }
+
+    static void PushVars(lua_State* l, const TypeData& td, bool global) {
+        if (td.desc->super)
+            PushVars(l, g_env.declared.desc_list[td.desc->super->id], global);
+
+        auto& vars = global ? td.global_vars : td.member_vars;
+        for (const auto& v : vars) {
+            lua_createtable(l, 2, 0);
+            if (v.getter)
+                lua_pushlightuserdata(l, static_cast<void*>(v.getter));
+            else
+                lua_pushnil(l);
+            lua_seti(l, -2, 1);
+            if (v.setter)
+                lua_pushlightuserdata(l, static_cast<void*>(v.setter));
+            else
+                lua_pushnil(l);
+            lua_seti(l, -2, 1);
+            lua_setfield(l, -2, v.name);
+        }
+    }
+
+    static bool RegDeclared(StateData& s, const TypeData& td) {
+        // create global table
+        size_t gnv = GetVarNum(td, true);
+        size_t gnf = GetFuncNum(td, true);
+        if (gnf || gnv) {
+            // table
+            MakeGlobal(s, td.desc->name);
+            lua_pushcfunction(s.l_, &meta::__index_global); // indexer
+            lua_pushstring(s.l_, td.desc->name);            // md_name
+            lua_createtable(s.l_, 0, gnf);
+            //luaL_loadstring
+            //
+        }
+
+        size_t fn = GetFuncNum(td, false);
+        size_t vn = GetVarNum(td, false);
+        // create function table
+        lua_createtable(s.l_, 0, fn);
+        PushFuncs(s.l_, td, false);
+        // create var table
+        lua_createtable(s.l_, 0, vn);
+        PushVars(s.l_, td, false);
+
+        lua_createtable(s.l_, 0, 3);            // typedesc table
+        lua_pushstring(s.l_, td.desc->name);
+        lua_setfield(s.l_, -2, "name");
+        lua_pushvalue(s.l_, -3);
+        lua_setfield(s.l_, -2, "funcs");
+        lua_pushvalue(s.l_, -2);
+        lua_setfield(s.l_, -2, "vars");
+
+        lua_geti(s.l_, LUA_REGISTRYINDEX, s.desc_ref_);
+        lua_pushvalue(s.l_, -2);
+        lua_seti(s.l_, -2, td.desc->id);
+
+        lua_pop(s.l_, 2);   // desc_list_table, desc_table 
+
+        // create metatable
+
         return true;
     }
 
@@ -366,9 +509,9 @@ namespace internal {
         }
 
         // reg declared type
-        for (const auto* desc : g_env.declared.desc_list) {
-            RegDeclared(l, desc);
-        }
+        //for (const auto* desc : g_env.declared.desc_list) {
+            //RegDeclared(l, desc);
+        //}
     }
 } // namespace internal
 

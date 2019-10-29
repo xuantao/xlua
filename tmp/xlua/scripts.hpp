@@ -10,7 +10,7 @@ return {
 
 /* global metatable */
 static const char* kGlobalMetatable = R"V0G0N(
-local md_name, get, set, funcs, vars = ...
+local indexer, md_name, funcs, vars = ...
 return {
     __index = function(tb, name)
         local f = funcs[name]

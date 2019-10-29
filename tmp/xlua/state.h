@@ -47,12 +47,12 @@ namespace internal {
             return nullptr;
 
         // check the weak obj ref is valid
-        if (ud->vc == UvType::kPtr && ud->desc->weak_index > 0) {
-            if (ud->desc->weak_proc.getter(ud->ref) == nullptr)
-                return nullptr;
+        //if (ud->vc == UvType::kPtr && ud->desc->weak_index > 0) {
+        //    if (ud->desc->weak_proc.getter(ud->ref) == nullptr)
+        //        return nullptr;
             //auto wd = GetWeakObjData(ud->desc->weak_index, ud->ref.index);
             //return _XLUA_TO_SUPER_PTR(wd.obj, wd.desc, desc);
-        }
+        //}
         return _XLUA_TO_SUPER_PTR(ud->obj, ud->desc, desc);
     }
 
@@ -185,7 +185,15 @@ namespace internal {
     };
 
     struct StateData {
-        int LoadGolbal(const char* path) {
+        inline void PushNil() {
+            lua_pushnil(l_);
+        }
+
+        inline void NewTable() {
+            lua_newtable(l_);
+        }
+
+        int LoadGlobal(const char* path) {
             if (path == nullptr || path[0] == 0) {
                 lua_pushglobaltable(l_);
                 return LUA_TTABLE;
@@ -521,6 +529,7 @@ namespace internal {
         int desc_ref_;
         int meta_ref_;
         int collection_meta_ref_;
+        int alone_meta_ref_;
         int obj_ref_;
         int cache_ref_;
 

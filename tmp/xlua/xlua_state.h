@@ -487,8 +487,8 @@ public:
     }
 
     /* load global var on stack */
-    inline VarType LoadGolbal(const char* path) {
-        state_.LoadGolbal(path);
+    inline VarType LoadGlobal(const char* path) {
+        state_.LoadGlobal(path);
         return GetType(-1);
     }
 
