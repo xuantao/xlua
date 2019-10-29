@@ -33,7 +33,6 @@
     ///* 检查系统是否支持 */
     #if INTPTR_MAX == INT64_MAX
         #define XLUA_ENABLE_LUD_OPTIMIZE 1
-        #define XLUA_MAX_WEAKOBJ_TYPE_COUNT 4
     #endif
 #elif XLUA_ENABLE_LUD_OPTIMIZE
     #define XLUA_MAX_WEAKOBJ_TYPE_COUNT 0

@@ -95,10 +95,13 @@ namespace internal {
             };
             // none
             struct {
-                void* value_;
+                void* value;
             };
         };
 
+        inline explicit operator bool() const {
+            return value != nullptr;
+        }
         inline void* ToObj() const {
             return reinterpret_cast<void*>(ptr);
         }
@@ -116,14 +119,14 @@ namespace internal {
 
         static inline LightData Make(int8_t lud_index, void* p) {
             LightData ld;
-            ld.value_ = p;
+            ld.value = p;
             ld.lud_index = lud_index;
             return ld;
         }
 
         static inline LightData Make(void* p) {
             LightData ld;
-            ld.value_ = p;
+            ld.value = p;
             return ld;
         }
 
@@ -133,22 +136,16 @@ namespace internal {
         }
     };
 
-    const TypeDesc* GetTypeDesc(int lud_index);
+    const TypeDesc* GetLudTypeDesc(int lud_index);
     WeakObjCache GetWeakObjData(int weak_index, int obj_index);
     void SetWeakObjData(int weak_idnex, int obj_index, void* obj, const TypeDesc* desc);
-    int GetMaxWeakIndex();
+
+    bool CheckLightData(LightData ld, const TypeDesc* desc);
+    void* UnpackLightData(LightData ld, const TypeDesc* desc);
+    LightData PackLightPtr(void* obj, const TypeDesc* desc);
 
     inline bool IsUd(LightData ld, const TypeDesc* desc) {
-        if (ld.lud_index == 0)
-            return false;
-
-        if (ld.lud_index <= GetMaxWeakIndex()) {
-            auto data = GetWeakObjData(ld.weak_index, ld.ref_index);
-            return data.desc != nullptr && IsBaseOf(desc, data.desc);
-        } else {
-            const auto* ud_desc = GetTypeDesc(ld.lud_index);
-            return ud_desc != nullptr && IsBaseOf(desc, ud_desc);
-        }
+        return ld.lud_index && CheckLightData(ld, desc);
     }
 
     inline bool IsUd(LightData ld, ICollection* collection) {
@@ -156,22 +153,7 @@ namespace internal {
     }
 
     inline void* As(LightData ld, const TypeDesc* desc) {
-        if (ld.lud_index == 0)
-            return nullptr;
-
-        if (ld.lud_index <= GetMaxWeakIndex()) {
-            auto data = GetWeakObjData(ld.weak_index, ld.ref_index);
-            if (data.desc == nullptr || !IsBaseOf(desc, data.desc))
-                return nullptr;
-            if (data.desc->weak_proc.getter(ld.ToWeakRef()) == nullptr)
-                return nullptr;
-            return _XLUA_TO_SUPER_PTR(data.obj, data.desc, desc);
-        } else {
-            const auto* ud_desc = GetTypeDesc(ld.lud_index);
-            if (ud_desc == nullptr || !IsBaseOf(desc, ud_desc))
-                return nullptr;
-            return _XLUA_TO_SUPER_PTR(ld.ToObj(), ud_desc, desc);
-        }
+        return ld.lud_index ? UnpackLightData(ld, desc) : nullptr;
     }
 
     inline void* As(LightData ld, ICollection* collection) {
@@ -181,19 +163,6 @@ namespace internal {
     template <typename Ty>
     inline Ty* As(LightData ld) {
         return static_cast<Ty*>(As(ld, Support<Ty>::Desc()));
-    }
-
-    template <typename Ty>
-    inline void* MakeLightPtr(Ty* obj, const TypeDesc* desc) {
-        if (desc->weak_index && desc->weak_index <= XLUA_MAX_WEAKOBJ_TYPE_COUNT) {
-            WeakObjRef ref = desc->weak_proc.maker(obj);
-            if (ref.index <= kMaxLudIndex)
-                return LightData::Make(desc->weak_index, ref.index, ref.serial).value_;
-        } else if (desc->lud_index && desc->lud_index <= 0xff) {
-            if (LightData::IsValid(obj))
-                return LightData::Make(desc->lud_index, obj).value_;
-        }
-        return nullptr;
     }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
@@ -333,12 +302,17 @@ namespace internal {
         inline void PushUd(Ty* ptr) {
             auto it = collection_ptrs_.find(static_cast<void*>(ptr));
             if (it == collection_ptrs_.end()) {
-                NewUserData<FullData>(ptr);
+                NewUserData<FullData>(ptr, Support<Ty>::Desc());
                 SetMetatable(static_cast<ICollection*>(nullptr));
                 collection_ptrs_.insert(std::make_pair(ptr, CacheUd()));
             } else {
                 LoadCache(it->second.ref);
             }
+        }
+
+        inline bool CheckWeakUdValid(FullData* fd) {
+            return (fd->desc->weak_proc.tag == 0) ||
+                (fd->desc->weak_proc.getter(static_cast<WeakUd*>(fd)->ref) != nullptr);
         }
 
         // delcared type ptr
@@ -351,22 +325,30 @@ namespace internal {
 
             const auto* desc = Support<Ty>::Desc();
 #if XLUA_ENABLE_LUD_OPTIMIZE
-            if (void* lud = MakeLightPtr(ptr, desc)) {
-                lua_pushlightuserdata(l_, lud);
+            if (LightData ld = PackLightPtr(ptr, desc)) {
+                lua_pushlightuserdata(l_, ld->value);
                 return;
             }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
             auto* tsp = _XLUA_TO_TOP_SUPER_PTR(ptr, desc);
             auto it = declared_ptrs_.find(tsp);
-            if (it == declared_ptrs_.end()) {
-                NewUserData<FullData>(ptr);
+
+            if (it == declared_ptrs_.end() || !CheckWeakUdValid(it->second.ud)) {
+                if (desc->weak_proc.tag)
+                    NewUserData<WeakUd>(ptr, desc);
+                else
+                    NewUserData<FullData>(ptr, desc);
                 SetMetatable(desc);
                 declared_ptrs_.insert(std::make_pair(tsp, CacheUd()))
             } else {
                 LoadCache(it->second.ref);
-                if (!IsBaseOf(desc, it->second.ud->desc))
+                // if the obj ptr is the derived type, update the ud info to derived type
+                if (!IsBaseOf(desc, it->second.ud->desc)) {
+                    it->second.ud->obj = ptr;
+                    it->second.ud->desc = desc;
                     SetMetatable(desc);
+                }
             }
         }
 
@@ -383,8 +365,12 @@ namespace internal {
             } else {
                 assert(static_cast<SmartPtrData*>(it->second.ud)->tag == tag);
                 LoadCache(it->second.ref);
-                if (!IsBaseOf(desc, it->second.ud->desc))
+                // if the obj ptr is the derived type, update the ud info to derived type
+                if (!IsBaseOf(desc, it->second.ud->desc)) {
+                    it->second.ud->obj = ptr;
+                    it->second.ud->desc = desc;
                     SetMetatable(desc);
+                }
             }
         }
 

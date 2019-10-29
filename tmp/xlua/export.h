@@ -112,6 +112,7 @@ namespace internal {
         }
     };
 
-}
+    ITypeCreator* CreateCreator(const char* path, bool global, const TypeDesc* super);
+} // namespace internal
 
 XLUA_NAMESPACE_END

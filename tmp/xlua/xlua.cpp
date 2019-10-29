@@ -3,6 +3,8 @@
 
 XLUA_NAMESPACE_BEGIN
 
+#define _XLUA_ALIGN_SIZE(S) (S + (sizeof(void*) - S % sizeof(void*)) % sizeof(void*))
+
 namespace script {
 #include "scripts.hpp"
 }
@@ -38,14 +40,23 @@ namespace meta {
     // unpack lud ptr, return (id, obj ptr, type desc)
     static int __unpack_lud(lua_State* l) {
         auto lud = LightData::Make(lua_touserdata(l, 1));
-        int id = 0;
-        if (lud.weak_index <= GetMaxWeakIndex()) {
-            //TODO:
-        } else {
-            //TODO:
-        }
-        lua_pushnumber(l, id);
-        return 1;
+        void* ptr = nullptr;
+        const TypeDesc* desc = nullptr;
+        //if (lud.weak_index <= XLUA_MAX_WEAKOBJ_TYPE_COUNT) {
+        //    auto cache = GetWeakObjData(lud.weak_index, lud.ref_index);
+        //    if (cache.desc->weak_proc.getter(lud.ToWeakRef()) != nullptr) {
+        //        ptr = cache.obj;
+        //        desc = cache.desc;
+        //    }
+        //} else if (lud.lud_index > XLUA_MAX_WEAKOBJ_TYPE_COUNT){
+        //    ptr = lud.ToObj();
+        //    desc = GetLudTypeDesc(lud.lud_index);
+        //}
+
+        lua_pushnumber(l, desc ? desc->id : 0);
+        lua_pushlightuserdata(l, ptr);
+        lua_pushlightuserdata(l, const_cast<TypeDesc*>(desc));
+        return 3;
     }
 
     static int __index_lud(lua_State* l) {
@@ -92,37 +103,106 @@ namespace meta {
 }
 
 namespace internal {
+    class SerialAllocator {
+        struct AllocNode {
+            AllocNode* next;
+            size_t capacity;
+        };
+    public:
+        SerialAllocator(size_t block)
+            : block_size_(block)
+            , alloc_node_(nullptr) {
+        }
+
+        ~SerialAllocator() {
+            auto* node = alloc_node_;
+            alloc_node_ = nullptr;
+            while (node) {
+                auto* tmp = node;
+                node = node->next;
+
+                delete[] reinterpret_cast<int8_t*>(node);
+            }
+        }
+
+        SerialAllocator(const SerialAllocator&) = delete;
+        SerialAllocator& operator = (const SerialAllocator&) = delete;
+
+    public:
+        void* Alloc(size_t s) {
+            AllocNode* node = alloc_node_;
+            s = _XLUA_ALIGN_SIZE(s);
+
+            while (node && node->capacity < s)
+                node = node->next;
+
+            if (node == nullptr) {
+                size_t ns = s + kNodeSize;
+                ns = block_size_ * (1 + ns / block_size_);
+
+                node = reinterpret_cast<AllocNode*>(new int8_t[ns]);
+                node->next = alloc_node_;
+                node->capacity = ns - kNodeSize;
+            }
+
+            node->capacity -= s;
+            return reinterpret_cast<int8_t*>(node) + kNodeSize + node->capacity;
+        }
+
+        template <typename Ty, typename... Args>
+        inline Ty* AllocObj(Args&&... args) {
+            return new (Alloc(sizeof(Ty)))(std::forward<Args>(args)...);
+        }
+
+    private:
+        static constexpr size_t kNodeSize = _XLUA_ALIGN_SIZE(sizeof(AllocNode));
+
+    private:
+        size_t block_size_;
+        AllocNode* alloc_node_;
+    };
+
     struct ArrayObj {
         union {
-            void* obj;
-            int next;
+            void* ptr;  // cache object ptr
+            int next;   // when slot is empty, next empty slot position
         };
         int serial;
     };
 
+    struct LudType {
+        enum class Type {
+            kNone,
+            kPtr,
+            kWeakObj,
+        };
+
+        Type type = Type::kNone;
+        union {
+            const TypeDesc* desc;
+            size_t tag;
+        };
+    };
+
     static constexpr int kAryObjInc = 4096;
+    static constexpr int kMaxLudIndex = 0xff;
 
-    //struct ObjectArray {
-    //    int serial_gener = 0;
-    //    int next_slot = 0;
-    //    std::vector<ArrayObj> objs;
-    //};
-
-    static struct {
+    static struct Env {
         struct {
-            std::vector<const TypeDesc*> desc_list;
-            std::vector<const TypeDesc*> lud_list;
-            std::vector<const TypeDesc*> weak_list {nullptr};
+            std::array<LudType, 256> lud_list;
+            std::vector<const TypeDesc*> desc_list{nullptr};
+            // for light userdata weak obj refernce data cache
+            std::array<std::vector<WeakObjCache>, 256> weak_data_list;
         } declared;
 
         struct {
             int serial_gener = 0;
-            std::vector<int> free_list;
-            std::vector<ArrayObj> obj_list;
+            int empty_slot = 0;
+            std::vector<ArrayObj> objs{ArrayObj()};
         } obj_ary;
 
-        ExportNode* node_head;
-        std::vector<std::vector<WeakObjCache>> weak_data_list;
+        ExportNode* node_head = nullptr;
+        SerialAllocator allocator{8*1024};
         std::vector<std::pair<lua_State*, State*>> state_list;
     } g_env;
 
@@ -139,65 +219,122 @@ namespace internal {
     }
 
     /* xlua weak obj reference support */
-    WeakObjRef MakeWeakObjRef(void* obj, ObjectIndex& index) {
-        //if ()
+    WeakObjRef MakeWeakObjRef(void* ptr, ObjectIndex& index) {
         auto& ary = g_env.obj_ary;
-        int idx = 0;
-        if (ary.free_list.empty()) {
-            idx = (int)ary.obj_list.size();
-            ary.obj_list.resize(kAryObjInc + idx);
-            ary.free_list.reserve(kAryObjInc - idx);
-
-            for (int i = 0; i < kAryObjInc; ++i)
-                ary.free_list.push_back(idx + kAryObjInc - i);
-        } else {
-            idx = ary.free_list.back();
-            ary.free_list.pop_back();
+        // alloc obj slots
+        if (ary.empty_slot == 0) {
+            size_t sz = ary.objs.size();
+            size_t ns = sz + kAryObjInc;
+            ary.objs.resize(ns);
+            for (size_t i = ns; i > sz; --i) {
+                auto& slot = ary.objs[i-1];
+                slot.serial = 0;
+                slot.next = (int)i;
+            }
+            ary.objs[ns - 1].next = 0;
+            ary.empty_slot = (int)sz;
         }
 
+        int idx = ary.empty_slot;
+        auto& obj = ary.objs[idx];
+        ary.empty_slot = obj.next;
         index.index_ = idx;
-        auto& ary_obj = ary.obj_list[idx];
-        ary_obj.obj = obj;
-        ary_obj.serial = ++ary.serial_gener;
-        return WeakObjRef{idx, ary_obj.serial};
+
+        obj.ptr = ptr;
+        obj.serial = ++ary.serial_gener;
+        return WeakObjRef{idx, obj.serial};
     }
 
-    void* GetWeakObjPtr(WeakObjRef index_) {
+    void* GetWeakObjPtr(WeakObjRef ref) {
         auto& ary = g_env.obj_ary;
-        if (index_.index < 0 && ary.obj_list.size() <= index_.index)
+        if (ref.index <= 0 && ary.objs.size() <= ref.index)
             return nullptr;
 
-        auto& ary_obj = ary.obj_list[index_.index];
-        return ary_obj.serial == index_.serial ? ary_obj.obj : nullptr;
+        auto& obj = ary.objs[ref.index];
+        return obj.serial == ref.serial ? obj.ptr : nullptr;
     }
 
-    const TypeDesc* GetTypeDesc(int lud_index) {
-        auto& declared = g_env.declared;
-        lud_index -= (int)declared.weak_list.size();
-        if (lud_index < 0 || lud_index >= (int)declared.lud_list.size())
-            return nullptr;
-        return declared.lud_list[lud_index];
+#if XLUA_ENABLE_LUD_OPTIMIZE
+    const TypeDesc* GetLudTypeDesc(int lud_index) {
+        //auto& declared = g_env.declared;
+        //if (lud_index <= XLUA_MAX_WEAKOBJ_TYPE_COUNT || lud_index >= declared.lud_index_gener)
+        //    return nullptr;
+        //return declared.lud_list[lud_index];
+        return nullptr;
     }
 
     WeakObjCache GetWeakObjData(int weak_index, int obj_index) {
+        auto& caches = g_env.declared.weak_data_list[weak_index];
+        if (caches.size() > obj_index)
+            return caches[obj_index];
         return WeakObjCache{0, 0};
     }
 
     void SetWeakObjData(int weak_idnex, int obj_index, void* obj, const TypeDesc* desc) {
+        assert(weak_idnex > 0 && weak_idnex <= kMaxLudIndex);
+        if (weak_idnex <= 0)
+            return;
 
+        auto& caches = g_env.declared.weak_data_list[weak_idnex];
+        if (obj_index >= caches.size)
+            caches.resize((obj_index / kAryObjInc + 1) * kAryObjInc, WeakObjCache{nullptr, nullptr});
+
+        auto& c = caches[obj_index];
+        if (c.desc == nullptr || IsBaseOf(c.desc, desc))
+            c = WeakObjCache{obj, desc};
     }
 
-    int GetMaxWeakIndex() {
-        return 0;
+    bool CheckLightData(LightData ld, const TypeDesc* desc) {
+        const auto& info = g_env.declared.lud_list[ld.lud_index];
+        if (info.type == LudType::Type::kWeakObj) {
+            auto data = GetWeakObjData(ld.weak_index, ld.ref_index);
+            return data.desc != nullptr && IsBaseOf(desc, data.desc);
+        } else if (info.type == LudType::Type::kPtr) {
+            return info.desc != nullptr && IsBaseOf(desc, info.desc);
+        }
+        return false;
     }
 
-    //static void AddTypeDesc()
+    void* UnpackLightData(LightData ld, const TypeDesc* desc) {
+        const auto& info = g_env.declared.lud_list[ld.lud_index];
+        if (info.type == LudType::Type::kWeakObj) {
+            auto data = GetWeakObjData(ld.weak_index, ld.ref_index);
+            if (!IsBaseOf(desc, data.desc))
+                return nullptr;
+            if (data.desc->weak_proc.getter(ld.ToWeakRef()) == nullptr)
+                return nullptr;
+            return _XLUA_TO_SUPER_PTR(data.obj, data.desc, desc);
+        } else if (info.type == LudType::Type::kPtr) {
+            if (IsBaseOf(desc, info.desc))
+                return nullptr;
+            return _XLUA_TO_SUPER_PTR(ld.ToObj(), info.desc, desc);
+        }
+        return nullptr;
+    }
+
+    LightData PackLightPtr(void* obj, const TypeDesc* desc) {
+        if (desc->lud_index == 0)
+            return LightData::Make(nullptr);
+
+        if (desc->weak_proc.tag) {
+            WeakObjRef ref = desc->weak_proc.maker(obj);
+            if (ref.index <= kMaxLudIndex) {
+                SetWeakObjData(ref.index, ref.serial, obj, desc);
+                return LightData::Make(desc->lud_index, ref.index, ref.serial);
+            }
+        } else {
+            if (LightData::IsValid(obj))
+                return LightData::Make(desc->lud_index, obj);
+        }
+        return LightData::Make(nullptr);
+    }
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
 
     static bool InitSate(State* l) {
         return true;
     }
 
-    static bool RegConst(State* l, const ConstValue* constValue) {
+    static bool RegConst(State* l, const ConstValueNode* constValue) {
         return true;
     }
 
@@ -214,7 +351,7 @@ namespace internal {
         // reg const value and reg type
         while (node) {
             if (node->type == NodeType::kConst)
-                RegConst(l, static_cast<ConstValue*>(node));
+                RegConst(l, static_cast<ConstValueNode*>(node));
             else if (node->type == NodeType::kType)
                 static_cast<TypeNode*>(node)->Reg();
             node = node->next;
@@ -245,27 +382,27 @@ State* AttachState(lua_State* l, const char* mod) {
 }
 
 void FreeObjectIndex(ObjectIndex& index) {
-    if (index.index_ < 0)
+    if (index.index_ <= 0)
         return;
 
     auto& ary = internal::g_env.obj_ary;
+    assert(index.index_ < (int)ary.objs.size());
+    if (index.index_ >= (int)ary.objs.size())
+        return;
 
-    assert(index.index_ < (int)ary.obj_list.size());
+    auto& ob = ary.objs[index.index_];
+    ob.serial = 0;
+    ob.next = ary.empty_slot;
+    ary.empty_slot = index.index_;
 
-    auto& ary_obj = ary.obj_list[index.index_];
-    ary_obj.obj = nullptr;
-    ary_obj.serial = 0;
-    ary.free_list.push_back(index.index_);
-
-    index.index_ = -1;
+    index.index_ = 0;
 }
 
 namespace internal {
-
     struct TypeCreator : public ITypeCreator
     {
         TypeCreator(const char* name, bool global, const TypeDesc* super) :
-            type_name(name), is_global(global), super(super) {}
+            type_name(PurifyTypeName(name)), is_global(global), super(super) {}
         virtual ~TypeCreator() { }
 
         void SetCaster(ITypeCaster* cast) override {
@@ -275,19 +412,107 @@ namespace internal {
             weak_proc = proc;
         }
         void AddMember(const char* name, LuaFunction func, bool global) override {
-            ((is_global || global) ? global_funcs : funcs).push_back(ExportFunc{name, func});
+            ((is_global || global) ? global_funcs : funcs).push_back(ExportFunc{PerifyMemberName(name), func});
         }
         void AddMember(const char* name, LuaIndexer getter, LuaIndexer setter, bool global) override {
-            ((is_global || global) ? global_vars : vars).push_back(ExportVar{name, getter, setter});
+            ((is_global || global) ? global_vars : vars).push_back(ExportVar{PerifyMemberName(name), getter, setter});
         }
         bool CheckRename(const char* name, bool global) const {
             return true;
         }
         const TypeDesc* Finalize() override {
+            TypeDesc* desc = g_env.allocator.AllocObj<TypeDesc>();
+
+            desc->lud_index = GetLudIndex();
+            desc->weak_proc = weak_proc;
+            desc->super = const_cast<TypeDesc*>(super);
+            desc->caster = caster;
+
+
+            vars.push_back(ExportVar());
+            global_vars.push_back(ExportVar());
+
+            funcs.push_back(ExportFunc());
+            global_funcs.push_back(ExportFunc());
+
             return nullptr;
         }
 
-        const char* type_name;
+        static std::string PurifyTypeName(const char* name) {
+            while (name[0] == ':')
+                ++name;
+
+            char buf[1024];
+            int idx = 0;
+            while (*name) {
+                if (name[0] == ':' && name[1] == ':') {
+                    name += 2;
+                    buf[idx++] = '.';
+                } else {
+                    buf[idx++] = *name;
+                    ++name;
+                }
+            }
+            buf[idx++] = 0;
+            return std::string(buf, idx);
+        }
+
+        static StringView PerifyMemberName(const char* name) {
+            // find the last scope
+            while (const char* sub = ::strstr(name, "::"))
+                name = sub + 2;
+            // remove prefix: &
+            if (name[0] == '&')
+                ++name;
+            // remove prefix: "m_"
+            if (name[0] == 'm' && name[1] == '_')
+                name += 2;
+            // remove prefix: "lua"
+            if ((name[0] == 'l' || name[0] == 'L') &&
+                (name[1] == 'u' || name[1] == 'U') &&
+                (name[2] == 'a' || name[2] == 'A')) {
+                name += 3;
+            }
+            // remove prefix: '_'
+            while (name[0] && name[0] == '_')
+                ++name;
+            // remove surfix: '_'
+            size_t len = ::strlen(name);
+            while (len && name[len-1]=='_')
+                --len;
+
+            return StringView{name, len};
+        }
+
+        uint8_t GetLudIndex() const {
+            if (is_global)
+                return 0;
+
+            if (weak_proc.tag) {
+                for (int i = 1; i <= kMaxLudIndex; ++i) {
+                    auto& info = g_env.declared.lud_list[i];
+                    if (info.type == LudType::Type::kNone)
+                    {
+                        info.type = LudType::Type::kWeakObj;
+                        info.tag = weak_proc.tag;
+                        return (uint8_t)i;
+                    } else if (info.type == LudType::Type::kWeakObj && info.tag == weak_proc.tag) {
+                        return (uint8_t)i;
+                    }
+                }
+            } else {
+                for (int i = 1; i <= kMaxLudIndex; ++i) {
+                    auto& info = g_env.declared.lud_list[i];
+                    if (info.type == LudType::Type::kNone) {
+                        info.type = LudType::Type::kPtr;
+                        return (uint8_t)i;
+                    }
+                }
+            }
+            return 0;
+        }
+
+        std::string type_name;
         bool is_global;
         const TypeDesc* super = nullptr;
         ITypeCaster* caster = nullptr;

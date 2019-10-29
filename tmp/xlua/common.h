@@ -56,13 +56,13 @@ struct StringView {
 };
 
 struct ExportVar {
-    const char* name;
+    StringView name;
     LuaIndexer getter;
     LuaIndexer setter;
 };
 
 struct ExportFunc {
-    const char* name;
+    StringView name;
     LuaFunction func;
 };
 
@@ -90,11 +90,10 @@ struct TypeDesc {
     TypeCategory category;
     StringView name;
     uint8_t lud_index;              // 用于lightuserdata类型索引
-    uint8_t weak_index;             //
-    const WeakObjProc weak_proc;    //
-    const TypeDesc* super;          // 父类信息
-    const TypeDesc* child;          // 子类
-    const TypeDesc* brother;        // 兄弟
+    WeakObjProc weak_proc;      //
+    TypeDesc* super;            // 父类信息
+    TypeDesc* child;            // 子类
+    TypeDesc* brother;          // 兄弟
     ITypeCaster* caster;        // 类型转换器
     ExportVar* mem_vars;        // 成员变量
     ExportVar* global_vars;     // 全局(静态)变量
@@ -150,41 +149,48 @@ namespace internal {
     public:
         FullData() = default;
 
-        template <typename Ty>
-        FullData(Ty* _obj) {
-            Init(_obj, UvType::kPtr, Support<Ty>::Desc());
-        }
-
-        template <typename Ty>
-        FullData(Ty* _obj, UvType _uv) {
-            Init(_obj, _uv, Support<Ty>::Desc());
-        }
-
-    private:
-        void Init(void* _obj, UvType _uv, ICollection* _col) {
+        FullData(void* p, ICollection* col) {
             dc = UdType::kCollection;
-            vc = _uv;
-            collection = _col;
-            obj = _obj;
+            vc = UvType::kPtr;
+            collection = col;
+            obj = p;
         }
 
-        void Init(void* _obj, UvType _uv, TypeDesc* _desc) {
+        FullData(void* p, const TypeDesc* d) {
             dc = UdType::kDeclaredType;
-            vc = _uv;
-            desc = desc;
-            if (_uv == UvType::kPtr && _desc->weak_index) {
-                ref = _desc->weak_proc.maker(_obj);
-            } else {
-                obj = _obj;
-            }
+            vc = UvType::kPtr;
+            desc = d;
+            obj = p;
+        }
+
+    protected:
+        FullData(void* p, UvType v, ICollection* col) {
+            dc = UdType::kCollection;
+            vc = v;
+            collection = col;
+            obj = p;
+        }
+
+        FullData(void* p, UvType v, const TypeDesc* d) {
+            dc = UdType::kDeclaredType;
+            vc = v;
+            desc = d;
+            obj = p;
         }
     };
 
 #define ASSERT_FUD(ud) assert(ud && ud->tag_1_ == _XLUA_TAG_1 && ud->tag_2_ == _XLUA_TAG_2)
 
+    struct WeakUd : FullData {
+        WeakUd(void* p, const TypeDesc* desc) :
+            FullData(p, desc), ref(desc->weak_proc.maker(p)) {}
+
+        WeakObjRef ref;
+    };
+
     struct ObjData : FullData {
         template <typename Ty>
-        ObjData(Ty* obj, UvType uv) : FullData(obj, uv) { }
+        ObjData(Ty* obj, UvType uv) : FullData(obj, uv, Support<Ty>::Desc()) { }
         virtual ~ObjData() { }
     };
 
