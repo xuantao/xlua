@@ -43,16 +43,12 @@ namespace internal {
     }
 
     inline void* As(FullData* ud, const TypeDesc* desc) {
-        if (!IsUd(ud, desc))
+        if (ud->obj == nullptr || !IsUd(ud, desc))
             return nullptr;
-
-        // check the weak obj ref is valid
-        //if (ud->vc == UvType::kPtr && ud->desc->weak_index > 0) {
-        //    if (ud->desc->weak_proc.getter(ud->ref) == nullptr)
-        //        return nullptr;
-            //auto wd = GetWeakObjData(ud->desc->weak_index, ud->ref.index);
-            //return _XLUA_TO_SUPER_PTR(wd.obj, wd.desc, desc);
-        //}
+        if (ud->vc == UvType::kPtr && ud->desc->weak_index) {
+            if (ud->desc->weak_proc.getter(static_cast<WeakUd*>(ud)->ref) == nullptr)
+                return nullptr; // check the weak obj ref is valid
+        }
         return _XLUA_TO_SUPER_PTR(ud->obj, ud->desc, desc);
     }
 
@@ -168,7 +164,7 @@ namespace internal {
 
     struct UdCache {
         int ref;
-        void* ud;
+        FullData* ud;
     };
 
     struct LuaObjArray {
@@ -339,23 +335,53 @@ namespace internal {
             }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
-            auto* tsp = _XLUA_TO_TOP_SUPER_PTR(ptr, desc);
-            auto it = declared_ptrs_.find(tsp);
-
-            if (it == declared_ptrs_.end() || !CheckWeakUdValid(it->second.ud)) {
-                if (desc->weak_proc.tag)
-                    NewUserData<WeakUd>(ptr, desc);
-                else
-                    NewUserData<FullData>(ptr, desc);
-                SetMetatable(desc);
-                declared_ptrs_.insert(std::make_pair(tsp, CacheUd()))
-            } else {
-                LoadCache(it->second.ref);
-                // if the obj ptr is the derived type, update the ud info to derived type
-                if (!IsBaseOf(desc, it->second.ud->desc)) {
-                    it->second.ud->obj = ptr;
-                    it->second.ud->desc = desc;
+            if (desc->weak_index) {
+                auto ref = desc->weak_proc.maker(ptr);
+                auto& cache = MakeWeakCache(desc->weak_index, ref.index);
+                auto& wud = static_cast<WeakUd*>(cache.ud);
+                if (wud) {
+                    if (wud->ref != ref) {                  // prev weak obj is discard
+                        wud->obj = nullptr;
+                        cache.ud = NewUserData<WeakUd>(ptr, desc, ref);
+                        SetMetatable(desc);
+                        UpdateCache(cache.ref);
+                    } else if (IsBaseOf(desc, wud->desc)) { // base type
+                        LoadCache(cache.ref);
+                    } else if (IsBaseOf(wud->desc, desc)) { // derived type
+                        ud->obj = ptr;
+                        ud->desc = desc;
+                        LoadCache(it->second.ref);
+                        SetMetatable(desc);
+                    } else {
+                        assert(false);
+                    }
+                } else {
+                    NewUserData<WeakUd>(ptr, desc, ref);
                     SetMetatable(desc);
+                    cache = CacheUd();
+                }
+            } else {
+                void* tsp = _XLUA_TO_TOP_SUPER_PTR(ptr, desc);
+                auto it = declared_ptrs_.find(tsp);
+                if (it != declared_ptrs_.end()) {
+                    auto* ud = it->second.ud;
+                    if (IsBaseOf(desc, ud->desc)) {         // base type
+                        LoadCache(it->second.ref);
+                    } else if (IsBaseOf(ud->desc, desc)) {  // derived object
+                        ud->obj = ptr;
+                        ud->desc = desc;
+                        LoadCache(it->second.ref);
+                        SetMetatable(desc);
+                    } else {                                // new object
+                        ud->obj = nullptr;  // mark the ud is discarded
+                        it->second.ud = NewUserData<FullData>(ptr, desc);
+                        SetMetatable(desc);
+                        UpdateCache(it->second.ref);
+                    }
+                } else {
+                    NewUserData<FullData>(ptr, desc);
+                    SetMetatable(desc);
+                    declared_ptrs_.insert(std::make_pair(tsp, CacheUd()))
                 }
             }
         }
@@ -400,6 +426,7 @@ namespace internal {
             lua_setmetatable(l_, -2);                               // set metatable
         }
 
+        /* */
         int RefObj(int index) {
             int lty = lua_type(l_, index);
             //TODO: lua thread?
@@ -478,7 +505,7 @@ namespace internal {
             lua_rawgeti(l_, LUA_REGISTRYINDEX, cache_ref_); // load cache table
             lua_pushvalue(l_, -2);                          // copy user data to top
             ref = luaL_ref(l_, -2);                         // ref top stack user data
-            lua_remove(l_, -1);                             // remove cache table
+            lua_pop(l_, 1);                                 // pop cache table
 
             return UdCache{ref, ud};
         }
@@ -489,38 +516,59 @@ namespace internal {
             lua_remove(l_, -2);                             // remove cache table
         }
 
+        inline void UpdateCache(int ref) {
+            lua_rawgeti(l_, LUA_REGISTRYINDEX, cache_ref_); // load cache table
+            lua_pushvalue(l_, -2);                          // copy user data to top
+            lua_seti(l_, -2, ref);                          // modify the cache data
+            lua_pop(l_, 1);                                 // pop cache table
+        }
+
+        inline UdCache& MakeWeakCache(int weak_index, int obj_index) {
+            if (weak_index >= weak_objs_.size())
+                weak_objs_.resize(weak_index + 1);
+            auto& objs = weak_objs_[weak_index];
+            if (obj_index >= objs.size())
+                objs.resize((obj_index / 4096 + 1) * 4096, UdCache{LUA_NOREF, nullptr});
+            return objs[obj_index];
+        }
+
         /* user data gc */
         void OnGc(FullData* ud) {
-            UdCache ch{0, nullptr};
+            UdCache cache{LUA_NOREF, nullptr};
             if (ud->vc == UvType::kPtr) {
                 if (ud->dc == UdType::kCollection) {
                     auto it = collection_ptrs_.find(ud->obj);
                     if (it != collection_ptrs_.end()) {
-                        ch = it->second;
+                        cache = it->second;
                         collection_ptrs_.erase(it);
                     }
                 } else if (ud->dc == UdType::kDeclaredType) {
-                    auto it = declared_ptrs_.find(ud->obj);
-                    if (it != declared_ptrs_.end()) {
-                        ch = it->second;
-                        declared_ptrs_.erase(it);
+                    if (ud->obj) {  // need check the user data whether is discard
+                        if (ud->desc->weak_index) {
+                            cache = MakeWeakCache(ud->desc->weak_index, static_cast<WeakUd*>(ud)->ref.index);
+                        } else {
+                            auto it = declared_ptrs_.find(ud->obj);
+                            if (it != declared_ptrs_.end()) {
+                                cache = it->second;
+                                declared_ptrs_.erase(it);
+                            }
+                        }
                     }
                 }
             } else if (ud->vc == UvType::kSmartPtr) {
                 auto it = smart_ptrs_.find(ud->obj);
                 if (it != smart_ptrs_.end()) {
-                    ch = it->second;
+                    cache = it->second;
                     smart_ptrs_.erase(it);
                 }
-
                 static_cast<ObjData*>(ud)->~ObjData();
             } else {
                 static_cast<ObjData*>(ud)->~ObjData();
             }
 
-            if (ch.ref) {
+            if (cache.ref != LUA_NOREF) {
                 lua_rawgeti(l_, LUA_REGISTRYINDEX, cache_ref_); // load cache table
-                luaL_unref(l_, -1, ch.ref);                     // unref cache data
+                luaL_unref(l_, -1, cache.ref);                  // unref cache data
                 lua_pop(l_, 1);                                 // remove cache table
             }
         }
@@ -539,6 +587,7 @@ namespace internal {
         std::unordered_map<void*, UdCache> collection_ptrs_;
         std::unordered_map<void*, UdCache> declared_ptrs_;
         std::unordered_map<void*, UdCache> smart_ptrs_;
+        std::vector<std::vector<UdCache>> weak_objs_;
     };
 
 } // internal

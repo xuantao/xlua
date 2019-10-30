@@ -95,6 +95,7 @@ struct TypeDesc {
 #if XLUA_ENABLE_LUD_OPTIMIZE
     uint8_t lud_index;              // 用于lightuserdata类型索引
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
+    int weak_index;
     WeakObjProc weak_proc;      //
     TypeDesc* super;            // 父类信息
     TypeDesc* child;            // 子类
@@ -146,10 +147,7 @@ namespace internal {
             ICollection* collection;
         };
         // obj data ptr
-        union {
-            void* obj;
-            WeakObjRef ref;
-        };
+        void* obj;
 
     public:
         FullData() = default;
@@ -187,8 +185,8 @@ namespace internal {
 #define ASSERT_FUD(ud) assert(ud && ud->tag_1_ == _XLUA_TAG_1 && ud->tag_2_ == _XLUA_TAG_2)
 
     struct WeakUd : FullData {
-        WeakUd(void* p, const TypeDesc* desc) :
-            FullData(p, desc), ref(desc->weak_proc.maker(p)) {}
+        WeakUd(void* p, const TypeDesc* desc, WeakObjRef r) :
+            FullData(p, desc), ref(r) {}
 
         WeakObjRef ref;
     };

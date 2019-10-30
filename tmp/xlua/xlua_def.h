@@ -29,6 +29,13 @@ struct WeakObjRef {
     int serial;
 };
 
+inline bool operator == (const WeakObjRef& l, const WeakObjRef& r) {
+    return l.index == r.index && l.serial == r.serial;
+}
+inline bool operator != (const WeakObjRef& l, const WeakObjRef& r) {
+    return !(l == r);
+}
+
 struct WeakObjProc {
     typedef WeakObjRef(*MakeProc)(void* obj);
     typedef void* (*GetProc)(WeakObjRef);
@@ -52,7 +59,7 @@ class ObjectIndex {
 
 public:
     ObjectIndex() = default;
-    ~ObjectIndex() { if (index_ >= 0) FreeObjectIndex(*this); }
+    ~ObjectIndex() { if (index_ > 0) FreeObjectIndex(*this); }
 
 public:
     ObjectIndex(const ObjectIndex&) { }
@@ -62,7 +69,7 @@ public:
     inline int GetIndex() const { return index_; }
 
 private:
-    int index_ = -1;
+    int index_ = 0;
 };
 
 template<typename Ty>
@@ -72,6 +79,22 @@ private:
     template <typename U> static auto Check(...)->std::false_type;
 public:
     static constexpr bool value = std::is_same<decltype(Check<Ty>(0)), ObjectIndex>::value;
+};
+
+template <typename Ty>
+struct WeakObjTrais {
+private:
+    template <typename C>
+    static C Query(ObjectIndex C::*);
+public:
+    typedef typename decltype(Query(&Ty::xlua_obj_index_)) class_type;
+
+    static WeakObjRef Make(void* obj) {
+        return internal::MakeWeakObjRef(static_cast<class_type*>(obj), static_cast<Ty*>(obj)->xlua_obj_index_);
+    }
+    static void* Get(WeakObjRef ref) {
+        return static_cast<Ty*>(static_cast<class_type*>(internal::GetWeakObjPtr(ref)));
+    }
 };
 
 XLUA_NAMESPACE_END
@@ -92,11 +115,7 @@ template <typename Ty, typename std::enable_if<XLUA_NAMESPACE IsWeakObj<Ty>::val
 const XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<Ty>) {
     return XLUA_NAMESPACE WeakObjProc {
         typeid(XLUA_NAMESPACE weak_obj_tag).hash_code(),
-        [](void* obj) -> XLUA_NAMESPACE WeakObjRef {
-            return XLUA_NAMESPACE internal::MakeWeakObjRef(obj, static_cast<Ty*>(obj)->xlua_obj_index_);
-        },
-        [](XLUA_NAMESPACE WeakObjRef index_) -> void* {
-            return XLUA_NAMESPACE internal::GetWeakObjPtr(index_);
-        }
+        &XLUA_NAMESPACE WeakObjTrais<Ty>::Make,
+        &XLUA_NAMESPACE WeakObjTrais<Ty>::Get
     };
 }

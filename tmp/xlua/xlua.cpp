@@ -12,7 +12,9 @@ namespace script {
 namespace meta {
     using namespace internal;
     static int __gc(lua_State* l) {
-        GetState(l)->state_.OnGc(static_cast<FullData*>(lua_touserdata(l, 1)));
+        auto* ud = static_cast<FullData*>(lua_touserdata(l, 1));
+        ASSERT_FUD(ud);
+        GetState(l)->state_.OnGc(ud);
         return 0;
     }
 
@@ -33,6 +35,7 @@ namespace meta {
         auto* ud = static_cast<FullData*>(lua_touserdata(l, 1));
         auto* indexer = static_cast<LuaIndexer>(lua_touserdata(l, 2));
         ASSERT_FUD(ud);
+        //TODO: check ud valid
         return indexer(GetState(l), ud->obj, ud->desc);
     }
 
@@ -200,6 +203,7 @@ namespace internal {
             std::array<LudType, 256> lud_list;
             std::vector<TypeData> desc_list{ TypeData{ nullptr } };
             // for light userdata weak obj refernce data cache
+            std::vector<size_t> weak_tags{0};
             std::array<std::vector<WeakObjCache>, 256> weak_data_list;
         } declared;
 
@@ -395,7 +399,7 @@ namespace internal {
         // obj cache table
         lua_createtable(s.l_, 0, 0);
         s.obj_ref_ = luaL_ref(s.l_, LUA_REGISTRYINDEX);
-        
+
         // lua object cache table
         lua_createtable(s.l_, 0, 0);
         lua_createtable(s.l_, 0, 1);
@@ -482,7 +486,7 @@ namespace internal {
         lua_pushvalue(s.l_, -2);
         lua_seti(s.l_, -2, td.desc->id);
 
-        lua_pop(s.l_, 2);   // desc_list_table, desc_table 
+        lua_pop(s.l_, 2);   // desc_list_table, desc_table
 
         // create metatable
 
@@ -555,10 +559,10 @@ namespace internal {
             weak_proc = proc;
         }
         void AddMember(const char* name, LuaFunction func, bool global) override {
-            ((is_global || global) ? global_funcs : funcs).push_back(ExportFunc{PerifyMemberName(name), func});
+            ((is_global || global) ? global_funcs : funcs).push_back(ExportFunc{name, func});
         }
         void AddMember(const char* name, LuaIndexer getter, LuaIndexer setter, bool global) override {
-            ((is_global || global) ? global_vars : vars).push_back(ExportVar{PerifyMemberName(name), getter, setter});
+            ((is_global || global) ? global_vars : vars).push_back(ExportVar{name, getter, setter});
         }
         bool CheckRename(const char* name, bool global) const {
             return true;
@@ -567,6 +571,7 @@ namespace internal {
             TypeDesc* desc = g_env.allocator.AllocObj<TypeDesc>();
 
             desc->lud_index = GetLudIndex();
+            desc->weak_index = GetWeakIndex();
             desc->weak_proc = weak_proc;
             desc->super = const_cast<TypeDesc*>(super);
             desc->caster = caster;
@@ -625,6 +630,19 @@ namespace internal {
                 --len;
 
             return StringView{name, len};
+        }
+
+        int GetWeakIndex() const {
+            if (is_global || weak_proc.tag == 0)
+                return 0;
+
+            auto& tags = g_env.declared.weak_tags;
+            auto it = std::find(tags.begin(), tags.end(), weak_proc.tag);
+            if (it == tags.end()) {
+                tags.push_back(weak_proc.tag);
+                return (int)(tags.size() - 1);
+            }
+            return (int)(it - tags.begin());
         }
 
         uint8_t GetLudIndex() const {
