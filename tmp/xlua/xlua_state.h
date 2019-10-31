@@ -736,5 +736,5 @@ inline CallGuard Function::Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&
 
 XLUA_NAMESPACE_END
 
-/* */
+/* include the basic support implementation */
 #include "support.hpp"

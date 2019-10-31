@@ -24,6 +24,9 @@ namespace internal {
             };
         };
 
+        const char* name;
+        const Value* vals;
+
         static inline Value Make() {
             Value cv;
             cv.type = Type::kNone;
@@ -56,9 +59,6 @@ namespace internal {
             cv.number_val = (int)val;
             return cv;
         }
-
-        const char* name;
-        const Value* vals;
     };
 
     struct ScriptValue {
