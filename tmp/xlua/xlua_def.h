@@ -13,15 +13,45 @@ struct lua_State;
 
 XLUA_NAMESPACE_BEGIN
 
-template <typename Ty> struct Support;
-struct TypeDesc;
-class State;
-
-/* ¼ìË÷ÀàÐÍID */
+/* type identify */
 template <typename Ty>
 struct Identity { typedef Ty type; };
+/* type support */
+template <typename Ty>
+struct Support;
 
-struct weak_obj_tag {};
+/* type describtion */
+struct TypeDesc;
+/* lua state */
+class State;
+
+/* market type is not support */
+struct not_support_tag {};
+/* value type */
+struct value_category_tag {};
+/* object type, support to push/load with pointer/reference */
+struct object_category_tag_ {};
+/* type has declared export to lua */
+struct declared_category_tag : object_category_tag_ {};
+/* collection type, as vector/list/map... */
+struct collection_category_tag : object_category_tag_ {};
+/* user defined export type at runtime */
+struct extend_category_tag : object_category_tag_ {};
+
+/* export to lua function */
+typedef int(*LuaFunction)(lua_State* l);
+/* export to lua var indexer (get/set) */
+typedef int(*LuaIndexer)(State* l, void* obj, const TypeDesc* info);
+
+/* type caster,
+ * used for static_cast pointer to base type or dynamic_cast to derived type
+*/
+struct TypeCaster {
+    typedef void* (*Caster)(void* obj, const TypeDesc* src, const TypeDesc* dest);
+
+    Caster to_super;
+    Caster to_derived;
+};
 
 /* weak obj reference */
 struct WeakObjRef {
@@ -36,6 +66,8 @@ inline bool operator != (const WeakObjRef& l, const WeakObjRef& r) {
     return !(l == r);
 }
 
+/* weak object reference support
+*/
 struct WeakObjProc {
     typedef WeakObjRef(*MakeProc)(void* obj);
     typedef void* (*GetProc)(WeakObjRef);
@@ -45,6 +77,43 @@ struct WeakObjProc {
     GetProc getter;
 };
 
+/* exoprt declared type desc */
+struct TypeDesc {
+    int id;
+    const char* name;
+#if XLUA_ENABLE_LUD_OPTIMIZE
+    uint8_t lud_index;          // lightuserdata index
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+    int weak_index;             // weak object reference index(for quick index weak obj info)
+    const TypeDesc* super;
+    const TypeDesc* child;
+    const TypeDesc* brother;
+    WeakObjProc weak_proc;      // support weakobjref, such as ObjectIndex
+    TypeCaster caster;          // type caster, cast to super/derived
+};
+
+/* collection interface */
+struct ICollection {
+    virtual const char* Name() = 0;
+    virtual int Insert(void* obj, State* l) = 0;
+    virtual int Remove(void* obj, State* l) = 0;
+    virtual int Index(void* obj, State* l) = 0;
+    virtual int NewIndex(void* obj, State* l) = 0;
+    virtual int Iter(void* obj, State* l) = 0;
+    virtual int Length(void* obj) = 0;
+    virtual void Clear(void* obj) = 0;
+};
+
+/* type desc factory */
+struct ITypeCreator {
+    virtual ~ITypeCreator() { }
+    virtual void SetCaster(TypeCaster caster) = 0;
+    virtual void SetWeakProc(WeakObjProc proc) = 0;
+    virtual void AddMember(const char* name, LuaFunction func, bool global) = 0;
+    virtual void AddMember(const char* name, LuaIndexer getter, LuaIndexer setter, bool global) = 0;
+    virtual const TypeDesc* Finalize() = 0;
+};
+
 class ObjectIndex;
 namespace internal {
     /* xlua weak obj reference support */
@@ -52,7 +121,7 @@ namespace internal {
     void* GetWeakObjPtr(WeakObjRef index_);
 }
 
-/* lua weak object reference index */
+/* xlua weak object reference index */
 class ObjectIndex {
     friend void FreeObjectIndex(ObjectIndex&);
     friend WeakObjRef internal::MakeWeakObjRef(void*, ObjectIndex&);
@@ -72,6 +141,24 @@ private:
     int index_ = 0;
 };
 
+/* */
+template <typename Ty>
+struct IsLuaType {
+private:
+    template <typename U> static auto Check(int)->decltype(::xLuaGetTypeDesc(Identity<U>()), std::true_type());
+    template <typename U> static auto Check(...)->std::false_type;
+public:
+    static constexpr bool value = decltype(Check<Ty>(0))::value;
+};
+
+/* */
+template <typename Ty>
+struct IsSupport {
+    static constexpr bool value =
+        !std::is_same<not_support_tag, typename Support<Ty>::category>::value;
+};
+
+/* traits type is support xlua weak object reference */
 template<typename Ty>
 struct IsWeakObj {
 private:
@@ -81,12 +168,14 @@ public:
     static constexpr bool value = std::is_same<decltype(Check<Ty>(0)), ObjectIndex>::value;
 };
 
+/* xlua weak object reference support tag */
+struct weak_obj_tag {};
+
 template <typename Ty>
 struct WeakObjTrais {
 private:
     template <typename C>
     static C Query(ObjectIndex C::*);
-public:
     typedef typename decltype(Query(&Ty::xlua_obj_index_)) class_type;
 
     static WeakObjRef Make(void* obj) {
@@ -94,6 +183,11 @@ public:
     }
     static void* Get(WeakObjRef ref) {
         return static_cast<Ty*>(static_cast<class_type*>(internal::GetWeakObjPtr(ref)));
+    }
+
+public:
+    static WeakObjProc Proc() {
+        return WeakObjProc{typeid(weak_obj_tag).hash_code(), &Make, &Get};
     }
 };
 
@@ -108,14 +202,12 @@ XLUA_NAMESPACE_END
     const XLUA_NAMESPACE TypeDesc* xLuaGetTypeDesc(XLUA_NAMESPACE Identity<ClassName>)
 
 /* default weak obj proc queryer */
-inline XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(...) { return XLUA_NAMESPACE WeakObjProc{0, nullptr, nullptr}; }
+inline XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(...) {
+    return XLUA_NAMESPACE WeakObjProc{0, nullptr, nullptr};
+}
 
 /* query xlua weak obj proc */
 template <typename Ty, typename std::enable_if<XLUA_NAMESPACE IsWeakObj<Ty>::value, int>::type = 0>
-const XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<Ty>) {
-    return XLUA_NAMESPACE WeakObjProc {
-        typeid(XLUA_NAMESPACE weak_obj_tag).hash_code(),
-        &XLUA_NAMESPACE WeakObjTrais<Ty>::Make,
-        &XLUA_NAMESPACE WeakObjTrais<Ty>::Get
-    };
+inline const XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<Ty>) {
+    return XLUA_NAMESPACE WeakObjTrais<Ty>::Proc();
 }

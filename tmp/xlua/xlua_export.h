@@ -112,6 +112,44 @@ namespace internal {
         }
     };
 
+    template <typename Dy, typename By>
+    struct CasterTraits {
+        static void* ToSuper(void* obj, const TypeDesc* src, const TypeDesc* dst) {
+            if (src == dst/* || src->super == nullptr*/)
+                return obj;
+            return src->super->caster->ToSuper(static_cast<By*>((Dy*)obj), dst);
+        }
+
+        static void* ToDerived(void* obj, const TypeDesc* src, const TypeDesc* dst) {
+            if (src == dst)
+                return obj;
+            obj = dst->super->caster->ToDerived(obj, src, dst->super);
+            return obj ? dynamic_cast<Dy*>(static_cast<By*>(obj)) : nullptr;
+        }
+
+        static inline TypeCaster Get() {
+            return TypeCaster{&ToSuper, &ToDerived};
+        }
+    };
+
+    template <typename Dy>
+    struct CasterTraits<Dy, void> {
+        static void* ToSuper(void* obj, const TypeDesc* src, const TypeDesc* dst) {
+            return obj;
+        }
+
+        static void* ToDerived(void* obj, const TypeDesc* src, const TypeDesc* dst) {
+            if (src == dst)
+                return obj;
+            obj = dst->super->caster->ToDerived(obj, src, dst->super);
+            return static_cast<Dy*>(obj);
+        }
+
+        static inline TypeCaster Get() {
+            return TypeCaster{&ToSuper, &ToDerived};
+        }
+    };
+
     ITypeCreator* CreateCreator(const char* path, bool global, const TypeDesc* super);
 } // namespace internal
 

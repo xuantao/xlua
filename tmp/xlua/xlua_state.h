@@ -122,13 +122,13 @@ public:
     VarType LoadFeild(const Ky& key);
 
     template <typename Ky>
-    void SetFeild(const Ky& key);
+    void SetField(const Ky& key);
 
     template <typename Ky, typename Ty>
-    Ty GetFeild(const Ky& key);
+    Ty GetField(const Ky& key);
 
     template <typename Ky, typename Ty>
-    void SetFeild(const Ky& key, Ty& val);
+    void SetField(const Ky& key, Ty& val);
 
     template <typename Ky, typename... Rys, typename... Args>
     CallGuard Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args);
@@ -171,18 +171,18 @@ public:
 
     template <typename Ty>
     inline bool IsType() {
-        using purify_type = typename PurifyType<Ty>::type;
-        static_assert(std::is_base_of<object_category_tag_, Support<purify_type>::category>::value,
+        typedef typename PurifyType<Ty>::type type;
+        static_assert(std::is_base_of<object_category_tag_, Support<type>::category>::value,
             "not support type");
         if (!IsValid())
             return false;
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
         if (IsLud())
-            return internal::IsUd(internal::LightData::Make(ptr_), Support<purify_type>::Desc());
+            return internal::IsUd(internal::LightUd::Make(ptr_), Support<type>::Desc());
         else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-            return internal::IsUd(static_cast<internal::FullData*>(ptr_), Support<purify_type>::Desc());
+            return internal::IsUd(static_cast<internal::FullUd*>(ptr_), Support<type>::Desc());
     }
 
     template <typename Ty,
@@ -194,10 +194,10 @@ public:
             return nullptr;
 #if XLUA_ENABLE_LUD_OPTIMIZE
         if (IsLud())
-            return internal::As<Ty>(internal::LightData::Make(ptr_));
+            return internal::As<Ty>(internal::LightUd::Make(ptr_));
         else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-            return internal::As<Ty>(static_cast<internal::FullData*>(ptr_));
+            return internal::As<Ty>(static_cast<internal::FullUd*>(ptr_));
     }
 
     template <typename Ty,
@@ -314,6 +314,9 @@ public:
     inline int GetTop() { return lua_gettop(state_.l_); }
     inline void SetTop(int top) { lua_settop(state_.l_, top); }
     inline void PopTop(int n) { lua_pop(state_.l_, n); }
+    inline bool DoString(const char* script, const char* chunk) {
+        return state_.DoString(script, chunk);
+    }
 
     VarType GetType(int index) {
         int lty = lua_type(state_.l_, index);
@@ -329,7 +332,7 @@ public:
         case LUA_TLIGHTUSERDATA:
             ptr = lua_touserdata(state_.l_, index);
 #if XLUA_ENABLE_LUD_OPTIMIZE
-            if (internal::LightData::IsValid(ptr))
+            if (internal::LightUd::IsValid(ptr))
                 vt = VarType::kUserData;
             else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
@@ -352,7 +355,7 @@ public:
             break;
         case LUA_TUSERDATA:
             ptr = lua_touserdata(state_.l_, index);
-            if (internal::IsValid(static_cast<internal::FullData*>(ptr)))
+            if (internal::IsValid(static_cast<internal::FullUd*>(ptr)))
                 vt = VarType::kUserData;
             break;
         }
@@ -374,7 +377,7 @@ public:
         case LUA_TLIGHTUSERDATA:
             ptr = lua_touserdata(l, index);
 #if XLUA_ENABLE_LUD_OPTIMIZE
-            if (internal::LightData::IsValid(ptr))
+            if (internal::LightUd::IsValid(ptr))
                 return Variant(ptr, Object(-1, this));
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
             return Variant(ptr);
@@ -392,7 +395,7 @@ public:
             return Variant(VarType::kFunction, Object(state_.RefObj(index), this));
         case LUA_TUSERDATA:
             ptr = lua_touserdata(l, index);
-            if (internal::IsValid(static_cast<internal::FullData*>(ptr)))
+            if (internal::IsValid(static_cast<internal::FullUd*>(ptr)))
                 return Variant(VarType::kUserData, Object(state_.RefObj(index), this));
             break;
         }
@@ -401,8 +404,7 @@ public:
 
     void PushVar(const Variant& var) {
         auto* l = state_.l_;
-        switch (var.GetType())
-        {
+        switch (var.GetType()) {
         case VarType::kNil:
             lua_pushnil(l);
             break;
@@ -495,7 +497,7 @@ public:
     template <typename Ty>
     inline Ty GetGlobal(const char* path) {
         StackGuard guard(this);
-        LoadGolbal(path);
+        LoadGlobal(path);
         return Load<Ty>(-1);
     }
 
@@ -524,7 +526,7 @@ public:
     }
 
     template <typename Ky, typename Ty>
-    bool SetFeild(int index, const Ky& key, Ty& val) {
+    bool SetField(int index, const Ky& key, Ty& val) {
         if (!lua_istable(state_.l_, index))
             return false;
 
@@ -536,7 +538,7 @@ public:
     }
 
     template <typename Ky, typename Ty>
-    Ty GetFeild(int index, const Ky& key) {
+    Ty GetField(int index, const Ky& key) {
         StackGuard guard(this);
         LoadField(index, key);
         return Load<Ty>(-1);
@@ -544,28 +546,32 @@ public:
 
     template <typename Ty>
     bool IsType(int index) const {
-        static_assert(IsSupport<Ty>::value, "not support type");
-        return Support<typename PurifyType<Ty>::type>::Check(this, index);
+        typedef typename PurifyType<Ty>::type type;
+        static_assert(IsSupport<type>::value, "not support type");
+        return Support<type>::Check(this, index);
     }
 
     template <typename Ty, typename std::enable_if<std::is_pointer<Ty>::value, int>::type = 0>
     Ty Load(int index) {
-        static_assert(IsSupport<Ty>::value, "not support type");
-        return Support<typename PurifyType<Ty>::type>::Load(this, index);
+        typedef typename PurifyType<Ty>::type type;
+        static_assert(IsSupport<type>::value, "not support type");
+        return Support<type>::Load(this, index);
     }
 
     template <typename Ty, typename std::enable_if<!std::is_pointer<Ty>::value, int>::type = 0>
     Ty Load(int index) {
-        static_assert(IsSupport<Ty>::value, "not support type");
+        typedef typename PurifyType<Ty>::type type;
+        static_assert(IsSupport<type>::value, "not support type");
         static_assert(!std::is_reference<Ty>::value || std::is_const<Ty>::value,
             "not support load reference value");
-        return Support<typename PurifyType<Ty>::type>::Load(this, index);
+        return Support<type>::Load(this, index);
     }
 
     template <typename Ty>
     void Push(const Ty& val) {
-        static_assert(IsSupport<Ty>::value, "not support push value to lua");
-        Support<typename PurifyType<Ty>::type>::Push(this, val);
+        typedef typename PurifyType<Ty>::type type;
+        static_assert(IsSupport<type>::value, "not support push value to lua");
+        Support<type>::Push(this, val);
     }
 
     template <typename... Ty>
@@ -574,7 +580,7 @@ public:
     }
 
     template <typename... Ty, size_t... Idxs>
-    inline void LoadMul(int index, std::tuple<Ty&...>& ret, index_sequence<Idxs...>) {
+    inline void LoadMul(int index, std::tuple<Ty&...>&& ret, index_sequence<Idxs...>) {
         using ints = int[];
         (void)ints {
             0, (std::get<Idxs>(ret) = Load<Ty>(index++), 0)...
@@ -658,7 +664,7 @@ VarType Table::LoadFeild(const Ky& key) {
 }
 
 template <typename Ky>
-void Table::SetFeild(const Ky& key) {
+void Table::SetField(const Ky& key) {
     if (!IsValid() || state_->GetTop() == 0)
         return;
 
@@ -670,7 +676,7 @@ void Table::SetFeild(const Ky& key) {
 }
 
 template <typename Ky, typename Ty>
-Ty Table::GetFeild(const Ky& key) {
+Ty Table::GetField(const Ky& key) {
     StackGuard guard(state_);
     if (!IsValid()) {
         state_->PushNil();
@@ -683,13 +689,13 @@ Ty Table::GetFeild(const Ky& key) {
 }
 
 template <typename Ky, typename Ty>
-void Table::SetFeild(const Ky& key, Ty& val) {
+void Table::SetField(const Ky& key, Ty& val) {
     if (!IsValid())
         return;
 
     StackGuard guard(state_);
     state_->PushVar(*this);
-    state_->SetFeild(-1, key, val);
+    state_->SetField(-1, key, val);
 }
 
 template <typename Ky, typename... Rys, typename... Args>
@@ -731,4 +737,4 @@ inline CallGuard Function::Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&
 XLUA_NAMESPACE_END
 
 /* */
-#include "support.h"
+#include "support.hpp"

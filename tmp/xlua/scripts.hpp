@@ -10,7 +10,7 @@ return {
 
 /* global metatable */
 static const char* kGlobalMetatable = R"V0G0N(
-local indexer, md_name, funcs, vars = ...
+local state, indexer, md_name, funcs, vars = ...
 return {
     __index = function(tb, name)
         local f = funcs[name]
@@ -20,7 +20,7 @@ return {
 
         local v = vars[name]
         if v then
-            return get(v)
+            return indexer(state, v[1])
         else
             print("not find")
         end
@@ -29,7 +29,7 @@ return {
     __newindex = function(tb, name, value)
         local v = vars[name]
         if v then
-            set(v)
+            indexer(state, v[2], value)
         else
             print("not find")
         end
@@ -47,7 +47,7 @@ return {
 
 /* declared type metatable */
 static const char* kDeclaredMetatable = R"V0G0N(
-local get_, set_ type_name, vars, funcs = ...
+local state, indexer, type_name, funcs, vars = ...
 return {
     __index = function (obj, name)
         local f = funcs[name]
@@ -57,16 +57,16 @@ return {
 
         local v = vars[name]
         if v then
-            return get_var(obj, v)
+            return indexer(state, obj, v[1])
         end
         print("type[%s] does not own member[%s]", type_name, name)
         return nil
     end,
 
-    __newindex = function (obj, name, var)
+    __newindex = function (obj, name, value)
         local v = vars[name]
         if v then
-            set_var(obj, v, var)
+            indexer(state, obj, v[2], value)
             return
         end
 
@@ -75,10 +75,6 @@ return {
         else
             print("type[%s] does not own member[%s]", type_name, name)
         end
-    end,
-
-    __gc = function (obj)
-        --TODO:
     end,
 
     __tostring == function (obj)
@@ -93,7 +89,7 @@ return {
 
 /* light user data metatable */
 static const char* kLudMetatable = R"V0G0N(
-local parser, get, set, types = ...
+local state, unpack_ptr, indexer, types = ...
 return {
     __index = function (ptr, name)
         local id = parser(ptr)
@@ -110,7 +106,7 @@ return {
 
         local v = t.vars[name]
         if v then
-            return get(ptr, v)
+            return indexer(state, ptr, v)
         end
 
         print("not find")
@@ -133,8 +129,11 @@ return {
         end
     end,
 
+    __tostring = function(ptr)
+    end,
+
     __pairs = function (ptr)
         --TODO:
-    end
+    end,
 }
 )V0G0N";

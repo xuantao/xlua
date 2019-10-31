@@ -1,23 +1,23 @@
-#pragma once
+ï»¿#pragma once
 #include <stdint.h>
 
-/* ÈİÆ÷ÈİÁ¿ÔöÁ¿ */
+/* å®¹å™¨å®¹é‡å¢é‡ */
 #define XLUA_CONTAINER_INCREMENTAL  1024
-/* ÀàĞÍÃû³Æ×î´ó×Ö½ÚÊı */
+/* ç±»å‹åç§°æœ€å¤§å­—èŠ‚æ•° */
 #define XLUA_MAX_TYPE_NAME_LENGTH   256
-/* Êä³öÈÕÖ¾×î´ó»º´æ×Ö½ÚÊı */
+/* è¾“å‡ºæ—¥å¿—æœ€å¤§ç¼“å­˜å­—èŠ‚æ•° */
 #define XLUA_MAX_BUFFER_CACHE       1024
 
-/* Ö§³Ö¶à¼Ì³Ğ
- * µ±´æÔÚ¶à¼Ì³ĞÊ±, ×ÓÀàÖ¸Õë×ªÏò»ùÀàÖ¸ÕëÊ±Ö¸Õë¿ÉÄÜ»á·¢ÉúÆ«ÒÆ£¬Ã¿´Î·ÃÎÊ¶ÔÏóÊ±Ö¸ÕëĞèÒª×ö¶ÔÓ¦×ª»»¡£
- * Èç¹ûÃ÷È·Ô¼¶¨²»´æÔÚ¶à¼Ì³ĞÇé¿ö¿ÉÒÔ¹Ø±Õ´Ë¹¦ÄÜÒÔÓÅ»¯Ğ§ÂÊ¡£
+/* æ”¯æŒå¤šç»§æ‰¿
+ * å½“å­˜åœ¨å¤šç»§æ‰¿æ—¶, å­ç±»æŒ‡é’ˆè½¬å‘åŸºç±»æŒ‡é’ˆæ—¶æŒ‡é’ˆå¯èƒ½ä¼šå‘ç”Ÿåç§»ï¼Œæ¯æ¬¡è®¿é—®å¯¹è±¡æ—¶æŒ‡é’ˆéœ€è¦åšå¯¹åº”è½¬æ¢ã€‚
+ * å¦‚æœæ˜ç¡®çº¦å®šä¸å­˜åœ¨å¤šç»§æ‰¿æƒ…å†µå¯ä»¥å…³é—­æ­¤åŠŸèƒ½ä»¥ä¼˜åŒ–æ•ˆç‡ã€‚
 */
 #ifndef XLUA_ENABLE_MULTIPLE_INHERITANCE
     #define XLUA_ENABLE_MULTIPLE_INHERITANCE    1
 #endif
 
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
-    #define _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, DstInfo)   (SrcInfo == DstInfo ? Ptr : SrcInfo->caster->ToSuper(Ptr, DstInfo))
+    #define _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, DstInfo)   (SrcInfo == DstInfo ? Ptr : SrcInfo->caster.to_super(Ptr, SrcInfo, DstInfo))
     #define _XLUA_TO_TOP_SUPER_PTR(Ptr, SrcInfo)        _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, nullptr)
     #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          DstInfo->caster->ToWeakPtr(Ptr)
 #else // XLUA_ENABLE_MULTIPLE_INHERITANCE
@@ -26,11 +26,11 @@
     #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          Ptr
 #endif // XLUA_ENABLE_MULTIPLE_INHERITANCE
 
-/* 64Î»ÏµÍ³¿ªÆôlight user dataÓÅ»¯
- * µ¼³ö¶ÔÏóÖ¸ÕëÊ¹ÓÃLightUserData´úÌæFullUserData, ±ÜÃâLuaµÄGCÒÔÌáÉıĞ§ÂÊ
+/* 64ä½ç³»ç»Ÿå¼€å¯light user dataä¼˜åŒ–
+ * å¯¼å‡ºå¯¹è±¡æŒ‡é’ˆä½¿ç”¨LightUserDataä»£æ›¿FullUserData, é¿å…Luaçš„GCä»¥æå‡æ•ˆç‡
 */
 #ifndef XLUA_ENABLE_LUD_OPTIMIZE
-    ///* ¼ì²éÏµÍ³ÊÇ·ñÖ§³Ö */
+    ///* æ£€æŸ¥ç³»ç»Ÿæ˜¯å¦æ”¯æŒ */
     #if INTPTR_MAX == INT64_MAX
         #define XLUA_ENABLE_LUD_OPTIMIZE 1
     #endif

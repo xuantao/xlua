@@ -69,7 +69,7 @@ namespace internal {
 
 /* export type support */
 template <typename Ty>
-struct Support : internal::ExportSupport<Ty, IsDeclaredType<Ty>::value> {
+struct Support : internal::ExportSupport<Ty, IsLuaType<Ty>::value> {
 };
 
 /* lua var support */
@@ -126,7 +126,7 @@ struct Support<std::nullptr_t> : ValueCategory<std::nullptr_t> {
 namespace internal {
     template <typename Ty>
     struct IsLarge {
-        static constexpr bool is_integral = std::is_integral<Ty>::value;
+        static constexpr bool is_integer = std::numeric_limits<Ty>::is_integer;
         static constexpr bool value = std::numeric_limits<Ty>::digits > 32;
     };
 
@@ -146,31 +146,32 @@ namespace internal {
         }
 
     private:
-        template <typename U, typename std::enable_if<std::is_floating_point<U>::value>::type>
+        template <typename U, typename std::enable_if<std::is_floating_point<U>::value, int>::type = 0>
         static inline void DoPush(State* l, U val) {
             lua_pushnumber(l->GetLuaState(), static_cast<U>(val));
         }
 
-        template <typename U, typename std::enable_if<std::is_integral<U>::value && !IsLarge<U>::value>::type>
+        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && !IsLarge<U>::value, int>::type = 0>
         static inline void DoPush(State* l, U val) {
-            lua_pushnumber(l->GetLuaState(), val); }
+            lua_pushnumber(l->GetLuaState(), val);
+        }
 
-        template <typename U, typename std::enable_if<std::is_integral<U>::value && IsLarge<U>::value>::type>
+        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && IsLarge<U>::value, int>::type = 0>
         static inline void DoPush(State* l, U val) {
             lua_pushinteger(l->GetLuaState(), val);
         }
 
-        template <typename U, typename std::enable_if<std::is_floating_point<U>::value>::type>
+        template <typename U, typename std::enable_if<std::is_floating_point<U>::value, int>::type = 0>
         static inline U DoLoad(State* l, int index) {
             return static_cast<U>(lua_tonumber(l->GetLuaState(), index));
         }
 
-        template <typename U, typename std::enable_if<std::is_integral<U>::value && !IsLarge<U>::value>::type>
+        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && !IsLarge<U>::value, int>::type = 0>
         static inline U DoLoad(State* l, int index) {
             return static_cast<U>(lua_tonumber(l->GetLuaState(), index));
         }
 
-        template <typename U, typename std::enable_if<std::is_integral<U>::value && IsLarge<U>::value>::type>
+        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && IsLarge<U>::value, int>::type = 0>
         static inline U DoLoad(State* l, int index) {
             return static_cast<U>(lua_tointeger(l->GetLuaState(), index));
         }
@@ -195,6 +196,27 @@ _XLUA_NUMBER_SUPPORT(long long)
 _XLUA_NUMBER_SUPPORT(unsigned long long)
 _XLUA_NUMBER_SUPPORT(float)
 _XLUA_NUMBER_SUPPORT(double)
+
+/* boolean type support */
+struct boolean_tag {};
+
+template <>
+struct Support<bool> : ValueCategory<bool, boolean_tag> {
+    static inline const char* Name() { return "boolean"; }
+
+    static inline bool Check(State* l, int index) {
+        int lty = lua_type(l->GetLuaState(), index);
+        return lty == LUA_TNIL || lty == LUA_TBOOLEAN;
+    }
+
+    static inline bool Load(State* l, int index) {
+        return lua_toboolean(l->GetLuaState(), index);
+    }
+
+    static inline void Push(State* l, bool b) {
+        lua_pushboolean(l->GetLuaState(), b);
+    }
+};
 
 struct string_tag {};
 
@@ -237,7 +259,7 @@ struct Support<char*> : ValueCategory<char*, string_tag> {
 
 template <class Trait, class Alloc>
 struct Support<std::basic_string<char, Trait, Alloc>> : ValueCategory<std::basic_string<char, Trait, Alloc>, string_tag>{
-    typedef std::basic_string<char, Trait, Alloc>* value_type;
+    typedef std::basic_string<char, Trait, Alloc> value_type;
 
     static inline const char* Name() {
         return "std::string";
@@ -393,7 +415,7 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, std_sha
         if (ud == nullptr || ud->category != UserDataCategory::SmartPtr)
             return false;
 
-        if (static_cast<internal::SmartPtrData*>(ud)->tag != base_type_::tag)
+        if (static_cast<internal::SmartPtrUd*>(ud)->tag != base_type_::tag)
             return false;
 
         return l->state_.IsUd(ud, Support<Ty>::Desc());
@@ -407,12 +429,12 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, std_sha
         if (ud == nullptr || ud->dv != internal::UvType::kSmartPtr)
             return value_type();
 
-        auto* sud = static_cast<internal::SmartPtrData*>(ud);
+        auto* sud = static_cast<internal::SmartPtrUd*>(ud);
         if (sud->tag != base_type_::tag)
             return value_type();
 
         return value_type(*static_cast<value_type*>(sud->data),
-            (Ty*)_XLUA_TO_SUPER_PTR(ud->obj, ud->desc, Support<Ty>::Desc()));
+            (Ty*)_XLUA_TO_SUPER_PTR(ud->ptr, ud->desc, Support<Ty>::Desc()));
     }
 
     static void Push(State* l, const value_type& ptr) {

@@ -6,8 +6,8 @@
 #include <assert.h>
 #include <lua.hpp>
 
-
 XLUA_NAMESPACE_BEGIN
+
 #if XLUA_ENABLE_LUD_OPTIMIZE
     #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TLIGHTUSERDATA || type == LUA_TUSERDATA)
 #else
@@ -15,8 +15,75 @@ XLUA_NAMESPACE_BEGIN
 #endif
 
 namespace internal {
-    constexpr size_t kMaxLudIndex1 = 0xff;
-    constexpr size_t kMaxLudIndex = 0x00ffffff;
+    enum class UdMajor : int8_t {
+        kNone = 0,
+        kDeclaredType,
+        kCollection,
+    };
+
+    enum class UdMinor : int8_t {
+        kNone = 0,
+        kPtr,
+        kSmartPtr,
+        kValue,
+    };
+
+    struct FullUd {
+        // describe user data info
+        struct {
+            int8_t tag_1_ = _XLUA_TAG_1;
+            int8_t tag_2_ = _XLUA_TAG_2;
+            UdMajor major = UdMajor::kNone; // major userdata type
+            UdMinor minor = UdMinor::kNone; // minor userdata type
+        };
+        // data information
+        union {
+            const TypeDesc* desc;
+            ICollection* collection;
+        };
+        // obj data ptr
+        union {
+            void* ptr;
+            WeakObjRef ref;
+        };
+
+    public:
+        FullUd(void* p, ICollection* col) {
+            major = UdMajor::kCollection;
+            minor = UdMinor::kPtr;
+            collection = col;
+            ptr = p;
+        }
+
+        FullUd(void* p, const TypeDesc* d) {
+            major = UdMajor::kDeclaredType;
+            minor = UdMinor::kPtr;
+            desc = d;
+            ptr = p;
+        }
+
+        FullUd(WeakObjRef _ref, const TypeDesc* d) {
+            major = UdMajor::kDeclaredType;
+            minor = UdMinor::kPtr;
+            desc = d;
+            ref = _ref;
+        }
+
+    protected:
+        FullUd(void* p, UdMinor v, ICollection* col) {
+            major = UdMajor::kCollection;
+            minor = v;
+            collection = col;
+            ptr = p;
+        }
+
+        FullUd(void* p, UdMinor v, const TypeDesc* d) {
+            major = UdMajor::kDeclaredType;
+            minor = v;
+            desc = d;
+            ptr = p;
+        }
+    };
 
     inline bool IsBaseOf(const TypeDesc* base, const TypeDesc* drive) {
         while (drive && drive != base)
@@ -30,52 +97,103 @@ namespace internal {
         return dest;
     }
 
-    inline bool IsUd(FullData* ud, const TypeDesc* desc) {
-        if (ud->dc != UdType::kDeclaredType)
+    inline bool IsValid(const FullUd* ud) {
+        return ud->tag_1_ == _XLUA_TAG_1 && ud->tag_2_ == _XLUA_TAG_2 &&
+            ud->major != UdMajor::kNone && ud->minor != UdMinor::kNone;
+    }
+
+    inline bool IsUd(FullUd* ud, const TypeDesc* desc) {
+        if (ud->major != UdMajor::kDeclaredType)
             return false;
         if (!IsBaseOf(desc, ud->desc))
             return false;
         return true;
     }
 
-    inline bool IsUd(FullData* ud, ICollection* collection) {
-        return ud->dc == UdType::kCollection && ud->collection == collection;
+    inline bool IsUd(FullUd* ud, ICollection* collection) {
+        return ud->major == UdMajor::kCollection && ud->collection == collection;
     }
 
-    inline void* As(FullData* ud, const TypeDesc* desc) {
-        if (ud->obj == nullptr || !IsUd(ud, desc))
+    inline void* As(FullUd* ud, const TypeDesc* desc) {
+        if (ud->ptr == nullptr || !IsUd(ud, desc))
             return nullptr;
-        if (ud->vc == UvType::kPtr && ud->desc->weak_index) {
-            if (ud->desc->weak_proc.getter(static_cast<WeakUd*>(ud)->ref) == nullptr)
-                return nullptr; // check the weak obj ref is valid
-        }
-        return _XLUA_TO_SUPER_PTR(ud->obj, ud->desc, desc);
+
+        void* ptr = nullptr;
+        if (ud->minor == UdMinor::kPtr && ud->desc->weak_index)
+            ptr = ud->desc->weak_proc.getter(ud->ref);
+        else
+            ptr = ud->ptr;
+        return _XLUA_TO_SUPER_PTR(ud->ptr, ud->desc, desc);
     }
 
-    inline void* As(FullData* ud, ICollection* desc) {
+    inline void* As(FullUd* ud, ICollection* desc) {
         if (!IsUd(ud, desc))
             return nullptr;
-        return ud->obj;
+        return ud->ptr;
     }
 
     template <typename Ty, typename std::enable_if<std::is_base_of<object_category_tag_, typename Support<Ty>::category>::value, int>::type = 0>
-    inline Ty* As(FullData* ud) {
-        if (ud->tag_1_ != _XLUA_TAG_1 || ud->tag_2_ != _XLUA_TAG_2)
-            return nullptr;
-        return static_cast<Ty*>(As_(ud, Support<Ty>::Desc()));
+    inline Ty* As(FullUd* ud) {
+        if (IsValid(ud))
+            return static_cast<Ty*>(As(ud, Support<Ty>::Desc()));
+        return nullptr;
     }
 
-    inline bool IsValid(const FullData* ud) {
-        return ud->tag_1_ == _XLUA_TAG_1 && ud->tag_2_ == _XLUA_TAG_2;
-    }
+#define ASSERT_FUD(ud) assert(ud && IsValid(ud))
 
-#if XLUA_ENABLE_LUD_OPTIMIZE
-    struct WeakObjCache {
-        void* obj;
-        const TypeDesc* desc;
+    /* object userdata, this ud will destruction on gc */
+    struct ObjectUd : FullUd {
+        template <typename Ty>
+        ObjectUd(Ty* obj, UdMinor uv) : FullUd(obj, uv, Support<Ty>::Desc()) { }
+        virtual ~ObjectUd() { }
     };
 
-    struct LightData {
+    struct SmartPtrUd : ObjectUd {
+        template <typename Ty>
+        SmartPtrUd(Ty* obj, size_t t, void* d) :
+            ObjectUd(obj, UdMinor::kSmartPtr), tag(t), data(d) {}
+        virtual ~SmartPtrUd() {}
+
+        size_t tag;
+        void* data;
+    };
+
+    template <typename Sy>
+    struct SmartPtrUdImpl : SmartPtrUd {
+        template <typename Ty>
+        SmartPtrUdImpl(const Sy& v, Ty* ptr, size_t tag) :
+            SmartPtrUd(ptr, tag, &val), val(v) { }
+        virtual ~SmartPtrUdImpl() { }
+
+        Sy val;
+    };
+
+    template <typename Ty>
+    struct ValueUd : ObjectUd {
+        ValueUd(const Ty& v) : ObjectUd(&val, UdMinor::kValue), val(v) {}
+        virtual ~ValueUd() { }
+
+        Ty val;
+    };
+
+    /* alone userdata, used for cache some user data */
+    struct IAloneUd {
+        virtual ~IAloneUd() { }
+    };
+
+    template <typename Ty>
+    struct AloneUd {
+        AloneUd(const Ty& v) : obj(v) {}
+        virtual ~AloneUd() {}
+
+        Ty obj;
+    };
+
+#if XLUA_ENABLE_LUD_OPTIMIZE
+    /* lightuserdata
+     * 64 bit contain typeinfo and object address/ weak object reference
+    */
+    struct LightUd {
         //TODO: bigedian?
         union {
             // raw ptr
@@ -85,7 +203,7 @@ namespace internal {
             };
             // weak obj ref
             struct {
-                int64_t weak_index : 8;
+                int64_t weak_index : 8;     // same as lud_index
                 int64_t ref_index : 24;
                 int64_t ref_serial : 32;
             };
@@ -105,23 +223,23 @@ namespace internal {
             return WeakObjRef{(int)ref_index, (int)ref_serial};
         }
 
-        static inline LightData Make(int8_t weak_index, int32_t ref_index, int32_t ref_serial) {
-            LightData ld;
+        static inline LightUd Make(int8_t weak_index, int32_t ref_index, int32_t ref_serial) {
+            LightUd ld;
             ld.weak_index = weak_index;
             ld.ref_index = ref_index;
             ld.ref_serial = ref_serial;
             return ld;
         }
 
-        static inline LightData Make(int8_t lud_index, void* p) {
-            LightData ld;
+        static inline LightUd Make(int8_t lud_index, void* p) {
+            LightUd ld;
             ld.value = p;
             ld.lud_index = lud_index;
             return ld;
         }
 
-        static inline LightData Make(void* p) {
-            LightData ld;
+        static inline LightUd Make(void* p) {
+            LightUd ld;
             ld.value = p;
             return ld;
         }
@@ -132,55 +250,63 @@ namespace internal {
         }
     };
 
-    const TypeDesc* GetLudTypeDesc(int lud_index);
-    WeakObjCache GetWeakObjData(int weak_index, int obj_index);
-    void SetWeakObjData(int weak_idnex, int obj_index, void* obj, const TypeDesc* desc);
+    bool CheckLightUd(LightUd ld, const TypeDesc* desc);
+    void* UnpackLightUd(LightUd ld, const TypeDesc* desc);
+    LightUd PackLightUd(void* obj, const TypeDesc* desc);
 
-    bool CheckLightData(LightData ld, const TypeDesc* desc);
-    void* UnpackLightData(LightData ld, const TypeDesc* desc);
-    LightData PackLightPtr(void* obj, const TypeDesc* desc);
-
-    inline bool IsUd(LightData ld, const TypeDesc* desc) {
-        return ld.lud_index && CheckLightData(ld, desc);
+    inline bool IsValid(LightUd ld) {
+        return ld.lud_index != 0;
     }
 
-    inline bool IsUd(LightData ld, ICollection* collection) {
+    inline bool IsUd(LightUd ld, const TypeDesc* desc) {
+        return IsValid(ld) && CheckLightUd(ld, desc);
+    }
+
+    inline bool IsUd(LightUd ld, ICollection* collection) {
         return false;
     }
 
-    inline void* As(LightData ld, const TypeDesc* desc) {
-        return ld.lud_index ? UnpackLightData(ld, desc) : nullptr;
+    inline void* As(LightUd ld, const TypeDesc* desc) {
+        return IsValid(ld) ? UnpackLightUd(ld, desc) : nullptr;
     }
 
-    inline void* As(LightData ld, ICollection* collection) {
+    inline void* As(LightUd ld, ICollection* collection) {
         return nullptr;
     }
 
     template <typename Ty>
-    inline Ty* As(LightData ld) {
+    inline Ty* As(LightUd ld) {
         return static_cast<Ty*>(As(ld, Support<Ty>::Desc()));
     }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
     struct UdCache {
-        int ref;
-        FullData* ud;
+        int ref;    // lua reference index
+        FullUd* ud; // lua userdata
     };
 
     struct LuaObjArray {
         struct ObjRef {
             union {
-                int ref;
-                int next;
+                int ref;    // lua reference index
+                int next;   // next empty slot
             };
-            int count;
+            int count;      // reference count
         };
 
         int empty = 0;
         std::vector<ObjRef> objs{ ObjRef() };   // first element is not used
     };
 
+    /* internal state
+     * manage all lua data
+    */
     struct StateData {
+        inline bool DoString(const char* script, const char* chunk) {
+            luaL_loadbuffer(l_, script, ::strlen(script), chunk);
+            return true;
+        }
+
         inline void PushNil() {
             lua_pushnil(l_);
         }
@@ -257,11 +383,11 @@ namespace internal {
             return true;
         }
 
-        FullData* LoadRawUd(int index) {
+        FullUd* LoadRawUd(int index) {
             if (lua_type(l_, index) != LUA_TUSERDATA)
                 return nullptr;
 
-            auto* ud = static_cast<FullData*>(lua_touserdata(l_, index));
+            auto* ud = static_cast<FullUd*>(lua_touserdata(l_, index));
             if (ud->tag_1_ != _XLUA_TAG_1 || ud->tag_2_ != _XLUA_TAG_2)
                 return nullptr;
             return ud;
@@ -271,7 +397,7 @@ namespace internal {
         inline bool IsUd(int index) {
 #if XLUA_ENABLE_LUD_OPTIMIZE
             if (lua_islightuserdata(l_, index)) {
-                return IsUd(LightData::Make(lua_touserdata(l_, index)),
+                return IsUd(LightUd::Make(lua_touserdata(l_, index)),
                     Support<Ty>::Desc());
             }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
@@ -285,7 +411,7 @@ namespace internal {
         Ty* LoadUd(int index) {
 #if XLUA_ENABLE_LUD_OPTIMIZE
             if (lua_islightuserdata(l_, index)) {
-                return As<Ty>(LightData::Make(lua_touserdata(l_, index)));
+                return As<Ty>(LightUd::Make(lua_touserdata(l_, index)));
             }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
             auto* ud = LoadRawUd(index);
@@ -297,26 +423,26 @@ namespace internal {
         // value
         template <typename Ty>
         inline void PushUd(const Ty& obj) {
-            NewUserData<ValueData<Ty>>(obj);
+            NewUserData<ValueUd<Ty>>(obj);
             SetMetatable(Support<Ty>::Desc());
         }
 
         // collection ptr
         template <typename Ty, typename std::enable_if<std::is_same<collection_category_tag, typename Support<Ty>::category>::value, int>::type = 0>
         inline void PushUd(Ty* ptr) {
+            if (ptr == nullptr) {
+                lua_pushnil(l_);
+                return;
+            }
+
             auto it = collection_ptrs_.find(static_cast<void*>(ptr));
             if (it == collection_ptrs_.end()) {
-                NewUserData<FullData>(ptr, Support<Ty>::Desc());
+                NewUserData<FullUd>(ptr, Support<Ty>::Desc());
                 SetMetatable(static_cast<ICollection*>(nullptr));
                 collection_ptrs_.insert(std::make_pair(ptr, CacheUd()));
             } else {
                 LoadCache(it->second.ref);
             }
-        }
-
-        inline bool CheckWeakUdValid(FullData* fd) {
-            return (fd->desc->weak_proc.tag == 0) ||
-                (fd->desc->weak_proc.getter(static_cast<WeakUd*>(fd)->ref) != nullptr);
         }
 
         // delcared type ptr
@@ -329,7 +455,7 @@ namespace internal {
 
             const auto* desc = Support<Ty>::Desc();
 #if XLUA_ENABLE_LUD_OPTIMIZE
-            if (LightData ld = PackLightPtr(ptr, desc)) {
+            if (LightUd ld = PackLightUd(ptr, desc)) {
                 lua_pushlightuserdata(l_, ld->value);
                 return;
             }
@@ -338,25 +464,25 @@ namespace internal {
             if (desc->weak_index) {
                 auto ref = desc->weak_proc.maker(ptr);
                 auto& cache = MakeWeakCache(desc->weak_index, ref.index);
-                auto& wud = static_cast<WeakUd*>(cache.ud);
-                if (wud) {
-                    if (wud->ref != ref) {                  // prev weak obj is discard
-                        wud->obj = nullptr;
-                        cache.ud = NewUserData<WeakUd>(ptr, desc, ref);
+                auto* ud = cache.ud;
+                if (ud) {
+                    if (ud->ref != ref) {                   // prev weak obj is discard
+                        ud->ref = WeakObjRef{0, 0};         // break the reference
+                        cache.ud = NewUserData<FullUd>(ref, desc);
                         SetMetatable(desc);
                         UpdateCache(cache.ref);
-                    } else if (IsBaseOf(desc, wud->desc)) { // base type
+                    } else if (IsBaseOf(desc, ud->desc)) { // base type
                         LoadCache(cache.ref);
-                    } else if (IsBaseOf(wud->desc, desc)) { // derived type
+                    } else if (IsBaseOf(ud->desc, desc)) { // derived type
                         ud->obj = ptr;
                         ud->desc = desc;
-                        LoadCache(it->second.ref);
+                        LoadCache(cache.ref);
                         SetMetatable(desc);
                     } else {
                         assert(false);
                     }
                 } else {
-                    NewUserData<WeakUd>(ptr, desc, ref);
+                    NewUserData<FullUd>(ref, desc);
                     SetMetatable(desc);
                     cache = CacheUd();
                 }
@@ -373,15 +499,15 @@ namespace internal {
                         LoadCache(it->second.ref);
                         SetMetatable(desc);
                     } else {                                // new object
-                        ud->obj = nullptr;  // mark the ud is discarded
-                        it->second.ud = NewUserData<FullData>(ptr, desc);
+                        ud->obj = nullptr;                  // mark the ud is discarded
+                        it->second.ud = NewUserData<FullUd>(ptr, desc);
                         SetMetatable(desc);
                         UpdateCache(it->second.ref);
                     }
                 } else {
-                    NewUserData<FullData>(ptr, desc);
+                    NewUserData<FullUd>(ptr, desc);
                     SetMetatable(desc);
-                    declared_ptrs_.insert(std::make_pair(tsp, CacheUd()))
+                    declared_ptrs_.insert(std::make_pair(tsp, CacheUd()));
                 }
             }
         }
@@ -393,11 +519,11 @@ namespace internal {
             auto* tsp = _XLUA_TO_TOP_SUPER_PTR(ptr, desc);
             auto it = smart_ptrs_.find(tsp);
             if (it == smart_ptrs_.end()) {
-                NewUserData<SmartPtrDataImpl<Ty>>(s, ptr, tag);
+                NewUserData<SmartPtrUdImpl<Ty>>(s, ptr, tag);
                 SetMetatable(desc);
                 smart_ptrs_.insert(std::make_pair(tsp, CacheUd()));
             } else {
-                assert(static_cast<SmartPtrData*>(it->second.ud)->tag == tag);
+                assert(static_cast<SmartPtrUd*>(it->second.ud)->tag == tag);
                 LoadCache(it->second.ref);
                 // if the obj ptr is the derived type, update the ud info to derived type
                 if (!IsBaseOf(desc, it->second.ud->desc)) {
@@ -409,7 +535,7 @@ namespace internal {
         }
 
         template <typename Ty, typename... Args>
-        inline typename std::enable_if<std::is_base_of<FullData, Ty>::value, Ty*>::type NewUserData(Args&&... args) {
+        inline typename std::enable_if<std::is_base_of<FullUd, Ty>::value, Ty*>::type NewUserData(Args&&... args) {
             void* d = lua_newuserdata(l_, sizeof(Ty));
             return new (d) Ty(std::forward<Args>(args)...);
         }
@@ -499,7 +625,7 @@ namespace internal {
         /* cache the user data on lua top stack */
         inline UdCache CacheUd() {
             int ref = 0;
-            auto* ud = static_cast<FullData*>(lua_touserdata(l_, -1));
+            auto* ud = static_cast<FullUd*>(lua_touserdata(l_, -1));
             ASSERT_FUD(ud);
 
             lua_rawgeti(l_, LUA_REGISTRYINDEX, cache_ref_); // load cache table
@@ -533,21 +659,21 @@ namespace internal {
         }
 
         /* user data gc */
-        void OnGc(FullData* ud) {
+        void OnGc(FullUd* ud) {
             UdCache cache{LUA_NOREF, nullptr};
-            if (ud->vc == UvType::kPtr) {
-                if (ud->dc == UdType::kCollection) {
-                    auto it = collection_ptrs_.find(ud->obj);
+            if (ud->minor == UdMinor::kPtr) {
+                if (ud->major == UdMajor::kCollection) {
+                    auto it = collection_ptrs_.find(ud->ptr);
                     if (it != collection_ptrs_.end()) {
                         cache = it->second;
                         collection_ptrs_.erase(it);
                     }
-                } else if (ud->dc == UdType::kDeclaredType) {
-                    if (ud->obj) {  // need check the user data whether is discard
+                } else if (ud->major == UdMajor::kDeclaredType) {
+                    if (ud->ptr) {  // need check the user data whether is discard
                         if (ud->desc->weak_index) {
-                            cache = MakeWeakCache(ud->desc->weak_index, static_cast<WeakUd*>(ud)->ref.index);
+                            cache = MakeWeakCache(ud->desc->weak_index, ud->ref.index);
                         } else {
-                            auto it = declared_ptrs_.find(ud->obj);
+                            auto it = declared_ptrs_.find(ud->ptr);
                             if (it != declared_ptrs_.end()) {
                                 cache = it->second;
                                 declared_ptrs_.erase(it);
@@ -555,15 +681,15 @@ namespace internal {
                         }
                     }
                 }
-            } else if (ud->vc == UvType::kSmartPtr) {
-                auto it = smart_ptrs_.find(ud->obj);
+            } else if (ud->minor == UdMinor::kSmartPtr) {
+                auto it = smart_ptrs_.find(ud->ptr);
                 if (it != smart_ptrs_.end()) {
                     cache = it->second;
                     smart_ptrs_.erase(it);
                 }
-                static_cast<ObjData*>(ud)->~ObjData();
+                static_cast<ObjectUd*>(ud)->~ObjectUd();
             } else {
-                static_cast<ObjData*>(ud)->~ObjData();
+                static_cast<ObjectUd*>(ud)->~ObjectUd();
             }
 
             if (cache.ref != LUA_NOREF) {
@@ -573,7 +699,9 @@ namespace internal {
             }
         }
 
+        const char* module_;
         lua_State* l_;
+        bool is_attach_;
         int desc_ref_;
         int meta_ref_;
         int collection_meta_ref_;
