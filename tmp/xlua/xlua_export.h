@@ -114,43 +114,59 @@ namespace internal {
 
     template <typename Dy, typename By>
     struct CasterTraits {
-        static void* ToSuper(void* obj, const TypeDesc* src, const TypeDesc* dst) {
-            if (src == dst/* || src->super == nullptr*/)
-                return obj;
-            return src->super->caster->ToSuper(static_cast<By*>((Dy*)obj), dst);
+    private:
+        static void* ToSuper(void* obj) {
+            return static_cast<By*>((Dy*)obj);
         }
 
-        static void* ToDerived(void* obj, const TypeDesc* src, const TypeDesc* dst) {
-            if (src == dst)
-                return obj;
-            obj = dst->super->caster->ToDerived(obj, src, dst->super);
-            return obj ? dynamic_cast<Dy*>(static_cast<By*>(obj)) : nullptr;
+        template <typename U, typename std::enable_if<std::is_polymorphic<U>::value, int>::type = 0>
+        static void* ToDerived(void* obj) {
+            return dynamic_cast<Dy*>(static_cast<By*>(obj));
         }
 
-        static inline TypeCaster Get() {
-            return TypeCaster{&ToSuper, &ToDerived};
+        template <typename U, typename std::enable_if<!std::is_polymorphic<U>::value, int>::type = 0>
+        static void* ToDerived(void* obj) {
+            return nullptr;
+        }
+
+    public:
+        static inline TypeCaster Make() {
+            return TypeCaster{&ToSuper, &ToDerived<By>};
         }
     };
 
     template <typename Dy>
     struct CasterTraits<Dy, void> {
-        static void* ToSuper(void* obj, const TypeDesc* src, const TypeDesc* dst) {
+        static void* ToSuper(void* obj) {
             return obj;
         }
 
-        static void* ToDerived(void* obj, const TypeDesc* src, const TypeDesc* dst) {
-            if (src == dst)
-                return obj;
-            obj = dst->super->caster->ToDerived(obj, src, dst->super);
-            return static_cast<Dy*>(obj);
+        static void* ToDerived(void* obj) {
+            return obj;
         }
 
-        static inline TypeCaster Get() {
+    public:
+        static inline TypeCaster Make() {
             return TypeCaster{&ToSuper, &ToDerived};
         }
     };
 
-    ITypeCreator* CreateCreator(const char* path, bool global, const TypeDesc* super);
+    ITypeFactory* CreateFactory(bool global, const char* path, const TypeDesc* super);
 } // namespace internal
+
+template <typename Ty = void, typename By = void,
+    typename std::enable_if<std::is_void<Ty>::value && std::is_same<Ty, By>::value, int>::type = 0>
+inline ITypeFactory* CreateFactory(const char* name) {
+    return internal::CreateFactory(true, name, nullptr);
+}
+
+template <typename Ty = void, typename By = void,
+    typename std::enable_if<!std::is_void<Ty>::value && !std::is_same<Ty, By>::value, int>::type = 0>
+inline ITypeFactory* CreateFactory(const char* name) {
+    auto* factory = internal::CreateFactory(false, name, ::xLuaGetTypeDesc(Identity<By>()));
+    factory->SetWeakProc(::xLuaQueryWeakObjProc(Identity<Ty>()));
+    factory->SetCaster(internal::CasterTraits<Ty, By>::Make());
+    return factory;
+}
 
 XLUA_NAMESPACE_END

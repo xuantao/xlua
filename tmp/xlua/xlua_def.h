@@ -47,7 +47,8 @@ typedef int(*LuaIndexer)(State* l, void* obj, const TypeDesc* info);
  * used for static_cast pointer to base type or dynamic_cast to derived type
 */
 struct TypeCaster {
-    typedef void* (*Caster)(void* obj, const TypeDesc* src, const TypeDesc* dest);
+    //typedef void* (*Caster)(void* obj, const TypeDesc* src, const TypeDesc* dest);
+    typedef void* (*Caster)(void* obj);
 
     Caster to_super;
     Caster to_derived;
@@ -105,14 +106,31 @@ struct ICollection {
 };
 
 /* type desc factory */
-struct ITypeCreator {
-    virtual ~ITypeCreator() { }
+struct ITypeFactory {
+    virtual ~ITypeFactory() { }
     virtual void SetCaster(TypeCaster caster) = 0;
     virtual void SetWeakProc(WeakObjProc proc) = 0;
-    virtual void AddMember(const char* name, LuaFunction func, bool global) = 0;
-    virtual void AddMember(const char* name, LuaIndexer getter, LuaIndexer setter, bool global) = 0;
+    virtual void AddMember(bool global, const char* name, LuaFunction func) = 0;
+    virtual void AddMember(bool global, const char* name, LuaIndexer getter, LuaIndexer setter) = 0;
     virtual const TypeDesc* Finalize() = 0;
 };
+
+/* cast obj type to super type */
+inline void* ToSuper(void* obj, const TypeDesc* src, const TypeDesc* dest) {
+    while (src != dest) {
+        obj = src->caster.to_super(obj);
+        src = src->super;
+    }
+    return obj;
+}
+
+/* cast obj type to derived type */
+inline void* ToDerived(void* obj, const TypeDesc* src, const TypeDesc* dest) {
+    if (src == dest)
+        return obj;
+    obj = ToDerived(obj, src, dest->super);
+    return src->caster.to_derived(obj);
+}
 
 class ObjectIndex;
 namespace internal {
@@ -200,6 +218,10 @@ XLUA_NAMESPACE_END
 /* declare export type to lua */
 #define XLUA_DECLARE_CLASS(ClassName)   \
     const XLUA_NAMESPACE TypeDesc* xLuaGetTypeDesc(XLUA_NAMESPACE Identity<ClassName>)
+
+inline const XLUA_NAMESPACE TypeDesc* xLuaGetTypeDesc(XLUA_NAMESPACE Identity<void>) {
+    return nullptr;
+}
 
 /* default weak obj proc queryer */
 inline XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(...) {

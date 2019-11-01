@@ -17,13 +17,9 @@
 #endif
 
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
-    #define _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, DstInfo)   (SrcInfo == DstInfo ? Ptr : SrcInfo->caster.to_super(Ptr, SrcInfo, DstInfo))
-    #define _XLUA_TO_TOP_SUPER_PTR(Ptr, SrcInfo)        _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, nullptr)
-    #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          DstInfo->caster->ToWeakPtr(Ptr)
+    #define _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, DstInfo)   xlua::ToSuper(Ptr, SrcInfo, DstInfo)
 #else // XLUA_ENABLE_MULTIPLE_INHERITANCE
     #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, Info)      Ptr
-    #define _XLUA_TO_TOP_SUPER_PTR(Ptr, SrcInfo)        Ptr
-    #define _XLUA_TO_WEAKOBJ_PTR(DstInfo, Ptr)          Ptr
 #endif // XLUA_ENABLE_MULTIPLE_INHERITANCE
 
 /* 64位系统开启light user data优化

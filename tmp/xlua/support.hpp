@@ -28,14 +28,36 @@ struct CollectionCategory : SupportCategory<collection_category_tag, Ty, Tag> {}
 //};
 
 namespace internal {
-    struct void_tag {};
+    template <typename Ty>
+    struct IsLarge {
+        static constexpr bool is_integer = std::numeric_limits<Ty>::is_integer;
+        static constexpr bool value = std::numeric_limits<Ty>::digits > 32;
+    };
 
-    template <typename Ty, bool>
-    struct ExportSupport : SupportCategory<not_support_tag, void_tag> {
+    struct void_tag {};
+    struct enum_tag {};
+    struct number_tag {};
+    struct declared_tag {};
+
+    /* traits dispacth tag, declared/enum/void tag */
+    template <typename Ty>
+    struct DisaptchTag {
+        typedef typename std::conditional<IsLuaType<Ty>::value, declared_tag,
+            typename std::conditional<std::is_enum<Ty>::value, enum_tag, void_tag>::type>::type type_tag;
     };
 
     template <typename Ty>
-    struct ExportSupport<Ty*, true> : DeclaredCategory<Ty> {
+    struct DisaptchTag<Ty*> {
+        typedef typename std::conditional<IsLuaType<Ty>::value, declared_tag, void_tag>::type type_tag;
+    };
+
+    template <typename Ty, typename Tag>
+    struct ExportSupport : SupportCategory<not_support_tag, void_tag> {
+    };
+
+    /* declared type pointer */
+    template <typename Ty>
+    struct ExportSupport<Ty*, declared_tag> : DeclaredCategory<Ty> {
         static inline const TypeDesc* Desc() { return xLuaGetTypeDesc(Identity<Ty>()); }
         static inline const char* Name() { return Desc()->name;  }
         static inline bool Check(State* l, int index) {
@@ -44,14 +66,15 @@ namespace internal {
         static inline Ty* Load(State* l, int index) {
             return l->state_.LoadUd<Ty>(index);
         }
-        static inline bool Push(State* l, Ty* ptr) {
+        static inline void Push(State* l, Ty* ptr) {
             l->state_.PushUd(ptr);
         }
     };
 
+    /* declared type value */
     template <typename Ty>
-    struct ExportSupport<Ty, true> : DeclaredCategory<Ty> {
-        typedef ExportSupport<Ty*, true> supporter;
+    struct ExportSupport<Ty, declared_tag> : DeclaredCategory<Ty> {
+        typedef ExportSupport<Ty*, declared_tag> supporter;
 
         static inline const TypeDesc* Desc() { return supporter::Desc(); }
         static inline const char* Name() { return supporter::Name(); }
@@ -65,11 +88,76 @@ namespace internal {
             l->state_.PushUd(obj);
         }
     };
+
+    /* enum support */
+    template <typename Ty>
+    struct ExportSupport<Ty, enum_tag> : ValueCategory<typename std::underlying_type<Ty>::type, number_tag> {
+        typedef Support<typename std::underlying_type<Ty>::type> supporter;
+        typedef typename supporter::value_type value_type;
+
+        static inline const char* Name() { return typeid(Ty).name(); }
+        static inline bool Check(State* l, int index) {
+            return supporter::Check(l, index);
+        }
+        static inline value_type Load(State* l, int index) {
+            return supporter::Load(l, index);
+        }
+        static inline void Push(State* l, value_type value) {
+            supporter::Push(l, value);
+        }
+    };
+
+    /* number value support */
+    template <typename Ty>
+    struct NumberSupport : ValueCategory<Ty, number_tag> {
+        static inline bool Check(State* l, int index) {
+            return lua_type(l->GetLuaState(), index) == LUA_TNUMBER;
+        }
+
+        static inline Ty Load(State* l, int index) {
+            return DoLoad<Ty>(l, index);
+        }
+
+        static inline void Push(State* l, Ty value) {
+            DoPush(l, value);
+        }
+
+    private:
+        template <typename U, typename std::enable_if<std::is_floating_point<U>::value, int>::type = 0>
+        static inline void DoPush(State* l, U val) {
+            lua_pushnumber(l->GetLuaState(), static_cast<U>(val));
+        }
+
+        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && !IsLarge<U>::value, int>::type = 0>
+        static inline void DoPush(State* l, U val) {
+            lua_pushnumber(l->GetLuaState(), val);
+        }
+
+        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && IsLarge<U>::value, int>::type = 0>
+        static inline void DoPush(State* l, U val) {
+            lua_pushinteger(l->GetLuaState(), val);
+        }
+
+        template <typename U, typename std::enable_if<std::is_floating_point<U>::value, int>::type = 0>
+        static inline U DoLoad(State* l, int index) {
+            return static_cast<U>(lua_tonumber(l->GetLuaState(), index));
+        }
+
+        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && !IsLarge<U>::value, int>::type = 0>
+        static inline U DoLoad(State* l, int index) {
+            return static_cast<U>(lua_tonumber(l->GetLuaState(), index));
+        }
+
+        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && IsLarge<U>::value, int>::type = 0>
+        static inline U DoLoad(State* l, int index) {
+            return static_cast<U>(lua_tointeger(l->GetLuaState(), index));
+        }
+    };
 } // namespace internal
 
 /* export type support */
 template <typename Ty>
-struct Support : internal::ExportSupport<Ty, IsLuaType<Ty>::value> {
+struct Support : internal::ExportSupport<Ty, typename internal::DisaptchTag<Ty>::type_tag> {
 };
 
 /* lua var support */
@@ -121,62 +209,6 @@ struct Support<std::nullptr_t> : ValueCategory<std::nullptr_t> {
     static inline std::nullptr_t Load(State*, int) = delete;
     static inline void Push(State* l, std::nullptr_t) { lua_pushnil(l->GetLuaState()); }
 };
-
-/* number type support*/
-namespace internal {
-    template <typename Ty>
-    struct IsLarge {
-        static constexpr bool is_integer = std::numeric_limits<Ty>::is_integer;
-        static constexpr bool value = std::numeric_limits<Ty>::digits > 32;
-    };
-
-    struct number_tag {};
-
-    template <typename Ty> struct NumberSupport : ValueCategory<Ty, number_tag> {
-        static inline bool Check(State* l, int index) {
-            return lua_type(l->GetLuaState(), index) == LUA_TNUMBER;
-        }
-
-        static inline Ty Load(State* l, int index) {
-            return DoLoad<Ty>(l, index);
-        }
-
-        static inline void Push(State* l, Ty value) {
-            DoPush(l, value);
-        }
-
-    private:
-        template <typename U, typename std::enable_if<std::is_floating_point<U>::value, int>::type = 0>
-        static inline void DoPush(State* l, U val) {
-            lua_pushnumber(l->GetLuaState(), static_cast<U>(val));
-        }
-
-        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && !IsLarge<U>::value, int>::type = 0>
-        static inline void DoPush(State* l, U val) {
-            lua_pushnumber(l->GetLuaState(), val);
-        }
-
-        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && IsLarge<U>::value, int>::type = 0>
-        static inline void DoPush(State* l, U val) {
-            lua_pushinteger(l->GetLuaState(), val);
-        }
-
-        template <typename U, typename std::enable_if<std::is_floating_point<U>::value, int>::type = 0>
-        static inline U DoLoad(State* l, int index) {
-            return static_cast<U>(lua_tonumber(l->GetLuaState(), index));
-        }
-
-        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && !IsLarge<U>::value, int>::type = 0>
-        static inline U DoLoad(State* l, int index) {
-            return static_cast<U>(lua_tonumber(l->GetLuaState(), index));
-        }
-
-        template <typename U, typename std::enable_if<IsLarge<U>::is_integer && IsLarge<U>::value, int>::type = 0>
-        static inline U DoLoad(State* l, int index) {
-            return static_cast<U>(lua_tointeger(l->GetLuaState(), index));
-        }
-    };
-} // namespace internal
 
 #define _XLUA_NUMBER_SUPPORT(Type)                                  \
 template <> struct Support<Type> : internal::NumberSupport<Type> {  \
@@ -253,7 +285,44 @@ struct Support<char*> : ValueCategory<char*, string_tag> {
     static inline char* Load(State* l, int index) = delete;
 
     static inline void Push(State* l, char* p) {
-        return Support<const char*>::Push(l, p);
+        Support<const char*>::Push(l, p);
+    }
+};
+
+// char array is act as const char*
+template <size_t N>
+struct Support<char[N]> : ValueCategory<char*, string_tag> {
+    static_assert(N > 0, "char array size must greater than 0");
+    static inline const char* Name() {
+        return "char[]";
+    }
+
+    static inline bool Check(State* l, int index) {
+        return Support<const char*>::Check(l, index);
+    }
+
+    static inline char* Load(State* l, int index) = delete;
+
+    static inline void Push(State* l, const char* p) {
+        Support<const char*>::Push(l, p);
+    }
+};
+
+template <size_t N>
+struct Support<const char[N]> : ValueCategory<const char*, string_tag> {
+    static_assert(N > 0, "char array size must greater than 0");
+    static inline const char* Name() {
+        return "const char[]";
+    }
+
+    static inline bool Check(State* l, int index) {
+        return Support<const char*>::Check(l, index);
+    }
+
+    static inline char* Load(State* l, int index) = delete;
+
+    static inline void Push(State* l, const char* p) {
+        Support<const char*>::Push(l, p);
     }
 };
 

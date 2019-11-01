@@ -456,7 +456,7 @@ namespace internal {
             const auto* desc = Support<Ty>::Desc();
 #if XLUA_ENABLE_LUD_OPTIMIZE
             if (LightUd ld = PackLightUd(ptr, desc)) {
-                lua_pushlightuserdata(l_, ld->value);
+                lua_pushlightuserdata(l_, ld.value);
                 return;
             }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
@@ -474,7 +474,7 @@ namespace internal {
                     } else if (IsBaseOf(desc, ud->desc)) { // base type
                         LoadCache(cache.ref);
                     } else if (IsBaseOf(ud->desc, desc)) { // derived type
-                        ud->obj = ptr;
+                        ud->ptr = ptr;
                         ud->desc = desc;
                         LoadCache(cache.ref);
                         SetMetatable(desc);
@@ -487,19 +487,19 @@ namespace internal {
                     cache = CacheUd();
                 }
             } else {
-                void* tsp = _XLUA_TO_TOP_SUPER_PTR(ptr, desc);
+                void* tsp = _XLUA_TO_SUPER_PTR(ptr, desc, nullptr);
                 auto it = declared_ptrs_.find(tsp);
                 if (it != declared_ptrs_.end()) {
                     auto* ud = it->second.ud;
                     if (IsBaseOf(desc, ud->desc)) {         // base type
                         LoadCache(it->second.ref);
                     } else if (IsBaseOf(ud->desc, desc)) {  // derived object
-                        ud->obj = ptr;
+                        ud->ptr = ptr;
                         ud->desc = desc;
                         LoadCache(it->second.ref);
                         SetMetatable(desc);
                     } else {                                // new object
-                        ud->obj = nullptr;                  // mark the ud is discarded
+                        ud->ptr = nullptr;                  // mark the ud is discarded
                         it->second.ud = NewUserData<FullUd>(ptr, desc);
                         SetMetatable(desc);
                         UpdateCache(it->second.ref);
@@ -527,7 +527,7 @@ namespace internal {
                 LoadCache(it->second.ref);
                 // if the obj ptr is the derived type, update the ud info to derived type
                 if (!IsBaseOf(desc, it->second.ud->desc)) {
-                    it->second.ud->obj = ptr;
+                    it->second.ud->ptr = ptr;
                     it->second.ud->desc = desc;
                     SetMetatable(desc);
                 }

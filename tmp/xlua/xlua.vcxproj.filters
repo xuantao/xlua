@@ -13,6 +13,9 @@
     <ClCompile Include="mian.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="export_prepare.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h">
@@ -40,6 +43,9 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="xlua_export.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="export_prepare.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

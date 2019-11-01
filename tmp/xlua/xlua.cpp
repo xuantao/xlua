@@ -1,5 +1,6 @@
 #include "xlua.h"
-#include "export.h"
+#include "xlua_state.h"
+#include "xlua_export.h"
 
 XLUA_NAMESPACE_BEGIN
 
@@ -721,7 +722,7 @@ void FreeObjectIndex(ObjectIndex& index) {
 }
 
 namespace internal {
-    struct TypeCreator : public ITypeCreator {
+    struct TypeCreator : public ITypeFactory {
         TypeCreator(const char* name, bool global, const TypeDesc* super)
             : is_global(global), super(super) {
             type_name = AllocTypeName(name);
@@ -736,13 +737,13 @@ namespace internal {
             weak_proc = proc;
         }
 
-        void AddMember(const char* name, LuaFunction func, bool global) override {
+        void AddMember(bool global, const char* name, LuaFunction func) override {
             name = AllocMemberName(name);
             assert(CheckRename(name, is_global || global));
             ((is_global || global) ? global_funcs : member_funcs).push_back(ExportFunc{name, func});
         }
 
-        void AddMember(const char* name, LuaIndexer getter, LuaIndexer setter, bool global) override {
+        void AddMember(bool global, const char* name, LuaIndexer getter, LuaIndexer setter) override {
             name = AllocMemberName(name);
             assert(CheckRename(name, is_global || global));
             ((is_global || global) ? global_vars : member_vars).push_back(ExportVar{name, getter, setter});
@@ -875,7 +876,7 @@ namespace internal {
             return 0;
         }
 
-        static void* DummyCaster(void* ptr, const TypeDesc*, const TypeDesc*) { return ptr; }
+        static void* DummyCaster(void* ptr) { return ptr; }
 
         const char* type_name;
         bool is_global;
@@ -887,5 +888,9 @@ namespace internal {
         std::vector<ExportFunc> member_funcs;
         std::vector<ExportFunc> global_funcs;
     };
+
+    ITypeFactory* CreateFactory(bool global, const char* path, const TypeDesc* super) {
+        return nullptr;
+    }
 }
 XLUA_NAMESPACE_END
