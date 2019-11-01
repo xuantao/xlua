@@ -1,0 +1,90 @@
+TranslationUnitDecl 0x1b3630d6a48 <<invalid sloc>> <invalid sloc>
+|-TypedefDecl 0x1b3630d7320 <<invalid sloc>> <invalid sloc> implicit __int128_t '__int128'
+| `-BuiltinType 0x1b3630d6fe0 '__int128'
+|-TypedefDecl 0x1b3630d7390 <<invalid sloc>> <invalid sloc> implicit __uint128_t 'unsigned __int128'
+| `-BuiltinType 0x1b3630d7000 'unsigned __int128'
+|-TypedefDecl 0x1b3630d7718 <<invalid sloc>> <invalid sloc> implicit __NSConstantString '__NSConstantString_tag'
+| `-RecordType 0x1b3630d7480 '__NSConstantString_tag'
+|   `-CXXRecord 0x1b3630d73e8 '__NSConstantString_tag'
+|-CXXRecordDecl 0x1b3630d7770 <<invalid sloc>> <invalid sloc> implicit class type_info
+| `-TypeVisibilityAttr 0x1b3630d7820 <<invalid sloc>> Implicit Default
+|-TypedefDecl 0x1b3630d7878 <<invalid sloc>> <invalid sloc> implicit referenced size_t 'unsigned long long'
+| `-BuiltinType 0x1b3630d6c20 'unsigned long long'
+|-TypedefDecl 0x1b3630d7910 <<invalid sloc>> <invalid sloc> implicit __builtin_ms_va_list 'char *'
+| `-PointerType 0x1b3630d78d0 'char *'
+|   `-BuiltinType 0x1b3630d6ae0 'char'
+|-TypedefDecl 0x1b3630d7980 <<invalid sloc>> <invalid sloc> implicit __builtin_va_list 'char *'
+| `-PointerType 0x1b3630d78d0 'char *'
+|   `-BuiltinType 0x1b3630d6ae0 'char'
+|-CXXRecordDecl 0x1b363365220 <test.cpp:5:1, line:12:1> line:5:8 struct TestExport definition
+| |-DefinitionData pass_in_registers empty aggregate standard_layout trivially_copyable pod trivial literal has_constexpr_non_copy_move_ctor can_const_default_init
+| | |-DefaultConstructor exists trivial constexpr needs_implicit defaulted_is_constexpr
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial needs_implicit
+| |-CXXRecordDecl 0x1b363365338 <col:1, col:8> col:8 implicit struct TestExport
+| |-CXXMethodDecl 0x1b363365578 <line:3:20, line:7:2> line:6:18 Call 'void (int)'
+| | |-ParmVarDecl 0x1b363365480 <col:23, col:27> col:27 p_int 'int'
+| | |-CompoundStmt 0x1b363365868 <col:34, line:7:2>
+| | `-AnnotateAttr 0x1b363365620 <line:3:35, col:50> "xlua"
+| `-CXXMethodDecl 0x1b363365760 <col:20, line:11:2> line:9:17 CallWithRet 'int ()'
+|   |-CompoundStmt 0x1b3633658b0 <col:35, line:11:2>
+|   | `-ReturnStmt 0x1b3633658a0 <line:10:3, col:10>
+|   |   `-IntegerLiteral 0x1b363365878 <col:10> 'int' 1
+|   `-AnnotateAttr 0x1b363365800 <line:3:35, col:50> "xlua"
+`-NamespaceDecl 0x1b3633658c8 <line:14:1, line:33:1> line:14:11 utility
+  |-CXXRecordDecl 0x1b363365958 <line:15:3, line:18:2> line:15:20 referenced class StringView definition
+  | |-DefinitionData pass_in_registers standard_layout trivially_copyable literal has_constexpr_non_copy_move_ctor can_const_default_init
+  | | |-DefaultConstructor exists non_trivial constexpr needs_implicit defaulted_is_constexpr
+  | | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+  | | |-MoveConstructor exists simple trivial needs_implicit
+  | | |-CopyAssignment trivial has_const_param needs_implicit implicit_has_const_param
+  | | |-MoveAssignment exists simple trivial needs_implicit
+  | | `-Destructor simple irrelevant trivial needs_implicit
+  | |-AnnotateAttr 0x1b363365a78 <line:3:35, col:50> "xlua"
+  | |-CXXRecordDecl 0x1b363365ac8 <line:15:3, col:20> col:20 implicit class StringView
+  | |-FieldDecl 0x1b363365b90 <line:16:3, col:15> col:10 len 'size_t':'unsigned long long'
+  | | `-InitListExpr 0x1b363365d08 <col:13, col:15> 'size_t':'unsigned long long'
+  | |   `-ImplicitCastExpr 0x1b363365d48 <col:14> 'size_t':'unsigned long long' <IntegralCast>
+  | |     `-IntegerLiteral 0x1b363365c98 <col:14> 'int' 0
+  | `-FieldDecl 0x1b363365c00 <line:17:3, col:26> col:15 referenced str 'const char *'
+  |   `-InitListExpr 0x1b363365dc0 <col:18, col:26> 'const char *'
+  |     `-ImplicitCastExpr 0x1b363365e00 <col:19> 'const char *' <NullToPointer>
+  |       `-CXXNullPtrLiteralExpr 0x1b363365d68 <col:19> 'nullptr_t'
+  |-CXXRecordDecl 0x1b363365e20 <line:20:2, line:23:2> line:20:9 struct Vec2 definition
+  | |-DefinitionData pass_in_registers aggregate standard_layout trivially_copyable pod trivial literal
+  | | |-DefaultConstructor exists trivial needs_implicit
+  | | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+  | | |-MoveConstructor exists simple trivial needs_implicit
+  | | |-CopyAssignment trivial has_const_param needs_implicit implicit_has_const_param
+  | | |-MoveAssignment exists simple trivial needs_implicit
+  | | `-Destructor simple irrelevant trivial needs_implicit
+  | |-CXXRecordDecl 0x1b363365f38 <col:2, col:9> col:9 implicit struct Vec2
+  | |-FieldDecl 0x1b363365fe0 <line:21:3, col:9> col:9 x 'float'
+  | `-FieldDecl 0x1b363366050 <line:22:3, col:9> col:9 y 'float'
+  |-FunctionDecl 0x1b36336d2a0 <line:25:2, line:27:2> line:25:6 Compare 'int (utility::StringView, utility::StringView)'
+  | |-ParmVarDecl 0x1b3633660d0 <col:14, col:25> col:25 used l 'utility::StringView'
+  | |-ParmVarDecl 0x1b363366148 <col:28, col:39> col:39 used r 'utility::StringView'
+  | `-CompoundStmt 0x1b36336d8d8 <col:42, line:27:2>
+  |   `-ReturnStmt 0x1b36336d8c8 <line:26:3, col:20>
+  |     `-ImplicitCastExpr 0x1b36336d7f0 <col:10, col:20> 'int' <IntegralCast>
+  |       `-BinaryOperator 0x1b36336d7d0 <col:10, col:20> 'bool' '<'
+  |         |-ImplicitCastExpr 0x1b36336d7a0 <col:10, col:12> 'const char *' <LValueToRValue>
+  |         | `-MemberExpr 0x1b36336d370 <col:10, col:12> 'const char *' lvalue .str 0x1b363365c00
+  |         |   `-DeclRefExpr 0x1b36336d350 <col:10> 'utility::StringView' lvalue ParmVar 0x1b3633660d0 'l' 'utility::StringView'
+  |         `-ImplicitCastExpr 0x1b36336d7b8 <col:18, col:20> 'const char *' <LValueToRValue>
+  |           `-MemberExpr 0x1b36336d770 <col:18, col:20> 'const char *' lvalue .str 0x1b363365c00
+  |             `-DeclRefExpr 0x1b36336d750 <col:18> 'utility::StringView' lvalue ParmVar 0x1b363366148 'r' 'utility::StringView'
+  `-ClassTemplateDecl 0x1b36336da40 <line:29:2, line:32:2> line:30:9 Traits
+    |-TemplateTypeParmDecl 0x1b36336d8f0 <line:29:12, col:21> col:21 typename depth 0 index 0 Ty
+    `-CXXRecordDecl 0x1b36336d9b0 <line:30:2, line:32:2> line:30:9 struct Traits definition
+      |-DefinitionData empty aggregate standard_layout trivially_copyable pod trivial literal has_constexpr_non_copy_move_ctor can_const_default_init
+      | |-DefaultConstructor exists trivial constexpr needs_implicit defaulted_is_constexpr
+      | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+      | |-MoveConstructor exists simple trivial needs_implicit
+      | |-CopyAssignment trivial has_const_param needs_implicit implicit_has_const_param
+      | |-MoveAssignment exists simple trivial needs_implicit
+      | `-Destructor simple irrelevant trivial needs_implicit
+      `-CXXRecordDecl 0x1b36336dc90 <col:2, col:9> col:9 implicit struct Traits
