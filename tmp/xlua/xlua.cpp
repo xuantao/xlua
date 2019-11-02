@@ -702,6 +702,8 @@ State* AttachState(lua_State* l, const char* mod) {
 
 void DestoryState(State* s) {
     //TODO:
+    if (!s->state_.is_attach_)
+        lua_close(s->state_.l_);
 }
 
 void FreeObjectIndex(ObjectIndex& index) {
@@ -890,7 +892,7 @@ namespace internal {
     };
 
     ITypeFactory* CreateFactory(bool global, const char* path, const TypeDesc* super) {
-        return nullptr;
+        return new TypeCreator(path, global, super);
     }
 }
 XLUA_NAMESPACE_END

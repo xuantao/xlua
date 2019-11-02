@@ -87,23 +87,27 @@ namespace internal {
         static inline void Push(State* l, const Ty& obj) {
             l->state_.PushUd(obj);
         }
+        static inline void Push(State* l, Ty&& obj) {
+            l->state_.PushUd(std::move(obj));
+        }
     };
 
     /* enum support */
     template <typename Ty>
     struct ExportSupport<Ty, enum_tag> : ValueCategory<typename std::underlying_type<Ty>::type, number_tag> {
         typedef Support<typename std::underlying_type<Ty>::type> supporter;
-        typedef typename supporter::value_type value_type;
+        typedef typename supporter::value_type underlying_type;
+        typedef Ty value_type;
 
         static inline const char* Name() { return typeid(Ty).name(); }
         static inline bool Check(State* l, int index) {
             return supporter::Check(l, index);
         }
         static inline value_type Load(State* l, int index) {
-            return supporter::Load(l, index);
+            return static_cast<value_type>(supporter::Load(l, index));
         }
-        static inline void Push(State* l, value_type value) {
-            supporter::Push(l, value);
+        static inline void Push(State* l, Ty value) {
+            supporter::Push(l, static_cast<underlying_type>(value));
         }
     };
 

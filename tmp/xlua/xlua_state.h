@@ -568,10 +568,10 @@ public:
     }
 
     template <typename Ty>
-    void Push(const Ty& val) {
+    void Push(Ty&& val) {
         typedef typename PurifyType<Ty>::type type;
         static_assert(IsSupport<type>::value, "not support push value to lua");
-        Support<type>::Push(this, val);
+        Support<type>::Push(this, std::forward<Ty>(val));
     }
 
     template <typename... Ty>

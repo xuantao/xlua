@@ -17,6 +17,9 @@ def parse_function(node):
     #print("function", node.spelling, node.displayname)
     print("function", node.get_definition())
     for c in node.get_children():
+        if c.kind == clang.cindex.CursorKind.PARM_DECL:
+            t = c.type
+            print(t)
         pass
     pass
 

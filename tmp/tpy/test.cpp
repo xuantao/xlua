@@ -25,6 +25,10 @@ namespace utility {
 	int Compare(StringView l, StringView r) {
 		return l.str < r.str;
 	}
+
+	bool Check(const StringView* view) {
+		return true;
+	}
 	
 	template <typename Ty>
 	struct Traits {

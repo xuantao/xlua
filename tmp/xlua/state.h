@@ -142,6 +142,29 @@ namespace internal {
 #define ASSERT_FUD(ud) assert(ud && IsValid(ud))
 
     /* object userdata, this ud will destruction on gc */
+    struct IObjUd {
+        virtual ~IObjUd() { }
+    };
+
+    template <typename Ty>
+    struct ObjUd {
+        ObjUd(const Ty& o) : obj(o) {}
+        ObjUd(Ty&& o) : obj(std::move(o)) {}
+
+        virtual ~ObjUd() {}
+
+        Ty obj;
+    };
+
+#pragma warning(push)
+#pragma warning(disable : 4200)
+    struct ObjUdPair {
+        FullUd ud;
+        char storage[0];
+    };
+#pragma warning(pop)
+
+    /* object userdata, this ud will destruction on gc */
     struct ObjectUd : FullUd {
         template <typename Ty>
         ObjectUd(Ty* obj, UdMinor uv) : FullUd(obj, uv, Support<Ty>::Desc()) { }
@@ -171,6 +194,7 @@ namespace internal {
     template <typename Ty>
     struct ValueUd : ObjectUd {
         ValueUd(const Ty& v) : ObjectUd(&val, UdMinor::kValue), val(v) {}
+        ValueUd(Ty&& v) : ObjectUd(&val, UdMinor::kValue), val(std::move(v)) {}
         virtual ~ValueUd() { }
 
         Ty val;
@@ -184,6 +208,7 @@ namespace internal {
     template <typename Ty>
     struct AloneUd {
         AloneUd(const Ty& v) : obj(v) {}
+        AloneUd(Ty&& v) : obj(std::move(v)) {}
         virtual ~AloneUd() {}
 
         Ty obj;
@@ -424,6 +449,13 @@ namespace internal {
         template <typename Ty>
         inline void PushUd(const Ty& obj) {
             NewUserData<ValueUd<Ty>>(obj);
+            SetMetatable(Support<Ty>::Desc());
+        }
+
+        template <typename Ty>
+        inline void PushUd(Ty&& obj) {
+            ValueUd<Ty>* ud = NewUserData<ValueUd<Ty>>(std::forward<Ty>(obj));
+            FullUd* fud = ud;
             SetMetatable(Support<Ty>::Desc());
         }
 
