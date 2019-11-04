@@ -395,6 +395,49 @@ struct Support<const void*> : ValueCategory<void*> {
     static inline void Push(State* l, const void* p) = delete;
 };
 
+namespace internal {
+    template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
+    inline auto DoCall(State* s, Fy f, index_sequence<Idxs...> idxs) -> typename std::enable_if<!std::is_void<Ry>::value, int>::type {
+        if (s->IsType<Args...>(1)) {
+            //l->Push(f(param::LoadParam<typename param::ParamType<Args>::type>(l, Idxs + 1)...));
+            return 1;
+        } else {
+            //TODO: log error
+            return 0;
+        }
+    }
+
+    template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
+    inline auto DoCall(State* s, Fy f, index_sequence<Idxs...> idxs) -> typename std::enable_if<std::is_void<Ry>::value, int>::type {
+        if (s->IsType<Args...>(1)) {
+            //l->Push(f(param::LoadParam<typename param::ParamType<Args>::type>(l, Idxs + 1)...));
+        } else {
+            //TODO: log error
+        }
+        return 0;
+    }
+
+    template <typename Fy, typename Ry, typename... Args>
+    inline int DoCall(State* s, Fy f) {
+        return DoCall<Fy, Ry, Args...>(s, f, make_index_sequence_t<sizeof...(Args)>());
+    }
+
+    template <typename Ry, typename... Args>
+    auto MakeFunc(Function&& f) -> typename std::enable_if<std::is_void<Ry>::value, std::function<Ry(Args...)>>::type{
+        return [=](Args... args) {
+            f(std::tie(), args...);
+        };
+    }
+
+    template <typename Ry, typename... Args>
+    auto MakeFunc(Function&& f) -> typename std::enable_if<!std::is_void<Ry>::value, std::function<Ry(Args...)>>::type {
+        return [=](Args... args) -> Ry {
+            Ry val;
+            f(std::tie(val), args...);
+            return std::move(val);
+        };
+    }
+} // namespace internal
 /* function support */
 template <>
 struct Support<int(lua_State*)> : ValueCategory<int(lua_State*)> {
@@ -514,13 +557,10 @@ struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args
             lua_pop(l->GetLuaState(), 1);
             return d->obj;
         }
-        // unkonwn type funtion
+
+        // unkonwn real type funtion
         auto f = l->Load<Function>(index);
-        return [=](Args... args)->Ry {
-            Ry val;
-            f(std::tie(val), std::forward<Args...>(args));
-            return std::move(val);
-        };
+        return internal::MakeFunc<Ry, Args...>(std::move(f));
     }
 
     static inline void Push(State* l, const value_type& val) {
@@ -544,7 +584,7 @@ struct std_shared_ptr_tag {};
 /* smart ptr support */
 template <typename Ty>
 struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, std_shared_ptr_tag> {
-    static_assert(std::is_base_of<object_category_tag_, Support<Ty>::category>::value, "only support object");
+    static_assert(std::is_base_of<object_category_tag_, typename Support<Ty>::category>::value, "only support object");
     typedef ValueCategory<std::shared_ptr<Ty>, std_shared_ptr_tag> base_type_;
     typedef typename base_type_::value_type value_type;
 

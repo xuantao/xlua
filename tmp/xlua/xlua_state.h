@@ -150,8 +150,13 @@ public:
     Function() {}
 
 public:
-    template <typename Ky, typename... Rys, typename... Args>
-    CallGuard Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args);
+    template <typename... Rys, typename... Args>
+    inline CallGuard operator ()(std::tuple<Rys&...>&& ret, Args&&... args) const {
+        return Call(std::move(ret), std::forward<Args>(args)...);
+    }
+
+    template <typename... Rys, typename... Args>
+    CallGuard Call(std::tuple<Rys&...>&& ret, Args&&... args) const;
 };
 
 class UserData : public Object {
@@ -728,41 +733,13 @@ CallGuard Table::DotCall(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... arg
 }
 
 /* lua function */
-template <typename Ky, typename... Rys, typename... Args>
-inline CallGuard Function::Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args) {
+template <typename... Rys, typename... Args>
+inline CallGuard Function::Call(std::tuple<Rys&...>&& ret, Args&&... args) const {
     if (!IsValid())
         return CallGuard();
 
     state_->PushVar(*this);
     return state_->Call(std::move(ret), std::forward<Args>(args)...);
-}
-
-namespace internal {
-    template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
-    inline auto DoCall(State* s, Fy f, index_sequence<Idxs...> idxs) -> typename std::enable_if<!std::is_void<Ry>::value, int>::type {
-        if (s->IsType<Args...>(1)) {
-            //l->Push(f(param::LoadParam<typename param::ParamType<Args>::type>(l, Idxs + 1)...));
-            return 1;
-        } else {
-            //TODO: log error
-            return 0;
-        }
-    }
-
-    template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
-    inline auto DoCall(State* s, Fy f, index_sequence<Idxs...> idxs) -> typename std::enable_if<std::is_void<Ry>::value, int>::type {
-        if (s->IsType<Args...>(1)) {
-            //l->Push(f(param::LoadParam<typename param::ParamType<Args>::type>(l, Idxs + 1)...));
-        } else {
-            //TODO: log error
-        }
-        return 0;
-    }
-
-    template <typename Fy, typename Ry, typename... Args>
-    inline int DoCall(State* s, Fy f) {
-        return DoCall<Fy, Ry, Args...>(s, f, make_index_sequence_t<sizeof...(Args)>());
-    }
 }
 
 XLUA_NAMESPACE_END

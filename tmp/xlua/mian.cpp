@@ -54,6 +54,11 @@ int main(int argc, char* argv) {
         l->Push(f);
         auto f2 = l->Load<std::function<int(int)>>(-1);
 
+        std::function<void(int)> f3 = [](int i) {
+        };
+        l->Push(f3);
+        auto f4 = l->Load<std::function<void(int)>>(-1);
+
         const char* t1 = l->Load<const char*>(3);
         //const char* t2 = l->Load<char*>(3);
         xlua::DestoryState(l);
