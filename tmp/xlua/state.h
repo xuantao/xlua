@@ -48,18 +48,18 @@ namespace internal {
         };
 
     public:
-        FullUd(void* p, ICollection* col) {
+        FullUd(void* _ptr, ICollection* _col) {
             major = UdMajor::kCollection;
             minor = UdMinor::kPtr;
-            collection = col;
-            ptr = p;
+            collection = _col;
+            ptr = _ptr;
         }
 
-        FullUd(void* p, const TypeDesc* d) {
+        FullUd(void* _ptr, const TypeDesc* _desc) {
             major = UdMajor::kDeclaredType;
             minor = UdMinor::kPtr;
-            desc = d;
-            ptr = p;
+            desc = _desc;
+            ptr = _ptr;
         }
 
         FullUd(WeakObjRef _ref, const TypeDesc* d) {
@@ -70,17 +70,17 @@ namespace internal {
         }
 
     protected:
-        FullUd(void* p, UdMinor v, ICollection* col) {
+        FullUd(void* _ptr, UdMinor _minor, ICollection* col) {
             major = UdMajor::kCollection;
-            minor = v;
+            minor = _minor;
             collection = col;
-            ptr = p;
+            ptr = _ptr;
         }
 
-        FullUd(void* p, UdMinor v, const TypeDesc* d) {
+        FullUd(void* p, UdMinor _minor, const TypeDesc* _desc) {
             major = UdMajor::kDeclaredType;
-            minor = v;
-            desc = d;
+            minor = _minor;
+            desc = _desc;
             ptr = p;
         }
     };
@@ -142,76 +142,73 @@ namespace internal {
 #define ASSERT_FUD(ud) assert(ud && IsValid(ud))
 
     /* object userdata, this ud will destruction on gc */
-    struct IObjUd {
-        virtual ~IObjUd() { }
+    struct IObjData {
+        virtual ~IObjData() { }
     };
 
     template <typename Ty>
-    struct ObjUd {
-        ObjUd(const Ty& o) : obj(o) {}
-        ObjUd(Ty&& o) : obj(std::move(o)) {}
+    struct ObjData : IObjData {
+        ObjData(const Ty& o) : obj(o) {}
+        ObjData(Ty&& o) : obj(std::move(o)) {}
 
-        virtual ~ObjUd() {}
+        virtual ~ObjData() {}
 
         Ty obj;
     };
 
-#pragma warning(push)
-#pragma warning(disable : 4200)
-    struct ObjUdPair {
-        FullUd ud;
-        char storage[0];
-    };
-#pragma warning(pop)
-
-    /* object userdata, this ud will destruction on gc */
-    struct ObjectUd : FullUd {
-        template <typename Ty>
-        ObjectUd(Ty* obj, UdMinor uv) : FullUd(obj, uv, Support<Ty>::Desc()) { }
-        virtual ~ObjectUd() { }
-    };
-
-    struct SmartPtrUd : ObjectUd {
-        template <typename Ty>
-        SmartPtrUd(Ty* obj, size_t t, void* d) :
-            ObjectUd(obj, UdMinor::kSmartPtr), tag(t), data(d) {}
-        virtual ~SmartPtrUd() {}
+    struct SmartPtrData : IObjData {
+        SmartPtrData(size_t t, void* d) : tag(t), data(d) {}
+        virtual ~SmartPtrData() {}
 
         size_t tag;
         void* data;
     };
 
     template <typename Sy>
-    struct SmartPtrUdImpl : SmartPtrUd {
-        template <typename Ty>
-        SmartPtrUdImpl(const Sy& v, Ty* ptr, size_t tag) :
-            SmartPtrUd(ptr, tag, &val), val(v) { }
-        virtual ~SmartPtrUdImpl() { }
+    struct SmartPtrDataImpl : SmartPtrData {
+        SmartPtrDataImpl(const Sy& v, size_t tag) :
+            SmartPtrData(tag, &val), val(v) {}
+
+        SmartPtrDataImpl(Sy&& v, size_t tag) :
+            SmartPtrData(tag, &val), val(std::move(v)) {}
+
+        virtual ~SmartPtrDataImpl() { }
 
         Sy val;
     };
 
-    template <typename Ty>
-    struct ValueUd : ObjectUd {
-        ValueUd(const Ty& v) : ObjectUd(&val, UdMinor::kValue), val(v) {}
-        ValueUd(Ty&& v) : ObjectUd(&val, UdMinor::kValue), val(std::move(v)) {}
-        virtual ~ValueUd() { }
+    struct ObjUd : FullUd
+    {
+        template <typename Ty, typename std::enable_if<std::is_base_of<IObjData, Ty>::value, int>::type = 0>
+        inline Ty* As() {
+            return static_cast<Ty*>(reinterpret_cast<void*>(storage_));
+        }
 
-        Ty val;
+    private:
+        ObjUd() = delete;
+        ObjUd(const ObjUd&) = delete;
+
+        char storage_[1];
     };
 
-    /* alone userdata, used for cache some user data */
-    struct IAloneUd {
-        virtual ~IAloneUd() { }
+    template <typename Ty>
+    struct ObjUdImpl : FullUd {
+        template <typename Dy, typename... Args>
+        ObjUdImpl(Dy desc, Args&&... args) : FullUd(storage_, UdMinor::kValue, desc) {
+            new (storage_) Ty(std::forward<Args>(args)...);
+        }
+
+        char storage_[sizeof(Ty)];
     };
 
-    template <typename Ty>
-    struct AloneUd {
-        AloneUd(const Ty& v) : obj(v) {}
-        AloneUd(Ty&& v) : obj(std::move(v)) {}
-        virtual ~AloneUd() {}
+    template <typename Sy>
+    struct ObjUdImpl<SmartPtrDataImpl<Sy>> : FullUd {
+        template <typename Dy, typename... Args>
+        ObjUdImpl(void* ptr, Dy desc, Args&&... args) : FullUd(ptr, UdMinor::kSmartPtr, desc) {
+            new (storage_) SmartPtrDataImpl<Sy>(std::forward<Args>(args)...);
+        }
 
-        Ty obj;
+        char storage_[sizeof(SmartPtrDataImpl<Sy>)];
     };
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
@@ -321,6 +318,29 @@ namespace internal {
 
         int empty = 0;
         std::vector<ObjRef> objs{ ObjRef() };   // first element is not used
+    };
+
+    template <size_t Idx, size_t N>
+    struct Checker {
+        template <typename... Args>
+        static bool Do(State* s, int index) {
+            typedef typename PurifyType<
+                typename std::tuple_element<Idx, std::tuple<Args...>>::type>::type type;
+            static_assert(IsSupport<type>::value, "not support type");
+            return Support<type>::Check(s, index) &&
+                Checker<Idx+1, N>::template Do<Args...>(s, index + 1);
+        }
+    };
+
+    template <size_t Idx>
+    struct Checker<Idx, Idx> {
+        template <typename... Args>
+        static bool Do(State* s, int index) {
+            typedef typename PurifyType<
+                typename std::tuple_element<Idx, std::tuple<Args...>>::type>::type type;
+            static_assert(IsSupport<type>::value, "not support type");
+            return Support<type>::Check(s, index);
+        }
     };
 
     /* internal state
@@ -448,15 +468,16 @@ namespace internal {
         // value
         template <typename Ty>
         inline void PushUd(const Ty& obj) {
-            NewUserData<ValueUd<Ty>>(obj);
-            SetMetatable(Support<Ty>::Desc());
+            auto* desc = Support<Ty>::Desc();
+            NewObjUd(obj, desc);
+            SetMetatable(desc);
         }
 
         template <typename Ty>
         inline void PushUd(Ty&& obj) {
-            ValueUd<Ty>* ud = NewUserData<ValueUd<Ty>>(std::forward<Ty>(obj));
-            FullUd* fud = ud;
-            SetMetatable(Support<Ty>::Desc());
+            auto* desc = Support<Ty>::Desc();
+            NewObjUd(std::forward<Ty>(obj), desc);
+            SetMetatable(desc);
         }
 
         // collection ptr
@@ -469,8 +490,9 @@ namespace internal {
 
             auto it = collection_ptrs_.find(static_cast<void*>(ptr));
             if (it == collection_ptrs_.end()) {
-                NewUserData<FullUd>(ptr, Support<Ty>::Desc());
-                SetMetatable(static_cast<ICollection*>(nullptr));
+                auto* desc = Support<Ty>::Desc();
+                NewFud(ptr, desc);
+                SetMetatable(desc);
                 collection_ptrs_.insert(std::make_pair(ptr, CacheUd()));
             } else {
                 LoadCache(it->second.ref);
@@ -500,7 +522,7 @@ namespace internal {
                 if (ud) {
                     if (ud->ref != ref) {                   // prev weak obj is discard
                         ud->ref = WeakObjRef{0, 0};         // break the reference
-                        cache.ud = NewUserData<FullUd>(ref, desc);
+                        cache.ud = NewFud(ref, desc);
                         SetMetatable(desc);
                         UpdateCache(cache.ref);
                     } else if (IsBaseOf(desc, ud->desc)) { // base type
@@ -514,7 +536,7 @@ namespace internal {
                         assert(false);
                     }
                 } else {
-                    NewUserData<FullUd>(ref, desc);
+                    NewFud(ref, desc);
                     SetMetatable(desc);
                     cache = CacheUd();
                 }
@@ -532,12 +554,12 @@ namespace internal {
                         SetMetatable(desc);
                     } else {                                // new object
                         ud->ptr = nullptr;                  // mark the ud is discarded
-                        it->second.ud = NewUserData<FullUd>(ptr, desc);
+                        it->second.ud = NewFud(ptr, desc);
                         SetMetatable(desc);
                         UpdateCache(it->second.ref);
                     }
                 } else {
-                    NewUserData<FullUd>(ptr, desc);
+                    NewFud(ptr, desc);
                     SetMetatable(desc);
                     declared_ptrs_.insert(std::make_pair(tsp, CacheUd()));
                 }
@@ -545,17 +567,17 @@ namespace internal {
         }
 
         // smart ptr
-        template <typename Sty, typename Ty>
-        inline void PushSmartPtr(const Sty& s, Ty* ptr, size_t tag) {
+        template <typename Ty, typename Sty>
+        inline void PushSmartPtr(Ty* ptr, Sty&& s, size_t tag) {
             const auto* desc = Support<Ty>::Desc();
-            auto* tsp = _XLUA_TO_TOP_SUPER_PTR(ptr, desc);
+            auto* tsp = _XLUA_TO_SUPER_PTR(ptr, desc, nullptr);
             auto it = smart_ptrs_.find(tsp);
             if (it == smart_ptrs_.end()) {
-                NewUserData<SmartPtrUdImpl<Ty>>(s, ptr, tag);
+                NewSmartPtrUd(ptr, desc, std::forward<Sty>(s), tag);
                 SetMetatable(desc);
                 smart_ptrs_.insert(std::make_pair(tsp, CacheUd()));
             } else {
-                assert(static_cast<SmartPtrUd*>(it->second.ud)->tag == tag);
+                assert(static_cast<ObjUd*>(it->second.ud)->As<SmartPtrData>()->tag == tag);
                 LoadCache(it->second.ref);
                 // if the obj ptr is the derived type, update the ud info to derived type
                 if (!IsBaseOf(desc, it->second.ud->desc)) {
@@ -566,10 +588,33 @@ namespace internal {
             }
         }
 
+        template <typename... Args>
+        inline FullUd* NewFud(Args... args) {
+            auto* d = lua_newuserdata(l_, sizeof(FullUd));
+            return new (d) FullUd(args...);
+        }
+
+        template <typename Ty, typename Dy>
+        inline FullUd* NewObjUd(Ty&& v, Dy desc) {
+            typedef ObjUdImpl<ObjData<typename std::decay<Ty>::type>> value_type;
+            void* d = (void*)lua_newuserdata(l_, sizeof(value_type));
+            return new (d) value_type(desc, std::forward<Ty>(v));
+        }
+
+        template <typename Ty, typename Dy, typename Sy>
+        inline FullUd* NewSmartPtrUd(Ty* ptr, Dy desc, Sy&& s, size_t tag) {
+            typedef ObjUdImpl<SmartPtrDataImpl<typename std::decay<Sy>::type>> value_type;
+            void* d = (void*)lua_newuserdata(l_, sizeof(value_type));
+            return new (d) value_type(ptr, desc, std::forward<Sy>(s), tag);
+        }
+
         template <typename Ty, typename... Args>
-        inline typename std::enable_if<std::is_base_of<FullUd, Ty>::value, Ty*>::type NewUserData(Args&&... args) {
-            void* d = lua_newuserdata(l_, sizeof(Ty));
-            return new (d) Ty(std::forward<Args>(args)...);
+        inline ObjData<Ty>* NewAloneObj(Args&&... args) {
+            void* d = (void*)lua_newuserdata(l_, sizeof(ObjData<Ty>));
+            auto* o = new (d) ObjData<Ty>(std::forward<Args>(args)...);
+            lua_geti(l_, LUA_REGISTRYINDEX, alone_meta_ref_);
+            lua_setmetatable(l_, -2);
+            return o;
         }
 
         inline void SetMetatable(const TypeDesc* desc) {
@@ -719,9 +764,9 @@ namespace internal {
                     cache = it->second;
                     smart_ptrs_.erase(it);
                 }
-                static_cast<ObjectUd*>(ud)->~ObjectUd();
+                static_cast<ObjUd*>(ud)->As<IObjData>()->~IObjData();
             } else {
-                static_cast<ObjectUd*>(ud)->~ObjectUd();
+                static_cast<ObjUd*>(ud)->As<IObjData>()->~IObjData();
             }
 
             if (cache.ref != LUA_NOREF) {

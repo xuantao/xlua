@@ -243,8 +243,8 @@ namespace meta {
     /* call alone userdata destruction */
     static int __gc_alone(lua_State* l) {
         void* p = lua_touserdata(l, 1);
-        IAloneUd* ud = static_cast<IAloneUd*>(p);
-        ud->~IAloneUd();
+        auto* o = static_cast<IObjData*>(p);
+        o->~IObjData();
         return 0;
     }
 

@@ -311,7 +311,7 @@ class State {
     friend class Object;
 public:
     inline lua_State* GetLuaState() const { return state_.l_; }
-    inline int GetTop() { return lua_gettop(state_.l_); }
+    inline int GetTop() const { return lua_gettop(state_.l_); }
     inline void SetTop(int top) { lua_settop(state_.l_, top); }
     inline void PopTop(int n) { lua_pop(state_.l_, n); }
     inline bool DoString(const char* script, const char* chunk) {
@@ -544,11 +544,14 @@ public:
         return Load<Ty>(-1);
     }
 
-    template <typename Ty>
+    template <typename... Tys>
     bool IsType(int index) const {
-        typedef typename PurifyType<Ty>::type type;
-        static_assert(IsSupport<type>::value, "not support type");
-        return Support<type>::Check(this, index);
+        constexpr size_t arg_num = sizeof...(Tys);
+        static_assert(arg_num > 0, "need specify the target type");
+        if (GetTop() - index < arg_num - 1)
+            return false;
+        return internal::Checker<0, arg_num - 1>::template Do<Tys...>(
+            const_cast<State*>(this), index);
     }
 
     template <typename Ty, typename std::enable_if<std::is_pointer<Ty>::value, int>::type = 0>
@@ -732,6 +735,34 @@ inline CallGuard Function::Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&
 
     state_->PushVar(*this);
     return state_->Call(std::move(ret), std::forward<Args>(args)...);
+}
+
+namespace internal {
+    template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
+    inline auto DoCall(State* s, Fy f, index_sequence<Idxs...> idxs) -> typename std::enable_if<!std::is_void<Ry>::value, int>::type {
+        if (s->IsType<Args...>(1)) {
+            //l->Push(f(param::LoadParam<typename param::ParamType<Args>::type>(l, Idxs + 1)...));
+            return 1;
+        } else {
+            //TODO: log error
+            return 0;
+        }
+    }
+
+    template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
+    inline auto DoCall(State* s, Fy f, index_sequence<Idxs...> idxs) -> typename std::enable_if<std::is_void<Ry>::value, int>::type {
+        if (s->IsType<Args...>(1)) {
+            //l->Push(f(param::LoadParam<typename param::ParamType<Args>::type>(l, Idxs + 1)...));
+        } else {
+            //TODO: log error
+        }
+        return 0;
+    }
+
+    template <typename Fy, typename Ry, typename... Args>
+    inline int DoCall(State* s, Fy f) {
+        return DoCall<Fy, Ry, Args...>(s, f, make_index_sequence_t<sizeof...(Args)>());
+    }
 }
 
 XLUA_NAMESPACE_END

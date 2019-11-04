@@ -377,39 +377,25 @@ struct Support<void*> : ValueCategory<void*> {
     }
 };
 
-/* function support */
-template <typename Ry, typename... Args>
-struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args...)>> {
-    typedef std::function<Ry(Args...)> value_type;
-
-    static inline const char* Name() { return "function"; }
+template <>
+struct Support<const void*> : ValueCategory<void*> {
+    static inline const char* Name() {
+        return "const void*";
+    }
 
     static inline bool Check(State* l, int index) {
-        if (lua_iscfunction(l->GetLuaState(), index))
-            return lua_tocfunction(l->GetLuaState(), index) == &Call;
-
-        int lty = lua_type(l->GetLuaState(), index);
-        return lty == LUA_TNIL || lty == LUA_TFUNCTION;
+        auto lty = lua_type(l->GetLuaState(), index);
+        return lty == LUA_TNIL || lty == LUA_TLIGHTUSERDATA;
     }
 
-    static value_type Load(State* l, int index) {
-        //TODO:
-        return value_type();
+    static inline const void* Load(State* l, int index) {
+        return lua_touserdata(l->GetLuaState(), index);
     }
 
-    static inline void Push(State* l, const value_type& val) {
-        if (!val) {
-            lua_pushnil(l->GetLuaState());
-        } else {
-            //TODO:
-        }
-    }
-private:
-    static int Call(lua_State*) {
-        return 0;
-    }
+    static inline void Push(State* l, const void* p) = delete;
 };
 
+/* function support */
 template <>
 struct Support<int(lua_State*)> : ValueCategory<int(lua_State*)> {
     typedef int (*value_type)(lua_State*);
@@ -422,7 +408,8 @@ struct Support<int(lua_State*)> : ValueCategory<int(lua_State*)> {
     }
 
     static inline void Push(State* l, value_type f) {
-        lua_pushcfunction(l->GetLuaState(), f);
+        if (f) lua_pushcfunction(l->GetLuaState(), f);
+        else lua_pushnil(l->GetLuaState());
     }
 
     static inline value_type Load(State* l, int index) {
@@ -437,22 +424,33 @@ struct Support<int(State*)> : ValueCategory<int(State*)>{
     static inline const char* Name() { return "cfunction"; }
 
     static inline bool Check(State* l, int index) {
-        return lua_tocfunction(l->GetLuaState(), index) == &Call;
+        return lua_isnil(l->GetLuaState(), index) ||
+            lua_tocfunction(l->GetLuaState(), index) == &Call;
     }
 
     static inline value_type Load(State* l, int index) {
-        //TODO:
-        return nullptr;
+        if (lua_tocfunction(l->GetLuaState(), index) != &Call)
+            return nullptr;
+
+        lua_getupvalue(l->GetLuaState(), index, 1);
+        void* f = lua_touserdata(l->GetLuaState(), -1);
+        lua_pop(l->GetLuaState(), 1);
+        return static_cast<value_type>(f);
     }
 
     static inline void Push(State* l, value_type f) {
-        //TODO:
+        if (!f) {
+            lua_pushnil(l->GetLuaState());
+        } else {
+            lua_pushlightuserdata(l->GetLuaState(), static_cast<void*>(f));
+            lua_pushcclosure(l->GetLuaState(), &Call, 1);
+        }
     }
 
 private:
     static int Call(lua_State* l) {
-        //TODO:
-        return 0;
+        auto* f = static_cast<value_type>(lua_touserdata(l, lua_upvalueindex(1)));
+        return f(internal::GetState(l));
     };
 };
 
@@ -461,11 +459,83 @@ struct Support<Ry(Args...)> : ValueCategory<Ry(Args...)> {
     typedef Ry (*value_type)(Args...);
     typedef value_category_tag category;
 
-    static inline bool Check(State* l, int index) { return false; }
-    static value_type Load(State* l, int index) = delete;
+    static inline bool Name() { return "xfunction"; }
+
+    static inline bool Check(State* l, int index) {
+        return lua_isnil(l->GetLuaState(), index) ||
+            lua_tocfunction(l->GetLuaState(), index) == &Call;
+    }
+
+    static inline value_type Load(State* l, int index) {
+        if (lua_tocfunction(l->GetLuaState(), index) != &Call)
+            return nullptr;
+
+        lua_getupvalue(l->GetLuaState(), index, 1);
+        void* f = lua_touserdata(l->GetLuaState(), -1);
+        lua_pop(l->GetLuaState(), 1);
+        return static_cast<value_type>(f);
+    }
 
     static inline void Push(State* l, value_type f) {
-        //TODO:
+        if (!f) {
+            lua_pushnil(l->GetLuaState());
+        } else {
+            lua_pushlightuserdata(l->GetLuaState(), static_cast<void*>(f));
+            lua_pushcclosure(l->GetLuaState(), &Call, 1);
+        }
+    }
+
+private:
+    int Call(lua_State* l) {
+        auto f = static_cast<value_type>(lua_touserdata(l, lua_upvalueindex(1)));
+        return internal::DoCall<value_type, Ry, Args...>(internal::GetState(l), f);
+    }
+};
+
+template <typename Ry, typename... Args>
+struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args...)>> {
+    typedef std::function<Ry(Args...)> value_type;
+    typedef internal::ObjData<value_type> ObjData;
+    static inline const char* Name() { return "std::function"; }
+
+    static inline bool Check(State* l, int index) {
+        int lty = lua_type(l->GetLuaState(), index);
+        return lty == LUA_TNIL || lty == LUA_TFUNCTION;
+    }
+
+    static value_type Load(State* l, int index) {
+        int lty = lua_type(l->GetLuaState(), index);
+        if (lty == LUA_TNIL || lty != LUA_TFUNCTION)
+            return value_type();
+        // same type
+        if (lua_tocfunction(l->GetLuaState(), index) == &Call) {
+            lua_getupvalue(l->GetLuaState(), index, 1);
+            auto* d = static_cast<ObjData*>(lua_touserdata(l->GetLuaState(), -1));
+            lua_pop(l->GetLuaState(), 1);
+            return d->obj;
+        }
+        // unkonwn type funtion
+        auto f = l->Load<Function>(index);
+        return [=](Args... args)->Ry {
+            Ry val;
+            f(std::tie(val), std::forward<Args...>(args));
+            return std::move(val);
+        };
+    }
+
+    static inline void Push(State* l, const value_type& val) {
+        if (!val) {
+            lua_pushnil(l->GetLuaState());
+        } else {
+            l->state_.NewAloneObj<value_type>(val);
+            lua_pushcclosure(l->GetLuaState(), &Call, 1);
+        }
+    }
+
+private:
+    static int Call(lua_State* l) {
+        auto* d = static_cast<ObjData*>(lua_touserdata(l, lua_upvalueindex(1)));
+        return internal::DoCall<value_type&, Ry, Args...>(internal::GetState(l), d->obj);
     }
 };
 
@@ -485,10 +555,11 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, std_sha
             return true;
 
         auto* ud = l->state_.LoadRawUd(index);
-        if (ud == nullptr || ud->category != UserDataCategory::SmartPtr)
+        if (ud == nullptr || ud->minor != internal::UdMinor::SmartPtr)
             return false;
 
-        if (static_cast<internal::SmartPtrUd*>(ud)->tag != base_type_::tag)
+        auto* ptr = static_cast<internal::ObjUd*>(ud)->As<internal::SmartPtrData>();
+        if (ptr->tag != base_type_::tag)
             return false;
 
         return l->state_.IsUd(ud, Support<Ty>::Desc());
@@ -499,14 +570,14 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, std_sha
             return value_type();
 
         auto* ud = l->state_.LoadRawUd(index);
-        if (ud == nullptr || ud->dv != internal::UvType::kSmartPtr)
+        if (ud == nullptr || ud->minor != internal::UdMinor::kSmartPtr)
             return value_type();
 
-        auto* sud = static_cast<internal::SmartPtrUd*>(ud);
-        if (sud->tag != base_type_::tag)
+        auto* ptr = static_cast<internal::ObjUd*>(ud)->As<internal::SmartPtrData>();
+        if (ptr->tag != base_type_::tag)
             return value_type();
 
-        return value_type(*static_cast<value_type*>(sud->data),
+        return value_type(*static_cast<value_type*>(ptr->data),
             (Ty*)_XLUA_TO_SUPER_PTR(ud->ptr, ud->desc, Support<Ty>::Desc()));
     }
 
@@ -514,7 +585,14 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, std_sha
         if (!ptr)
             lua_pushnil(l->GetLuaState());
         else
-            l->state_.PushSmartPtr(ptr, ptr->get(), base_type_::tag);
+            l->state_.PushSmartPtr(ptr.get(), ptr, base_type_::tag);
+    }
+
+    static void Push(State* l, value_type&& ptr) {
+        if (!ptr)
+            lua_pushnil(l->GetLuaState());
+        else
+            l->state_.PushSmartPtr(ptr.get(), std::move(ptr), base_type_::tag);
     }
 };
 
