@@ -18,9 +18,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="common.h">
-      <Filter>src</Filter>
-    </ClInclude>
     <ClInclude Include="xlua_def.h">
       <Filter>src</Filter>
     </ClInclude>

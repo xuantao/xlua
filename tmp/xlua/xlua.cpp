@@ -182,15 +182,19 @@ namespace internal {
             caches[obj_index] = desc;
     }
 
-    bool CheckLightUd(LightUd ld, const TypeDesc* desc) {
+    const TypeDesc* GetLightUdDesc(LightUd ld) {
         const auto& info = g_env.declared.lud_list[ld.lud_index];
         if (info.type == LudType::Type::kWeakObj) {
-            auto cache_desc = GetWeakObjDesc(ld.weak_index, ld.ref_index);
-            return cache_desc != nullptr && IsBaseOf(desc, cache_desc);
+            return GetWeakObjDesc(ld.weak_index, ld.ref_index);
         } else if (info.type == LudType::Type::kPtr) {
-            return info.desc != nullptr && IsBaseOf(desc, info.desc);
+            return info.desc;
         }
-        return false;
+        return nullptr;
+    }
+
+    bool CheckLightUd(LightUd ld, const TypeDesc* desc) {
+        auto* cache_desc = GetLightUdDesc(ld);
+        return (cache_desc && IsBaseOf(desc, cache_desc));
     }
 
     void* UnpackLightUd(LightUd ld, const TypeDesc* desc) {

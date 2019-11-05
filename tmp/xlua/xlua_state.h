@@ -1,5 +1,4 @@
 #pragma once
-#include "common.h"
 #include "state.h"
 #include <assert.h>
 #include <functional>
@@ -315,6 +314,7 @@ private:
 class State {
     friend class Object;
 public:
+    const char* GetTypeName(int index) const { return state_.GetTypeName(index); }
     inline lua_State* GetLuaState() const { return state_.l_; }
     inline int GetTop() const { return lua_gettop(state_.l_); }
     inline void SetTop(int top) { lua_settop(state_.l_, top); }
@@ -360,7 +360,7 @@ public:
             break;
         case LUA_TUSERDATA:
             ptr = lua_touserdata(state_.l_, index);
-            if (internal::IsValid(static_cast<internal::FullUd*>(ptr)))
+            if (static_cast<internal::FullUd*>(ptr)->IsValid())
                 vt = VarType::kUserData;
             break;
         }
@@ -400,7 +400,7 @@ public:
             return Variant(VarType::kFunction, Object(state_.RefObj(index), this));
         case LUA_TUSERDATA:
             ptr = lua_touserdata(l, index);
-            if (internal::IsValid(static_cast<internal::FullUd*>(ptr)))
+            if (static_cast<internal::FullUd*>(ptr)->IsValid())
                 return Variant(VarType::kUserData, Object(state_.RefObj(index), this));
             break;
         }
@@ -552,10 +552,10 @@ public:
     template <typename... Tys>
     bool IsType(int index) const {
         constexpr size_t arg_num = sizeof...(Tys);
-        static_assert(arg_num > 0, "need specify the target type");
-        if (GetTop() - index < arg_num - 1)
+        //static_assert(arg_num > 0, "need specify the target type");
+        if (GetTop() - index + 1 < arg_num)
             return false;
-        return internal::Checker<0, arg_num - 1>::template Do<Tys...>(
+        return internal::Checker<arg_num>::template Do<Tys...>(
             const_cast<State*>(this), index);
     }
 

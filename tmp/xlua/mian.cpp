@@ -27,6 +27,9 @@ int main(int argc, char* argv) {
 
         bool btype = l->IsType<int, bool, const char*, std::string>(1);
         btype = l->IsType<bool, bool, const char*, const char*>(1);
+        btype = l->IsType<>(1);                 // always trhe
+        btype = l->IsType<void>(1);             // check is nil
+        btype = l->IsType<std::nullptr_t>(1);   // check is nil
 
         char buf[] = "normal array";
         l->Push(buf);

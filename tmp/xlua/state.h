@@ -1,5 +1,5 @@
 #pragma once
-#include "common.h"
+#include "xlua_def.h"
 #include <array>
 #include <vector>
 #include <unordered_map>
@@ -83,6 +83,12 @@ namespace internal {
             desc = _desc;
             ptr = p;
         }
+
+    public:
+        inline bool IsValid() {
+            return tag_1_ == _XLUA_TAG_1 && tag_2_ == _XLUA_TAG_2 &&
+                major != UdMajor::kNone && minor != UdMinor::kNone;
+        }
     };
 
     inline bool IsBaseOf(const TypeDesc* base, const TypeDesc* drive) {
@@ -134,12 +140,12 @@ namespace internal {
 
     template <typename Ty, typename std::enable_if<std::is_base_of<object_category_tag_, typename Support<Ty>::category>::value, int>::type = 0>
     inline Ty* As(FullUd* ud) {
-        if (IsValid(ud))
+        if (ud->IsValid())
             return static_cast<Ty*>(As(ud, Support<Ty>::Desc()));
         return nullptr;
     }
 
-#define ASSERT_FUD(ud) assert(ud && IsValid(ud))
+#define ASSERT_FUD(ud) assert(ud && ud->IsValid())
 
     /* object userdata, this ud will destruction on gc */
     struct IObjData {
@@ -236,7 +242,7 @@ namespace internal {
         };
 
         inline explicit operator bool() const {
-            return value != nullptr;
+            return lud_index != 0;
         }
         inline void* ToObj() const {
             return reinterpret_cast<void*>(ptr);
@@ -272,16 +278,13 @@ namespace internal {
         }
     };
 
+    const TypeDesc* GetLightUdDesc(LightUd);
     bool CheckLightUd(LightUd ld, const TypeDesc* desc);
     void* UnpackLightUd(LightUd ld, const TypeDesc* desc);
     LightUd PackLightUd(void* obj, const TypeDesc* desc);
 
-    inline bool IsValid(LightUd ld) {
-        return ld.lud_index != 0;
-    }
-
     inline bool IsUd(LightUd ld, const TypeDesc* desc) {
-        return IsValid(ld) && CheckLightUd(ld, desc);
+        return (bool)ld && CheckLightUd(ld, desc);
     }
 
     inline bool IsUd(LightUd ld, ICollection* collection) {
@@ -289,7 +292,7 @@ namespace internal {
     }
 
     inline void* As(LightUd ld, const TypeDesc* desc) {
-        return IsValid(ld) ? UnpackLightUd(ld, desc) : nullptr;
+        return (bool)ld ? UnpackLightUd(ld, desc) : nullptr;
     }
 
     inline void* As(LightUd ld, ICollection* collection) {
@@ -301,6 +304,38 @@ namespace internal {
         return static_cast<Ty*>(As(ld, Support<Ty>::Desc()));
     }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
+
+    /* check lua stack value is specify type */
+    template <size_t Idx>
+    struct Checker {
+        template <typename... Args>
+        static inline bool Do(State* s, int index) {
+            typedef typename PurifyType<
+                typename std::tuple_element<sizeof...(Args) - Idx, std::tuple<Args...>>::type>::type type;
+            static_assert(IsSupport<type>::value, "not support type");
+            return Support<type>::Check(s, index) &&
+                Checker<Idx - 1>::template Do<Args...>(s, index + 1);
+        }
+    };
+
+    template <>
+    struct Checker<1> {
+        template <typename... Args>
+        static inline bool Do(State* s, int index) {
+            typedef typename PurifyType<
+                typename std::tuple_element<sizeof...(Args) - 1, std::tuple<Args...>>::type>::type type;
+            static_assert(IsSupport<type>::value, "not support type");
+            return Support<type>::Check(s, index);
+        }
+    };
+
+    template <>
+    struct Checker<0> {
+        template <typename... Args>
+        static inline bool Do(State* s, int index) {
+            return true;
+        }
+    };
 
     struct UdCache {
         int ref;    // lua reference index
@@ -320,33 +355,51 @@ namespace internal {
         std::vector<ObjRef> objs{ ObjRef() };   // first element is not used
     };
 
-    template <size_t Idx, size_t N>
-    struct Checker {
-        template <typename... Args>
-        static bool Do(State* s, int index) {
-            typedef typename PurifyType<
-                typename std::tuple_element<Idx, std::tuple<Args...>>::type>::type type;
-            static_assert(IsSupport<type>::value, "not support type");
-            return Support<type>::Check(s, index) &&
-                Checker<Idx+1, N>::template Do<Args...>(s, index + 1);
-        }
-    };
-
-    template <size_t Idx>
-    struct Checker<Idx, Idx> {
-        template <typename... Args>
-        static bool Do(State* s, int index) {
-            typedef typename PurifyType<
-                typename std::tuple_element<Idx, std::tuple<Args...>>::type>::type type;
-            static_assert(IsSupport<type>::value, "not support type");
-            return Support<type>::Check(s, index);
-        }
-    };
-
     /* internal state
      * manage all lua data
     */
     struct StateData {
+        const char* GetTypeName(int index) const {
+            const char* name = nullptr;
+            int lty = lua_type(l_, index);
+            if (lty == LUA_TLIGHTUSERDATA) {
+#if XLUA_ENABLE_LUD_OPTIMIZE
+                if (auto ld = LightUd::Make(lua_touserdata(l_, index))) {
+                    auto* desc = GetLightUdDesc(ld);
+                    if (desc)
+                        name = desc->name;
+                    else
+                        name = "unknown";
+                }
+#else
+                name = "void*";
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+            } else if(lty == LUA_TUSERDATA) {
+                auto* ud = static_cast<FullUd*>(lua_touserdata(l_, index));
+                if (ud->IsValid()) {
+                    if (ud->major == UdMajor::kCollection)
+                        name = ud->collection->Name();
+                    else
+                        name = ud->desc->name;
+                } else {
+                    name = "unknown";
+                }
+            } else {
+                name = lua_typename(l_, index);
+            }
+            return name;
+        };
+
+        //char* GetTypeName(char* buff, size_t sz, int index, int count) const {
+        //    buff[0] = 0;
+        //    for (int i = 0, tail = count - 1; i < count; ++i) {
+        //        std::strncat(buff, GetTypeName(index + i), sz);
+        //        if (i < tail)
+        //            std::strncat(buff, ", ", sz);
+        //    }
+        //    return buff;
+        //}
+
         inline bool DoString(const char* script, const char* chunk) {
             luaL_loadbuffer(l_, script, ::strlen(script), chunk);
             return true;
@@ -793,8 +846,7 @@ namespace internal {
         std::unordered_map<void*, UdCache> declared_ptrs_;
         std::unordered_map<void*, UdCache> smart_ptrs_;
         std::vector<std::vector<UdCache>> weak_objs_;
-    };
-
-} // internal
+    }; // calss state_data
+} // namespace internal
 
 XLUA_NAMESPACE_END
