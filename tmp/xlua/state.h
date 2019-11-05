@@ -337,6 +337,58 @@ namespace internal {
         }
     };
 
+    template <size_t S>
+    struct StringCache {
+        StringCache(const char* str, size_t len) {
+            ::memcpy(cache_, str, 63);
+            cache_[S - 1] = 0;
+        }
+
+        explicit inline operator const char*() {
+            return cache_;
+        }
+
+    private:
+        char cache_[S];
+    };
+
+    struct StringView {
+        const char* str;
+        size_t len;
+
+        template <size_t S = 64>
+        inline StringCache<S> ToCache() {
+            return StringCache<S>(str, len);
+        }
+    };
+
+    constexpr StringView PurifyMemberName(const char* name) {
+        // find the last scope
+        while (const char* sub = ::strstr(name, "::"))
+            name = sub + 2;
+        // remove prefix: &
+        if (name[0] == '&')
+            ++name;
+        // remove prefix: "m_"
+        if (name[0] == 'm' && name[1] == '_')
+            name += 2;
+        // remove prefix: "lua"
+        if ((name[0] == 'l' || name[0] == 'L') &&
+            (name[1] == 'u' || name[1] == 'U') &&
+            (name[2] == 'a' || name[2] == 'A')) {
+            name += 3;
+        }
+        // remove prefix: '_'
+        while (name[0] && name[0] == '_')
+            ++name;
+        // remove surfix: '_'
+        size_t len = ::strlen(name);
+        while (len && name[len-1]=='_')
+            --len;
+
+        return StringView{name, len};
+    }
+
     struct UdCache {
         int ref;    // lua reference index
         FullUd* ud; // lua userdata

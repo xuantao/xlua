@@ -397,59 +397,113 @@ struct Support<void> : ValueCategory<void, false> {
 
 namespace internal {
     /* get parameter name and the lua type name */
-    //template <size_t Idx, size_t N>
-    //struct ParamName {
-    //    template <typename... Args>
-    //    static inline void GetName(char* buff, size_t sz, State* s, int index) {
-    //        typedef typename PurifyType<
-    //            typename std::tuple_element<Idx, std::tuple<Args...>>::type>::type type;
-    //        int w = snprintf(buff, sz, "[%d] %s(%s), ", (int)Idx + 1,
-    //            Support<type>::Name(), s->GetTypeName(index));
-    //        if (w > 0 && w < sz)
-    //            ParamName<Idx+1, N>::template GetName(buff + w, sz - w, s, index + 1);
-    //    }
-    //};
+    template <size_t Idx>
+    struct ParamName {
+        template <typename... Args>
+        static inline void GetName(char* buff, size_t sz, State* s, int index) {
+            constexpr size_t param_idx = sizeof...(Args) - Idx;
+            typedef typename PurifyType<
+                typename std::tuple_element<param_idx, std::tuple<Args...>>::type>::type type;
+            int w = snprintf(buff, sz, "[%d] %s(%s), ", (int)(param_idx + 1),
+                Support<type>::Name(), s->GetTypeName(index));
+            if (w > 0 && w < sz)
+                ParamName<Idx - 1>::template GetName(buff + w, sz - w, s, index + 1);
+        }
+    };
 
-    //template <size_t Idx>
-    //struct ParamName<Idx, Idx> {
-    //    template <typename... Args>
-    //    static inline void GetName(char* buff, size_t sz, State* s, int index) {
-    //        typedef typename PurifyType<
-    //            typename std::tuple_element<Idx, std::tuple<Args...>>::type>::type type;
-    //        snprintf(buff, sz, "[%d] %s(%s)", (int)Idx + 1,
-    //            Support<type>::Name(), s->GetTypeName(index));
-    //    }
-    //};
+    template <>
+    struct ParamName<1> {
+        template <typename... Args>
+        static inline void GetName(char* buff, size_t sz, State* s, int index) {
+            constexpr size_t param_idx = sizeof...(Args) - 1;
+            typedef typename PurifyType<
+                typename std::tuple_element<param_idx, std::tuple<Args...>>::type>::type type;
+            snprintf(buff, sz, "[%d] %s(%s)", (int)(param_idx + 1),
+                Support<type>::Name(), s->GetTypeName(index));
+        }
+    };
 
-    //template <>
-    //struct ParamName<0, 0> {
-    //    template <typename... Args>
-    //    static inline void GetName(char* buff, size_t sz, State* s, int index) {
-    //        buff[0] = 0;
-    //    }
-    //};
+    template <>
+    struct ParamName<0> {
+        template <typename... Args>
+        static inline void GetName(char* buff, size_t sz, State* s, int index) {
+            snprintf(buff, sz, "none");
+        }
+    };
+
+    template <typename... Args>
+    inline char* GetParameterNames(char* buff, size_t len, State* s, int index) {
+        ParamName<sizeof...(Args)>::template GetName<Args...>(buff, len, s, 1);
+        return buff;
+    }
+
+    template <typename Ty, typename std::enable_if<Support<Ty>::allow_nil, int>::type = 0>
+    inline bool DoCheckParam(State* s, int index) {
+        static_assert(!std::is_same<Support<Ty>::category, not_support_tag>::value, "not support");
+        return lua_isnil(s->GetLuaState(), index) || Support<Ty>::Check(s, index);
+    }
+
+    template <typename Ty, typename std::enable_if<!Support<Ty>::allow_nil, int>::type = 0>
+    inline bool DoCheckParam(State* s, int index) {
+        static_assert(!std::is_same<Support<Ty>::category, not_support_tag>::value, "not support");
+        return Support<Ty>::Check(s, index);
+    }
+
+    template <size_t Idx>
+    struct ParamChecker {
+        template <typename... Args>
+        static inline bool Do(State* s, int index) {
+            typedef typename PurifyType<
+                typename std::tuple_element<sizeof...(Args) - Idx, std::tuple<Args...>>::type>::type type;
+            return DoCheckParam<type>(s, index) &&
+                ParamChecker<Idx-1>::template Do<Args...>(s, index + 1);
+        }
+    };
+
+    template <>
+    struct ParamChecker<1> {
+        template <typename... Args>
+        static inline bool Do(State* s, int index) {
+            typedef typename PurifyType<
+                typename std::tuple_element<sizeof...(Args) - 1, std::tuple<Args...>>::type>::type type;
+            return DoCheckParam<type>(s, index);
+        }
+    };
+
+    template <>
+    struct ParamChecker<0> {
+        template <typename... Args>
+        static inline bool Do(State* s, int index) {
+            return true;
+        }
+    };
+
+    template <typename... Args>
+    inline bool CheckParameters(State* s, int index) {
+        return ParamChecker<sizeof...(Args)>::template Do<Args...>(s, index);
+    }
 
     template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
     inline auto DoLuaCall(State* s, Fy f, index_sequence<Idxs...>) -> typename std::enable_if<!std::is_void<Ry>::value, int>::type {
-        if (s->IsType<Args...>(1)) {
+        if (CheckParameters<Args...>(s, 1)) {
             s->Push(f(Support<typename PurifyType<Args>::type>::Load(s, Idxs + 1)...));
             return 1;
         } else {
             char buff[1024];
-            //ParamName<0, sizeof...(Args)>::template GetName<Args...>(buff, 1024, s, 1);
-            luaL_error(s->GetLuaState(), "attemp to call export function failed, paramenter is not accpeted,\nparams{%s}", buff);
+            luaL_error(s->GetLuaState(), "attemp to call export function failed, paramenter is not accpeted,\nparams{%s}",
+                GetParameterNames<Args...>(buff, 1024, s, 1));
             return 0;
         }
     }
 
     template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
     inline auto DoLuaCall(State* s, Fy f, index_sequence<Idxs...>) -> typename std::enable_if<std::is_void<Ry>::value, int>::type {
-        if (s->IsType<Args...>(1)) {
+        if (CheckParameters<Args...>(s, 1)) {
             f(Support<typename PurifyType<Args>::type>::Load(s, Idxs + 1)...);
         } else {
             char buff[1024];
-            //ParamName<0, sizeof...(Args)>::template GetName<Args...>(buff, 1024, s, 1);
-            luaL_error(s->GetLuaState(), "attemp to call export function failed, paramenter is not accpeted,\nparams{%s}", buff);
+            luaL_error(s->GetLuaState(), "attemp to call export function failed, paramenter is not accpeted,\nparams{%s}",
+                GetParameterNames<Args...>(buff, 1024, s, 1));
         }
         return 0;
     }

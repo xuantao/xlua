@@ -10,12 +10,18 @@ struct TestObj {
 
     void test() {
     }
+
+    int a;
 };
 
 struct Derived : TestObj {
     void print() {
 
     }
+
+    char szName[64];
+
+    static int sIdx;
 };
 
 XLUA_DECLARE_CLASS(TestObj);

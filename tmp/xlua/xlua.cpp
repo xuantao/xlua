@@ -95,11 +95,6 @@ namespace internal {
         };
     };
 
-    struct StringView {
-        const char* str;
-        size_t len;
-    };
-
     struct ExportVar {
         const char* name;
         LuaIndexer getter;
@@ -413,33 +408,6 @@ namespace internal {
         }
         buf[idx++] = 0;
         return idx;
-    }
-
-    static StringView PurifyMemberName(const char* name) {
-        // find the last scope
-        while (const char* sub = ::strstr(name, "::"))
-            name = sub + 2;
-        // remove prefix: &
-        if (name[0] == '&')
-            ++name;
-        // remove prefix: "m_"
-        if (name[0] == 'm' && name[1] == '_')
-            name += 2;
-        // remove prefix: "lua"
-        if ((name[0] == 'l' || name[0] == 'L') &&
-            (name[1] == 'u' || name[1] == 'U') &&
-            (name[2] == 'a' || name[2] == 'A')) {
-            name += 3;
-        }
-        // remove prefix: '_'
-        while (name[0] && name[0] == '_')
-            ++name;
-        // remove surfix: '_'
-        size_t len = ::strlen(name);
-        while (len && name[len-1]=='_')
-            --len;
-
-        return StringView{name, len};
     }
 
     static void MakeGlobal(State* s, const char* path) {
