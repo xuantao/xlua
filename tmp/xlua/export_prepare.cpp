@@ -18,28 +18,27 @@ const xlua::TypeDesc* xLuaGetTypeDesc(xlua::Identity<TestObj>) {
 }
 
 const xlua::TypeDesc* xLuaGetTypeDesc(xlua::Identity<Derived>) {
+    using meta = xlua::internal::Meta<Derived>;
+    using xlua::internal::PurifyMemberName;
+    using xlua::internal::GetState;
+
     static const xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {
         auto* factory = xlua::CreateFactory<Derived, TestObj>("Derived");
 
         factory->AddMember(false, "print", [](lua_State*l)->int {
-            return 0;
+            return meta::Call(GetState(l), desc, PurifyMemberName("print"), &Derived::print);
         });
 
         factory->AddMember(false, "szName", [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
-            xlua::internal::MetaGet(l, (Derived*)_XLUA_TO_SUPER_PTR(obj, info, desc), &Derived::szName);
-            return 0;
+            return meta::Get(l, obj, info, desc, &Derived::szName);
         }, [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
-            xlua::internal::MetaSet(l, (Derived*)_XLUA_TO_SUPER_PTR(obj, info, desc), &Derived::szName);
-            return 1;
+            return meta::Set(l, obj, info, desc, PurifyMemberName("szName"), &Derived::szName);
         });
 
         factory->AddMember(true, "sIdx", [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
-            xlua::internal::MetaGet(l, &Derived::sIdx);
-            //xlua::internal::MetaGet(l, (Derived*)_XLUA_TO_SUPER_PTR(obj, info, desc), &Derived::sIdx);
-            return 0;
+            return meta::Get(l, obj, info, desc, &Derived::sIdx);
         }, [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
-            xlua::internal::MetaSet(l, &Derived::sIdx);
-            return 1;
+            return meta::Set(l, obj, info, desc, PurifyMemberName("sIdx"), &Derived::sIdx);
         });
 
         return factory->Finalize();

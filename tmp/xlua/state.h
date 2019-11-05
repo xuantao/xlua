@@ -337,34 +337,59 @@ namespace internal {
         }
     };
 
-    template <size_t S>
+    constexpr size_t StrLen(const char* s) {
+        if (s == nullptr)
+            return 0;
+
+        size_t l = 0;
+        while (*s) {
+            ++l;
+            ++s;
+        }
+        return l;
+    }
+
+    constexpr const char* StrStr(const char* s, const char* p) {
+        size_t l = StrLen(p);
+        while (*s) {
+            size_t i = 0;
+            while (s[i] == p[i] && p[i])
+                ++i;
+            if (i == l)
+                return s + l;
+
+            ++s;
+        }
+        return nullptr;
+    }
+
+    struct StringView {
+        constexpr StringView(const char* s) : str(s), len(StrLen(s)) {
+        }
+
+        constexpr StringView(const char* s, size_t l) : str(s), len(l) {
+        }
+
+        const char* str;
+        size_t len;
+    };
+
+    template <size_t S = 64>
     struct StringCache {
-        StringCache(const char* str, size_t len) {
-            ::memcpy(cache_, str, 63);
+        StringCache(StringView str) {
+            ::memcpy(cache_, str.str, str.len);
             cache_[S - 1] = 0;
         }
 
-        explicit inline operator const char*() {
-            return cache_;
-        }
+        inline const char* Str() { return cache_; }
 
     private:
         char cache_[S];
     };
 
-    struct StringView {
-        const char* str;
-        size_t len;
-
-        template <size_t S = 64>
-        inline StringCache<S> ToCache() {
-            return StringCache<S>(str, len);
-        }
-    };
-
     constexpr StringView PurifyMemberName(const char* name) {
         // find the last scope
-        while (const char* sub = ::strstr(name, "::"))
+        while (const char* sub = StrStr(name, "::"))
             name = sub + 2;
         // remove prefix: &
         if (name[0] == '&')
@@ -382,11 +407,11 @@ namespace internal {
         while (name[0] && name[0] == '_')
             ++name;
         // remove surfix: '_'
-        size_t len = ::strlen(name);
+        size_t len = StrLen(name);
         while (len && name[len-1]=='_')
             --len;
 
-        return StringView{name, len};
+        return StringView(name, len);
     }
 
     struct UdCache {

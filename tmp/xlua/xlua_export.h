@@ -151,6 +151,28 @@ namespace internal {
         }
     };
 
+    template <typename Ty>
+    bool CheckMetaVar(State* s, int index, const TypeDesc* desc, StringView name) {
+        if (DoCheckParam<Ty>(s, index))
+            return true;
+
+        char buff[1024];
+        luaL_error(s->GetLuaState(), "attemp to set var[%s.%s] failed, paramenter is not accpeted,\nparams{%s}",
+            desc->name, StringCache<>(name).Str(), GetParameterNames<Ty>(buff, 1024, s, index));
+        return false;
+    }
+
+    template <typename... Args>
+    bool CheckMetaParameters(State* s, int index, const TypeDesc* desc, StringView name) {
+        if (CheckParameters<Args...>(s, index))
+            return true;
+
+        char buff[1024];
+        luaL_error(s->GetLuaState(), "attemp to call fcuntion[%s.%s] failed, paramenter is not accpeted,\nparams{%s}",
+            desc->name, StringCache<>(name).Str(), GetParameterNames<Args...>(buff, 1024, s, index));
+        return false;
+    }
+
     /* set array value, only support string */
     inline void MetaSetArray(State* s, char* buf, size_t sz) {
         const char* str = s->Load<const char*>(1);
@@ -173,19 +195,21 @@ namespace internal {
     }
 
     template <typename Ry>
-    inline void MetaSet_(State* l, Ry* data, std::false_type) {
-        *data = l->Load<typename std::decay<Ry>::type>(1);
+    inline void MetaSet_(State* l, const TypeDesc* desc, StringView name, Ry* data, std::false_type) {
+        if (CheckMetaVar<Ry>(l, 1, desc, name))
+            *data = Support<typename PurifyType<Ry>::type>::Load(l, 1);
     }
 
     template <typename Ty, typename Ry>
-    inline void MetaSet_(State* l, Ty* obj, Ry Ty::*data, std::true_type) {
+    inline void MetaSet_(State* l, Ty* obj, const TypeDesc* desc, StringView name, Ry Ty::*data, std::true_type) {
         static_assert(std::extent<Ry>::value > 0, "array size must greater than 0");
         MetaSetArray(l, obj->*data, std::extent<Ry>::value);
     }
 
     template <typename Ty, typename Ry>
-    inline void MetaSet_(State* l, Ty* obj, Ry Ty::*data, std::false_type) {
-        obj->*data = l->Load<typename std::decay<Ry>::type>(1);
+    inline void MetaSet_(State* l, Ty* obj, const TypeDesc* desc, StringView name, Ry Ty::*data, std::false_type) {
+        if (CheckMetaVar<Ry>(l, 1, desc, name))
+            obj->*data = Support<typename PurifyType<Ry>::type>::Load(l, 1);
     }
 
     template <typename Ry>
@@ -194,8 +218,8 @@ namespace internal {
     }
 
     template <typename Ry>
-    inline void MetaSet(State* l, Ry* data) {
-        MetaSet_(l, data, std::is_array<Ry>());
+    inline void MetaSet(State* l, const TypeDesc* desc, StringView name, Ry* data) {
+        MetaSet_(l, desc, name, data, std::is_array<Ry>());
     }
 
     template <typename Ry>
@@ -204,8 +228,9 @@ namespace internal {
     }
 
     template <typename Ry>
-    inline void MetaSet(State* l, void(*func)(Ry)) {
-        func(l->Load<typename std::decay<Ry>::type>(1));
+    inline void MetaSet(State* l, const TypeDesc* desc, StringView name, void(*func)(Ry)) {
+        if (CheckMetaVar<Ry>(l, 1, desc, name))
+            func(Support<typename PurifyType<Ry>::type>::Load(l, 1));
     }
 
     template <typename Obj, typename Ty, typename Ry>
@@ -214,8 +239,8 @@ namespace internal {
     }
 
     template <typename Obj, typename Ty, typename Ry>
-    inline void MetaSet(State* l, Obj* obj, Ry Ty::*data) {
-        MetaSet_(l, static_cast<Ty*>(obj), data, std::is_array<Ry>());
+    inline void MetaSet(State* l, Obj* obj, const TypeDesc* desc, StringView name, Ry Ty::*data) {
+        MetaSet_(l, static_cast<Ty*>(obj), desc, name, data, std::is_array<Ry>());
     }
 
     template <typename Obj, typename Ty, typename Ry>
@@ -224,8 +249,9 @@ namespace internal {
     }
 
     template <typename Obj, typename Ty, typename Ry>
-    inline void MetaSet(State* l, Obj* obj, void(Ty::*func)(Ry)) {
-        (obj->*func)(l->Load<typename std::decay<Ry>::type>(1));
+    inline void MetaSet(State* l, Obj* obj, const TypeDesc* desc, StringView name, void(Ty::*func)(Ry)) {
+        if (CheckMetaVar<Ry>(l, 1, desc, name))
+            (obj->*func)(Support<typename PurifyType<Ry>::type>::Load(l, 1));
     }
 
     template <typename Ty>
@@ -239,12 +265,12 @@ namespace internal {
     }
 
     template <typename Ty>
-    inline void MetaSet(State* l, Ty* obj, int(Ty::*func)(State*)) {
+    inline void MetaSet(State* l, Ty* obj, const TypeDesc* desc, StringView name, int(Ty::*func)(State*)) {
         (obj->*func)(l);
     }
 
     template <typename Ty>
-    inline void MetaSet(State* l, Ty* obj, void(Ty::*func)(State*)) {
+    inline void MetaSet(State* l, Ty* obj, const TypeDesc* desc, StringView name, void(Ty::*func)(State*)) {
         (obj->*func)(l);
     }
 
@@ -259,17 +285,17 @@ namespace internal {
     }
 
     template <typename Ty>
-    inline void MetaSet(State* l, Ty* obj, int(Ty::*func)(lua_State*)) {
+    inline void MetaSet(State* l, Ty* obj, const TypeDesc* desc, StringView name, int(Ty::*func)(lua_State*)) {
         (obj->*func)(l->GetState());
     }
 
     template <typename Ty>
-    inline void MetaSet(State* l, Ty* obj, void(Ty::*func)(lua_State*)) {
+    inline void MetaSet(State* l, Ty* obj, const TypeDesc* desc, StringView name, void(Ty::*func)(lua_State*)) {
         (obj->*func)(l->GetState());
     }
 
     /* extend member var */
-    template <typename Ty, typename Ry>
+    /*template <typename Ty, typename Ry>
     inline void MetaGet(State* l, Ty* obj, Ry(*func)(Ty*)) {
         l->Push(func(obj));
     }
@@ -305,8 +331,148 @@ namespace internal {
     }
 
     template <typename Ty>
-    inline void MetaSet(State* l, Ty* obj, void(*func)(Ty*, lua_State*)) {
-        func(obj, l->GetState());
+    inline void MetaSet(State* s, Ty* obj, void(*func)(Ty*, lua_State*)) {
+        func(obj, s->GetState());
+    }*/
+
+    template <typename Ty, class Cy, typename Ry, typename... Args, size_t... Idxs>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, Ry(Cy::*func)(Args...), index_sequence<Idxs...>) {
+        if (CheckMetaParameters<Args...>(s, 2, desc, name)) {
+            s->Push((obj->*func)(Support<typename PurifyType<Args>::type>::Load(s, 2 + Idxs)...));
+            return 1;
+        }
+        return 0;
+    }
+
+    template <typename Ty, class Cy, typename Ry, typename... Args>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, Ry(Cy::*func)(Args...)) {
+        return MetaCall(s, obj, desc, name, func, make_index_sequence_t<sizeof...(Args)>());
+    }
+
+    template <typename Ty, class Cy, typename Ry, typename... Args, size_t... Idxs>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, Ry(Cy::*func)(Args...)const, index_sequence<Idxs...>) {
+        if (CheckMetaParameters<Args...>(s, 2, desc, name)) {
+            s->Push((obj->*func)(Support<typename PurifyType<Args>::type>::Load(s, 2 + Idxs)...));
+            return 1;
+        }
+        return 0;
+    }
+
+    template <typename Ty, class Cy, typename Ry, typename... Args>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, Ry(Cy::*func)(Args...)const) {
+        return MetaCall(s, obj, desc, name, func, make_index_sequence_t<sizeof...(Args)>());
+    }
+
+    template <typename Ty, class Cy, typename... Args, size_t... Idxs>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(Args...), index_sequence<Idxs...>) {
+        if (CheckMetaParameters<Args...>(s, 2, desc, name))
+            (obj->*func)(Support<typename PurifyType<Args>::type>::Load(s, 2 + Idxs)...);
+        return 0;
+    }
+
+    template <typename Ty, class Cy, typename... Args>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(Args...)) {
+        return MetaCall(s, obj, desc, name, func, make_index_sequence_t<sizeof...(Args)>());
+    }
+
+    template <typename Ty, class Cy, typename... Args, size_t... Idxs>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(Args...)const, index_sequence<Idxs...>) {
+        if (CheckMetaParameters<Args...>(s, 2, desc, name))
+            (obj->*func)(Support<typename PurifyType<Args>::type>::Load(s, 2 + Idxs)...);
+        return 0;
+    }
+
+    template <typename Ty, class Cy, typename... Args>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(Args...)const) {
+        return MetaCall(s, obj, desc, name, func, make_index_sequence_t<sizeof...(Args)>());
+    }
+
+    template <typename Ty, class Cy>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, int(Cy::*func)(State*)) {
+        return (obj->*func)(s);
+    }
+
+    template <typename Ty, class Cy>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, int(Cy::*func)(State*)const) {
+        return (obj->*func)(s);
+    }
+
+    template <typename Ty, class Cy>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(State*)) {
+        (obj->*func)(s);
+        return 0;
+    }
+
+    template <typename Ty, class Cy>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(State*)const) {
+        (obj->*func)(s);
+        return 0;
+    }
+
+    template <typename Ty, class Cy>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, int(Cy::*func)(lua_State*)) {
+        return (obj->*func)(s->GetLuaState());
+    }
+
+    template <typename Ty, class Cy>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, int(Cy::*func)(lua_State*)const) {
+        return (obj->*func)(s->GetLuaState());
+    }
+
+    template <typename Ty, class Cy>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(lua_State*)) {
+        (obj->*func)(s->GetLuaState());
+        return 0;
+    }
+
+    template <typename Ty, class Cy>
+    inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(lua_State*)const) {
+        (obj->*func)(s->GetLuaState());
+        return 0;
+    }
+
+    template <typename Ry, typename... Args, size_t... Idxs>
+    inline int MetaCall(State* l, const TypeDesc* desc, StringView name, Ry(*func)(Args...), index_sequence<Idxs...>) {
+        if (CheckMetaParameters<Args...>(s, 1, desc, name)) {
+            s->Push(func(Support<typename PurifyType<Args>::type>::Load(s, 1 + Idxs)...));
+            return 1;
+        }
+        return 0;
+    }
+
+    template <typename Ry, typename... Args>
+    inline int MetaCall(State* l, const TypeDesc* desc, StringView name, Ry(*func)(Args...)) {
+        return MetaCall(s, desc, name, func, make_index_sequence_t<sizeof...(Args)>());
+    }
+
+    template <typename... Args, size_t... Idxs>
+    inline int MetaCall(State* l, const TypeDesc* desc, StringView name, void(*func)(Args...), index_sequence<Idxs...>) {
+        if (CheckMetaParameters<Args...>(s, 1, desc, name))
+            func(Support<typename PurifyType<Args>::type>::Load(s, 1 + Idxs)...);
+        return 0;
+    }
+
+    template <typename... Args>
+    inline int MetaCall(State* s, const TypeDesc* desc, StringView name, void(*func)(Args...)) {
+        return MetaCall(s, desc, name, func, make_index_sequence_t<sizeof...(Args)>());
+    }
+
+    inline int MetaCall(State* s, const TypeDesc* desc, StringView name, int(*func)(State*)) {
+        return func(s);
+    }
+
+    inline int MetaCall(State* s, const TypeDesc* desc, StringView name, void(*func)(State*)) {
+        func(s);
+        return 0;
+    }
+
+    inline int MetaCall(State* s, const TypeDesc* desc, StringView name, int(*func)(lua_State*)) {
+        return func(s->GetLuaState());
+    }
+
+    inline int MetaCall(State* s, const TypeDesc* desc, StringView name, void(*func)(lua_State*)) {
+        func(s->GetLuaState());
+        return 0;
     }
 
     template <typename Ty>
@@ -317,73 +483,53 @@ namespace internal {
     template <typename Ty>
     struct Meta {
         template <typename Fy, typename std::enable_if<IsMember<Fy>::value, int>::type = 0>
-        static inline int Get(xLuaState* l, void* obj, const TypeDesc* src, const TypeDesc* dest, Fy f) {
-            MetaGet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
+        static inline int Get(State* l, void* obj, const TypeDesc* src, const TypeDesc* dest, Fy f) {
+            MetaGet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(obj, src, dest)), f);
             return 1;
         }
 
         template <typename Fy, typename std::enable_if<IsMember<Fy>::value, int>::type = 0>
-        static inline int Set(xLuaState* l, void* obj, const TypeDesc* src, const TypeDesc* dest, StringView name, Fy f) {
-            MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(dst, obj, src)), f);
+        static inline int Set(State* l, void* obj, const TypeDesc* src, const TypeDesc* dest, StringView name, Fy f) {
+            MetaSet(l, static_cast<Ty*>(_XLUA_TO_SUPER_PTR(obj, src, dest)), dest, name, f);
             return 0;
         }
 
         template <typename Fy, typename std::enable_if<!IsMember<Fy>::value, int>::type = 0>
-        static inline void Get(xLuaState* l, void* obj, const TypeDesc* src, const TypeDesc* dest, Fy f) {
+        static inline int Get(State* l, void* obj, const TypeDesc* src, const TypeDesc* dest, Fy f) {
             MetaGet(l, f);
+            return 0;
         }
 
         template <typename Fy, typename std::enable_if<!IsMember<Fy>::value, int>::type = 0>
-        static inline void Set(xLuaState* l, void* obj, const TypeDesc* src, const TypeDesc* dest, StringView name, Fy f) {
-            MetaSet(l, f);
+        static inline int Set(State* l, void* obj, const TypeDesc* src, const TypeDesc* dest, StringView name, Fy f) {
+            MetaSet(l, dest, name, f);
+            return 1;
         }
 
-        static inline void Get(xLuaState* l, void* obj, const TypeDesc* src, const TypeDesc* dest, std::nullptr_t) {
+        static inline void Get(State* l, void* obj, const TypeDesc* src, const TypeDesc* dest, std::nullptr_t) {
             assert(false);
+            return 0;
         }
 
-        static inline void Set(xLuaState* l, void* obj, const TypeDesc* src, const TypeDesc* dest, StringView name, std::nullptr_t) {
+        static inline void Set(State* l, void* obj, const TypeDesc* src, const TypeDesc* dest, StringView name, std::nullptr_t) {
             assert(false);
+            return 0;
         }
 
         template <typename Fy, typename std::enable_if<std::is_member_function_pointer<Fy>::value, int>::type = 0>
-        static inline int Call(xLuaState* s, const TypeDesc* desc, StringView name, Fy f) {
+        static inline int Call(State* s, const TypeDesc* desc, StringView name, Fy f) {
             Ty* obj = s->Load<Ty*>(1);
             if (obj == nullptr) {
-                luaL_error(l->GetLuaState(), "attempt call function[%s.%s] failed, obj is nil\n%s", desc->name, "");
+                luaL_error(s->GetLuaState(), "attempt call function[%s.%s] failed, obj is nil\n%s", desc->name, "");
                 return 0;
             }
 
-            //LogBufCache<> lb;
-            //Ty* obj = static_cast<Ty*>(GetMetaCallObj(l, info));
-            //if (obj == nullptr) {
-            //    l->GetCallStack(lb);
-            //    luaL_error(l->GetState(), "attempt call function[%s:%s] failed, obj is nil\n%s", info->type_name, func_name, lb.Finalize());
-            //    return 0;
-            //}
-
-            //lua_remove(l->GetState(), 1);
-            //if (!param::CheckMetaParam(l, 1, lb, f)) {
-            //    l->GetCallStack(lb);
-            //    luaL_error(l->GetState(), "attempt call function[%s:%s] failed, parameter is not allow\n%s", info->type_name, func_name, lb.Finalize());
-            //    return 0;
-            //}
-
-            //return MetaCall(l, obj, f);
-            return 0;
+            return MetaCall(s, obj, desc, name, f);
         }
 
         template <typename Fy, typename std::enable_if<!std::is_member_function_pointer<Fy>::value, int>::type = 0>
-        static inline int Call(xLuaState* l, const TypeDesc* desc, StringView name, Fy f) {
-            //LogBufCache<> lb;
-            //if (!param::CheckMetaParam(l, 1, lb, f)) {
-            //    l->GetCallStack(lb);
-            //    luaL_error(l->GetState(), "attempt call function[%s:%s] failed, parameter is not allow\n%s", info->type_name, func_name, lb.Finalize());
-            //    return 0;
-            //}
-
-            //return MetaCall(l, f);
-            return 0;
+        static inline int Call(State* l, const TypeDesc* desc, StringView name, Fy f) {
+            return MetaCall(s, desc, name, f);
         }
     };
 
