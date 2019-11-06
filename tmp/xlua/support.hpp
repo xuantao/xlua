@@ -514,15 +514,15 @@ namespace internal {
     }
 
     template <typename Ry, typename... Args>
-    inline auto MakeFunc(Function&& f) -> typename std::enable_if<std::is_void<Ry>::value, std::function<Ry(Args...)>>::type{
-        return [=](Args... args) {
+    inline auto MakeFunc(Function f) -> typename std::enable_if<std::is_void<Ry>::value, std::function<Ry(Args...)>>::type{
+        return [f](Args... args) mutable {
             f(std::tie(), args...);
         };
     }
 
     template <typename Ry, typename... Args>
-    inline auto MakeFunc(Function&& f) -> typename std::enable_if<!std::is_void<Ry>::value, std::function<Ry(Args...)>>::type {
-        return [=](Args... args) -> Ry {
+    inline auto MakeFunc(Function f) -> typename std::enable_if<!std::is_void<Ry>::value, std::function<Ry(Args...)>>::type {
+        return [f](Args... args) mutable -> Ry {
             Ry val;
             f(std::tie(val), args...);
             return std::move(val);
