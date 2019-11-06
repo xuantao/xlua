@@ -42,13 +42,12 @@ struct extend_category_tag : object_category_tag_ {};
 /* export to lua function */
 typedef int(*LuaFunction)(lua_State* l);
 /* export to lua var indexer (get/set) */
-typedef int(*LuaIndexer)(State* l, void* obj, const TypeDesc* info);
+typedef int(*LuaIndexer)(State* s, void* obj, const TypeDesc* desc);
 
 /* type caster,
  * used for static_cast pointer to base type or dynamic_cast to derived type
 */
 struct TypeCaster {
-    //typedef void* (*Caster)(void* obj, const TypeDesc* src, const TypeDesc* dest);
     typedef void* (*Caster)(void* obj);
 
     Caster to_super;
@@ -97,11 +96,11 @@ struct TypeDesc {
 /* collection interface */
 struct ICollection {
     virtual const char* Name() = 0;
-    virtual int Insert(void* obj, State* l) = 0;
-    virtual int Remove(void* obj, State* l) = 0;
-    virtual int Index(void* obj, State* l) = 0;
-    virtual int NewIndex(void* obj, State* l) = 0;
-    virtual int Iter(void* obj, State* l) = 0;
+    virtual int Insert(void* obj, State* s) = 0;
+    virtual int Remove(void* obj, State* s) = 0;
+    virtual int Index(void* obj, State* s) = 0;
+    virtual int NewIndex(void* obj, State* s) = 0;
+    virtual int Iter(void* obj, State* s) = 0;
     virtual int Length(void* obj) = 0;
     virtual void Clear(void* obj) = 0;
 };
@@ -160,21 +159,21 @@ private:
     int index_ = 0;
 };
 
-/* */
-template <typename Ty>
-struct IsLuaType {
-private:
-    template <typename U> static auto Check(int)->decltype(::xLuaGetTypeDesc(Identity<U>()), std::true_type());
-    template <typename U> static auto Check(...)->std::false_type;
-public:
-    static constexpr bool value = decltype(Check<Ty>(0))::value;
-};
-
-/* */
+/* check the type is supported*/
 template <typename Ty>
 struct IsSupport {
     static constexpr bool value =
         !std::is_same<not_support_tag, typename Support<Ty>::category>::value;
+};
+
+/* check the type is declared to export to lua */
+template <typename Ty>
+struct IsLuaType {
+private:
+    template <typename U> static auto Check(int)->decltype(xLuaGetTypeDesc(Identity<U>()), std::true_type());
+    template <typename U> static auto Check(...)->std::false_type;
+public:
+    static constexpr bool value = decltype(Check<Ty>(0))::value;
 };
 
 /* traits type is support xlua weak object reference */
@@ -191,10 +190,10 @@ public:
 struct weak_obj_tag {};
 
 template <typename Ty>
-struct WeakObjTrais {
+struct WeakObjTraits {
 private:
-    template <typename C>
-    static C Query(ObjectIndex C::*);
+    /* detect the class dealcre the xlua_obj_index_ member var */
+    template <typename C> static C Query(ObjectIndex C::*);
     typedef typename decltype(Query(&Ty::xlua_obj_index_)) class_type;
 
     static WeakObjRef Make(void* obj) {
@@ -210,6 +209,7 @@ public:
     }
 };
 
+/* as c++ 14 */
 template<size_t...>
 struct index_sequence {};
 
@@ -270,6 +270,7 @@ struct PurifyType<Ty&> {
         typename std::remove_cv<Ty>::type, std::is_pointer<Ty>::value>::type type;
 };
 
+/* object wrapper */
 template <typename Ty>
 struct ObjectWrapper {
     ObjectWrapper(Ty* p) : ptr(p) {}
@@ -292,14 +293,6 @@ namespace internal {
 
 XLUA_NAMESPACE_END
 
-/* declare xlua weak obj reference index member */
-#define XLUA_DECLARE_OBJ_INDEX          \
-    XLUA_NAMESPACE ObjectIndex xlua_obj_index_
-
-/* declare export type to lua */
-#define XLUA_DECLARE_CLASS(ClassName)   \
-    const XLUA_NAMESPACE TypeDesc* xLuaGetTypeDesc(XLUA_NAMESPACE Identity<ClassName>)
-
 inline const XLUA_NAMESPACE TypeDesc* xLuaGetTypeDesc(XLUA_NAMESPACE Identity<void>) {
     return nullptr;
 }
@@ -312,5 +305,13 @@ inline XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(...) {
 /* query xlua weak obj proc */
 template <typename Ty, typename std::enable_if<XLUA_NAMESPACE IsWeakObj<Ty>::value, int>::type = 0>
 inline const XLUA_NAMESPACE WeakObjProc xLuaQueryWeakObjProc(XLUA_NAMESPACE Identity<Ty>) {
-    return XLUA_NAMESPACE WeakObjTrais<Ty>::Proc();
+    return XLUA_NAMESPACE WeakObjTraits<Ty>::Proc();
 }
+
+/* declare xlua weak obj reference index member */
+#define XLUA_DECLARE_OBJ_INDEX          \
+    XLUA_NAMESPACE ObjectIndex xlua_obj_index_
+
+/* declare export type to lua */
+#define XLUA_DECLARE_CLASS(ClassName)   \
+    const XLUA_NAMESPACE TypeDesc* xLuaGetTypeDesc(XLUA_NAMESPACE Identity<ClassName>)

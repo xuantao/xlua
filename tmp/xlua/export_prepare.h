@@ -24,5 +24,7 @@ struct Derived : TestObj {
     static int sIdx;
 };
 
-XLUA_DECLARE_CLASS(TestObj);
-XLUA_DECLARE_CLASS(Derived);
+//XLUA_DECLARE_CLASS(TestObj);
+//XLUA_DECLARE_CLASS(Derived);
+
+void test_export();
