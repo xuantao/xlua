@@ -34,17 +34,20 @@ namespace internal {
     struct enum_tag {};
     struct number_tag {};
     struct declared_tag {};
+    struct collection_tag {};
 
     /* traits dispacth tag, declared/enum/void tag */
     template <typename Ty>
     struct DisaptchTag {
         typedef typename std::conditional<IsLuaType<Ty>::value, declared_tag,
-            typename std::conditional<std::is_enum<Ty>::value, enum_tag, void_tag>::type>::type type_tag;
+            typename std::conditional<IsCollctionType<Ty>::value, collection_tag, 
+                typename std::conditional<std::is_enum<Ty>::value, enum_tag, void_tag>::type>::type>::type type_tag;
     };
 
     template <typename Ty>
     struct DisaptchTag<Ty*> {
-        typedef typename std::conditional<IsLuaType<Ty>::value, declared_tag, void_tag>::type type_tag;
+        typedef typename std::conditional<IsLuaType<Ty>::value, declared_tag, 
+            typename std::conditional<IsCollctionType<Ty>::value, collection_tag, void_tag>::type>::type type_tag;
     };
 
     template <typename Ty, typename Tag>
@@ -53,9 +56,9 @@ namespace internal {
 
     /* declared type pointer */
     template <typename Ty>
-    struct ExportSupport<Ty*, declared_tag> : DeclaredCategory<Ty> {
-        static inline const TypeDesc* Desc() { return xLuaGetTypeDesc(Identity<Ty>()); }
-        static inline const char* Name() { return Desc()->name;  }
+    struct ExportSupport<Ty*, declared_tag> : DeclaredCategory<Ty*> {
+        //static inline const TypeDesc* Desc() { return xLuaGetTypeDesc(Identity<Ty>()); }
+        static inline const char* Name() { return xLuaGetTypeDesc(Identity<Ty>())->name;  }
         static inline bool Check(State* l, int index) {
             return l->state_.IsUd<Ty>(index);
         }
@@ -72,7 +75,41 @@ namespace internal {
     struct ExportSupport<Ty, declared_tag> : DeclaredCategory<Ty> {
         typedef ExportSupport<Ty*, declared_tag> supporter;
 
-        static inline const TypeDesc* Desc() { return supporter::Desc(); }
+        static inline const char* Name() { return supporter::Name(); }
+        static inline bool Check(State* l, int index) {
+            return supporter::Load(l, index) != nullptr;
+        }
+        static inline ObjectWrapper<Ty> Load(State* l, int index) {
+            return ObjectWrapper<Ty>(supporter::Load(l, index));
+        }
+        static inline void Push(State* l, const Ty& obj) {
+            l->state_.PushUd(obj);
+        }
+        static inline void Push(State* l, Ty&& obj) {
+            l->state_.PushUd(std::move(obj));
+        }
+    };
+
+    /* collection type pointer */
+    template <typename Ty>
+    struct ExportSupport<Ty*, collection_tag> : CollectionCategory<Ty*> {
+        static inline const char* Name() { return xLuaGetCollection(Identity<Ty>())->Name(); }
+        static inline bool Check(State* l, int index) {
+            return l->state_.IsUd<Ty>(index);
+        }
+        static inline Ty* Load(State* l, int index) {
+            return l->state_.LoadUd<Ty>(index);
+        }
+        static inline void Push(State* l, Ty* ptr) {
+            l->state_.PushUd(ptr);
+        }
+    };
+
+    /* collection type value */
+    template <typename Ty>
+    struct ExportSupport<Ty, collection_tag> : CollectionCategory<Ty> {
+        typedef ExportSupport<Ty*, collection_tag> supporter;
+
         static inline const char* Name() { return supporter::Name(); }
         static inline bool Check(State* l, int index) {
             return supporter::Load(l, index) != nullptr;
@@ -674,7 +711,7 @@ struct std_shared_ptr_tag {};
 /* smart ptr support */
 template <typename Ty>
 struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, std_shared_ptr_tag> {
-    static_assert(std::is_base_of<object_category_tag_, typename Support<Ty>::category>::value, "only support object");
+    static_assert(IsObjectType<Ty>::value, "only support object");
     typedef ValueCategory<std::shared_ptr<Ty>, true, std_shared_ptr_tag> base_type_;
     typedef typename base_type_::value_type value_type;
 
@@ -689,7 +726,7 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, s
         if (ptr->tag != base_type_::tag)
             return false;
 
-        return s->state_.IsUd(ud, Support<Ty>::Desc());
+        return s->state_.IsUd<Ty>(ud);
     }
 
     static value_type Load(State* s, int index) {
@@ -701,8 +738,8 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, s
         if (ptr->tag != base_type_::tag)
             return value_type();
 
-        return value_type(*static_cast<value_type*>(ptr->data),
-            (Ty*)_XLUA_TO_SUPER_PTR(ud->ptr, ud->desc, Support<Ty>::Desc()));
+        auto* obj = internal::As(ud, internal::GetTypeDesc<Ty>());
+        return value_type(*static_cast<value_type*>(ptr->data), (Ty*)obj);
     }
 
     static void Push(State* s, const value_type& ptr) {
@@ -719,98 +756,103 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, s
             l->state_.PushSmartPtr(ptr.get(), std::move(ptr), base_type_::tag);
     }
 };
+//
+//namespace internal {
+//    template <typename Ty>
+//    struct UniqueObj {
+//        inline Ty& Instance() {
+//            static Ty obj;
+//            return obj;
+//        }
+//    };
+//
+//    template <typename Ty>
+//    struct VectorCol final : ICollection {
+//        typedef std::vector<Ty> vector;
+//        typedef Ty value_type;
+//
+//        int Index(void* obj, State* l) override {
+//            return 0;
+//        }
+//
+//        int NewIndex(void* obj, State* l) override {
+//            return 0;
+//        }
+//
+//        int Insert(void* obj, State* l) override {
+//            return 0;
+//        }
+//
+//        int Remove(void* obj, State* l) override {
+//            return 0;
+//        }
+//
+//        int Length(void* obj) override {
+//            return 0;
+//        }
+//
+//        void Clear(void* obj) override {
+//
+//        }
+//    };
+//
+//    template <typename Cy, typename Pc>
+//    struct CollectionSupport : CollectionCategory<Cy> {
+//        typedef Cy value_type;
+//        typedef collection_category_tag category;
+//
+//        static inline ICollection* Desc() { return &UniqueObj<Pc>::Instance(); }
+//
+//        static inline bool Check(State* l, int index) {
+//            return Support<Cy*>::Load(l, index) != nullptr;
+//        }
+//
+//        static inline ObjectWrapper<Cy> Load(State* l, int index) {
+//            return ObjectWrapper<Cy>(Support<Cy*>::Load(l, index));
+//        }
+//
+//        static inline void Push(State* l, const value_type& obj) {
+//            l->state_.PushUd(obj);
+//        }
+//    };
+//
+//    template <typename Cy, typename Pc>
+//    struct CollectionSupport<Cy*, Pc> : CollectionCategory<Cy> {
+//        typedef Cy* value_type;
+//        typedef collection_category_tag category;
+//
+//        static inline ICollection* Desc() { return &UniqueObj<Pc>::Instance(); }
+//
+//        static inline bool Check(State* l, int index) {
+//            return lua_isnil(l->GetLuaState(), index) || l->state_.IsUd<Cy>(index);
+//        }
+//
+//        static inline value_type Load(State* l, int index) {
+//            return l->state_.LoadUd<Cy>(index);
+//        }
+//
+//        static inline void Push(State* l, value_type ptr) {
+//            l->state_.PushUd(ptr);
+//        }
+//    };
+//}
+//
+///* vector support */
+//#define _COLLECTION_SUPPORT(Cy, Py)                                     \
+//template <typename Ty>                                                  \
+//struct Support<Cy<Ty>> : internal::CollectionSupport<Cy<Ty>, Py<Ty>> {  \
+//    static inline const char* Name() { return #Cy; }                    \
+//};                                                                      \
+//template <typename Ty>                                                  \
+//struct Support<Cy<Ty>*> : internal::CollectionSupport<Cy<Ty>*, Py<Ty>> {\
+//    static inline const char* Name() { return #Cy "*"; }                \
+//};
 
-namespace internal {
-    template <typename Ty>
-    struct UniqueObj {
-        inline Ty& Instance() {
-            static Ty obj;
-            return obj;
-        }
-    };
-
-    template <typename Ty>
-    struct VectorCol final : ICollection {
-        typedef std::vector<Ty> vector;
-        typedef Ty value_type;
-
-        int Index(void* obj, State* l) override {
-            return 0;
-        }
-
-        int NewIndex(void* obj, State* l) override {
-            return 0;
-        }
-
-        int Insert(void* obj, State* l) override {
-            return 0;
-        }
-
-        int Remove(void* obj, State* l) override {
-            return 0;
-        }
-
-        int Length(void* obj) override {
-            return 0;
-        }
-
-        void Clear(void* obj) override {
-
-        }
-    };
-
-    template <typename Cy, typename Pc>
-    struct CollectionSupport : CollectionCategory<Cy> {
-        typedef Cy value_type;
-        typedef collection_category_tag category;
-
-        static inline ICollection* Desc() { return &UniqueObj<Pc>::Instance(); }
-
-        static inline bool Check(State* l, int index) {
-            return Support<Cy*>::Load(l, index) != nullptr;
-        }
-
-        static inline ObjectWrapper<Cy> Load(State* l, int index) {
-            return ObjectWrapper<Cy>(Support<Cy*>::Load(l, index));
-        }
-
-        static inline void Push(State* l, const value_type& obj) {
-            l->state_.PushUd(obj);
-        }
-    };
-
-    template <typename Cy, typename Pc>
-    struct CollectionSupport<Cy*, Pc> : CollectionCategory<Cy> {
-        typedef Cy* value_type;
-        typedef collection_category_tag category;
-
-        static inline ICollection* Desc() { return &UniqueObj<Pc>::Instance(); }
-
-        static inline bool Check(State* l, int index) {
-            return lua_isnil(l->GetLuaState(), index) || l->state_.IsUd<Cy>(index);
-        }
-
-        static inline value_type Load(State* l, int index) {
-            return l->state_.LoadUd<Cy>(index);
-        }
-
-        static inline void Push(State* l, value_type ptr) {
-            l->state_.PushUd(ptr);
-        }
-    };
-}
-
-/* vector support */
-#define _COLLECTION_SUPPORT(Cy, Py)                                     \
-template <typename Ty>                                                  \
-struct Support<Cy<Ty>> : internal::CollectionSupport<Cy<Ty>, Py<Ty>> {  \
-    static inline const char* Name() { return #Cy; }                    \
-};                                                                      \
-template <typename Ty>                                                  \
-struct Support<Cy<Ty>*> : internal::CollectionSupport<Cy<Ty>*, Py<Ty>> {\
-    static inline const char* Name() { return #Cy "*"; }                \
-};
-
-_COLLECTION_SUPPORT(std::vector, internal::VectorCol)
+//_COLLECTION_SUPPORT(std::vector, internal::VectorCol)
 
 XLUA_NAMESPACE_END
+
+template <typename Ty, typename std::enable_if<xlua::IsSupport<Ty>::value, int>::type = 0>
+xlua::ICollection* xLuaGetCollection(xlua::Identity<std::vector<Ty>>) {
+    return nullptr;
+}

@@ -174,40 +174,10 @@ public:
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
     template <typename Ty>
-    inline bool IsType() {
-        typedef typename PurifyType<Ty>::type type;
-        static_assert(std::is_base_of<object_category_tag_, Support<type>::category>::value,
-            "not support type");
-        if (!IsValid())
-            return false;
+    inline bool IsType();
 
-#if XLUA_ENABLE_LUD_OPTIMIZE
-        if (IsLud())
-            return internal::IsUd(internal::LightUd::Make(ptr_), Support<type>::Desc());
-        else
-#endif // XLUA_ENABLE_LUD_OPTIMIZE
-            return internal::IsUd(static_cast<internal::FullUd*>(ptr_), Support<type>::Desc());
-    }
-
-    template <typename Ty,
-        typename std::enable_if<
-        std::is_base_of<object_category_tag_, typename Support<Ty>::category>::value &&
-        std::is_pointer<Ty>::value, int>::type = 0>
-    inline Ty As() {
-        if (!IsValid())
-            return nullptr;
-#if XLUA_ENABLE_LUD_OPTIMIZE
-        if (IsLud())
-            return internal::As<Ty>(internal::LightUd::Make(ptr_));
-        else
-#endif // XLUA_ENABLE_LUD_OPTIMIZE
-            return internal::As<Ty>(static_cast<internal::FullUd*>(ptr_));
-    }
-
-    template <typename Ty,
-        typename std::enable_if<
-        std::is_same<value_category_tag, typename Support<Ty>::category>::value, int>::type = 0>
-    Ty As();
+    template <typename Ty>
+    inline Ty As();
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
 private:
@@ -552,7 +522,6 @@ public:
     template <typename... Tys>
     bool IsType(int index) const {
         constexpr size_t arg_num = sizeof...(Tys);
-        //static_assert(arg_num > 0, "need specify the target type");
         if (GetTop() - index + 1 < arg_num)
             return false;
         return internal::Checker<arg_num>::template Do<Tys...>(
@@ -561,25 +530,20 @@ public:
 
     template <typename Ty, typename std::enable_if<std::is_pointer<Ty>::value, int>::type = 0>
     Ty Load(int index) {
-        typedef typename PurifyType<Ty>::type type;
-        static_assert(IsSupport<type>::value, "not support type");
-        return Support<type>::Load(this, index);
+        static_assert(IsSupport<Ty>::value, "not support type");
+        return Support<typename PurifyType<Ty>::type>::Load(this, index);
     }
 
     template <typename Ty, typename std::enable_if<!std::is_pointer<Ty>::value, int>::type = 0>
     Ty Load(int index) {
-        typedef typename PurifyType<Ty>::type type;
-        static_assert(IsSupport<type>::value, "not support type");
-        static_assert(!std::is_reference<Ty>::value || std::is_const<Ty>::value,
-            "not support load reference value");
-        return Support<type>::Load(this, index);
+        static_assert(!IsObjectType<Ty>::value, "can not directly load object type, use load pointer instead");
+        return Support<typename PurifyType<Ty>::type>::Load(this, index);
     }
 
     template <typename Ty>
     void Push(Ty&& val) {
-        typedef typename PurifyType<Ty>::type type;
-        static_assert(IsSupport<type>::value, "not support push value to lua");
-        Support<type>::Push(this, std::forward<Ty>(val));
+        static_assert(IsSupport<Ty>::value, "not support push value to lua");
+        Support<typename PurifyType<Ty>::type>::Push(this, std::forward<Ty>(val));
     }
 
     template <typename... Ty>
@@ -646,16 +610,24 @@ inline void Object::DecRef() {
 }
 
 /* lua user data */
-template <typename Ty,
-    typename std::enable_if<
-    std::is_same<value_category_tag, typename Support<Ty>::category>::value, int>::type>
+template <typename Ty>
+inline bool UserData::IsType() {
+    if (!IsValid())
+        return false;
+
+    StackGuard guard(state_);
+    state_->PushVar(*this);
+    return state_->IsType<Ty>(-1);
+}
+
+template <typename Ty>
 inline Ty UserData::As() {
     StackGuard guard(state_);
     if (!IsValid())
         state_->PushNil();
     else
         state_->PushVar(*this);
-    return state_->Load<Ty>();
+    return state_->Load<Ty>(-1);
 }
 
 /* lua table */

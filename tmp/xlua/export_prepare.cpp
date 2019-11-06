@@ -124,6 +124,14 @@ void test_export() {
     l->Push(f3);
     auto f4 = l->Load<std::function<void(int)>>(-1);
 
+    std::vector<int> vec_int;
+    l->Push(vec_int);
+    l->Load<std::vector<int>*>(-1);
+
+    std::vector<std::vector<int>> vec_int2;
+    l->Push(vec_int2);
+    l->Load<std::vector<std::vector<int>>*>(-1);
+
     const char* t1 = l->Load<const char*>(3);
     //const char* t2 = l->Load<char*>(3);
     xlua::DestoryState(l);

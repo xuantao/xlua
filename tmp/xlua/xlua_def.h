@@ -36,8 +36,6 @@ struct object_category_tag_ {};
 struct declared_category_tag : object_category_tag_ {};
 /* collection type, as vector/list/map... */
 struct collection_category_tag : object_category_tag_ {};
-/* user defined export type at runtime */
-struct extend_category_tag : object_category_tag_ {};
 
 /* export to lua function */
 typedef int(*LuaFunction)(lua_State* l);
@@ -159,11 +157,57 @@ private:
     int index_ = 0;
 };
 
+namespace internal {
+    template <typename Ty, bool>
+    struct PurifyPtrType {
+        typedef typename std::remove_cv<Ty>::type type;
+    };
+
+    template <typename Ty>
+    struct PurifyPtrType<Ty, true> {
+        typedef typename std::add_pointer<
+            typename std::remove_cv<typename std::remove_pointer<Ty>::type>::type>::type type;
+    };
+
+    template <>
+    struct PurifyPtrType<const char*, true> {
+        typedef const char* type;
+    };
+
+    template <>
+    struct PurifyPtrType<const volatile char*, true> {
+        typedef const char* type;
+    };
+
+    template <>
+    struct PurifyPtrType<const void*, true> {
+        typedef const void* type;
+    };
+
+    template <>
+    struct PurifyPtrType<const volatile void*, true> {
+        typedef const void* type;
+    };
+} // namepace internal
+
+  /* purify type, supporter use raw type or pointer type */
+template <typename Ty>
+struct PurifyType {
+    typedef typename internal::PurifyPtrType<
+        typename std::remove_cv<Ty>::type, std::is_pointer<Ty>::value>::type type;
+};
+
+template <typename Ty>
+struct PurifyType<Ty&> {
+    typedef typename internal::PurifyPtrType<
+        typename std::remove_cv<Ty>::type, std::is_pointer<Ty>::value>::type type;
+};
+
 /* check the type is supported*/
 template <typename Ty>
 struct IsSupport {
     static constexpr bool value =
-        !std::is_same<not_support_tag, typename Support<Ty>::category>::value;
+        !std::is_same<not_support_tag, typename Support<typename PurifyType<Ty>::type>::category>::value;
 };
 
 /* check the type is declared to export to lua */
@@ -173,7 +217,22 @@ private:
     template <typename U> static auto Check(int)->decltype(xLuaGetTypeDesc(Identity<U>()), std::true_type());
     template <typename U> static auto Check(...)->std::false_type;
 public:
-    static constexpr bool value = decltype(Check<Ty>(0))::value;
+    static constexpr bool value = decltype(Check<typename std::decay<Ty>::type>(0))::value;
+};
+
+/* check the type is collection */
+template <typename Ty>
+struct IsCollctionType {
+private:
+    template <typename U> static auto Check(int)->decltype(xLuaGetCollection(Identity<U>()), std::true_type());
+    template <typename U> static auto Check(...)->std::false_type;
+public:
+    static constexpr bool value = decltype(Check<typename std::decay<Ty>::type>(0))::value;
+};
+
+template <typename Ty>
+struct IsObjectType {
+    static constexpr bool value = IsLuaType<Ty>::value || IsCollctionType<Ty>::value;
 };
 
 /* traits type is support xlua weak object reference */
@@ -224,52 +283,6 @@ struct make_index_sequence<0, Indices...> {
 template <size_t N>
 using make_index_sequence_t = typename make_index_sequence<N>::type;
 
-namespace internal {
-    template <typename Ty, bool>
-    struct PurifyPtrType {
-        typedef typename std::remove_cv<Ty>::type type;
-    };
-
-    template <typename Ty>
-    struct PurifyPtrType<Ty, true> {
-        typedef typename std::add_pointer<
-            typename std::remove_cv<typename std::remove_pointer<Ty>::type>::type>::type type;
-    };
-
-    template <>
-    struct PurifyPtrType<const char*, true> {
-        typedef const char* type;
-    };
-
-    template <>
-    struct PurifyPtrType<const volatile char*, true> {
-        typedef const char* type;
-    };
-
-    template <>
-    struct PurifyPtrType<const void*, true> {
-        typedef const void* type;
-    };
-
-    template <>
-    struct PurifyPtrType<const volatile void*, true> {
-        typedef const void* type;
-    };
-} // namepace internal
-
-/* purify type, supporter use raw type or pointer type */
-template <typename Ty>
-struct PurifyType {
-    typedef typename internal::PurifyPtrType<
-        typename std::remove_cv<Ty>::type, std::is_pointer<Ty>::value>::type type;
-};
-
-template <typename Ty>
-struct PurifyType<Ty&> {
-    typedef typename internal::PurifyPtrType<
-        typename std::remove_cv<Ty>::type, std::is_pointer<Ty>::value>::type type;
-};
-
 /* object wrapper */
 template <typename Ty>
 struct ObjectWrapper {
@@ -293,6 +306,7 @@ namespace internal {
 
 XLUA_NAMESPACE_END
 
+/* empty */
 inline const XLUA_NAMESPACE TypeDesc* xLuaGetTypeDesc(XLUA_NAMESPACE Identity<void>) {
     return nullptr;
 }
