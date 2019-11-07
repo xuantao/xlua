@@ -756,99 +756,91 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, s
             l->state_.PushSmartPtr(ptr.get(), std::move(ptr), base_type_::tag);
     }
 };
-//
-//namespace internal {
-//    template <typename Ty>
-//    struct UniqueObj {
-//        inline Ty& Instance() {
-//            static Ty obj;
-//            return obj;
-//        }
-//    };
-//
-//    template <typename Ty>
-//    struct VectorCol final : ICollection {
-//        typedef std::vector<Ty> vector;
-//        typedef Ty value_type;
-//
-//        int Index(void* obj, State* l) override {
-//            return 0;
-//        }
-//
-//        int NewIndex(void* obj, State* l) override {
-//            return 0;
-//        }
-//
-//        int Insert(void* obj, State* l) override {
-//            return 0;
-//        }
-//
-//        int Remove(void* obj, State* l) override {
-//            return 0;
-//        }
-//
-//        int Length(void* obj) override {
-//            return 0;
-//        }
-//
-//        void Clear(void* obj) override {
-//
-//        }
-//    };
-//
-//    template <typename Cy, typename Pc>
-//    struct CollectionSupport : CollectionCategory<Cy> {
-//        typedef Cy value_type;
-//        typedef collection_category_tag category;
-//
-//        static inline ICollection* Desc() { return &UniqueObj<Pc>::Instance(); }
-//
-//        static inline bool Check(State* l, int index) {
-//            return Support<Cy*>::Load(l, index) != nullptr;
-//        }
-//
-//        static inline ObjectWrapper<Cy> Load(State* l, int index) {
-//            return ObjectWrapper<Cy>(Support<Cy*>::Load(l, index));
-//        }
-//
-//        static inline void Push(State* l, const value_type& obj) {
-//            l->state_.PushUd(obj);
-//        }
-//    };
-//
-//    template <typename Cy, typename Pc>
-//    struct CollectionSupport<Cy*, Pc> : CollectionCategory<Cy> {
-//        typedef Cy* value_type;
-//        typedef collection_category_tag category;
-//
-//        static inline ICollection* Desc() { return &UniqueObj<Pc>::Instance(); }
-//
-//        static inline bool Check(State* l, int index) {
-//            return lua_isnil(l->GetLuaState(), index) || l->state_.IsUd<Cy>(index);
-//        }
-//
-//        static inline value_type Load(State* l, int index) {
-//            return l->state_.LoadUd<Cy>(index);
-//        }
-//
-//        static inline void Push(State* l, value_type ptr) {
-//            l->state_.PushUd(ptr);
-//        }
-//    };
-//}
-//
-///* vector support */
-//#define _COLLECTION_SUPPORT(Cy, Py)                                     \
-//template <typename Ty>                                                  \
-//struct Support<Cy<Ty>> : internal::CollectionSupport<Cy<Ty>, Py<Ty>> {  \
-//    static inline const char* Name() { return #Cy; }                    \
-//};                                                                      \
-//template <typename Ty>                                                  \
-//struct Support<Cy<Ty>*> : internal::CollectionSupport<Cy<Ty>*, Py<Ty>> {\
-//    static inline const char* Name() { return #Cy "*"; }                \
-//};
 
-//_COLLECTION_SUPPORT(std::vector, internal::VectorCol)
+namespace internal {
+
+} // namespace internal
+
+template <typename Ty>
+struct VectorCol final : ICollection {
+    typedef std::vector<Ty> vector;
+    typedef typename PurifyType<Ty>::type value_type;
+
+    int Index(void* obj, State* s) override {
+        auto* vec = As(obj);
+        int idx = LoadIndex(s);
+        if (idx == 0 || !CheckRange(s, idx, vec->size()))
+            return 0;
+
+        s->Push(vec->at(idx - 1));
+        return 1;
+    }
+
+    int NewIndex(void* obj, State* s) override {
+        auto* vec = As(obj);
+        int idx = LoadIndex(s);
+        if (idx == 0 || !CheckRange(s, idx, vec->size() + 1))
+            return 0;
+
+        return 0;
+    }
+
+    int Insert(void* obj, State* s) override {
+        return 0;
+    }
+
+    int Remove(void* obj, State* l) override {
+        return 0;
+    }
+
+    int Iter(void* obj, State* s) override {
+        return 0;
+    }
+
+    int Length(void* obj) override {
+        return (int)As(obj)->size();
+    }
+
+    void Clear(void* obj) override {
+        As(obj)->clear();
+    }
+
+protected:
+    inline vector* As(void* obj) { return static_cast<vector*>(obj); }
+
+    inline int LoadIndex(State* s) {
+        if (!lua_isnumber(s->GetLuaState(), 2)) {
+            luaL_error(s->GetLuaState(), "vector only accept number index key");
+            return 0;
+        }
+
+        int idx = l->Load<int>(2);
+        if (idx <= 0) {
+            luaL_error(s->GetLuaState(), "vector index must greater than '0'");
+            return 0;
+        }
+
+        return idx;
+    }
+
+    inline bool CheckRange(State* s, int idx, size_t sz) {
+        if (idx > 0 && idx <= (int)sz)
+            return true;
+
+        luaL_error(s->GetLuaState(), "vector index is out of range");
+        return false;
+    }
+
+    template <typename U, typename std::enable_if<IsObjectType<U>::value, int>::type = 0>
+    void Assign(vector* vec, int idx) {
+
+    }
+
+    template <typename U, typename std::enable_if<!IsObjectType<U>::value, int>::type = 0>
+    void Assign(vector* vec, int idx) {
+
+    }
+};
 
 XLUA_NAMESPACE_END
 
