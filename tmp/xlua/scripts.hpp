@@ -10,28 +10,30 @@ return {
 
 /* global metatable */
 static const char* kGlobalMetatable = R"V0G0N(
-local state, indexer, md_name, funcs, vars = ...
+local state, desc, indexer, md_name, funcs, vars = ...
 return {
     __index = function(tb, name)
+        print(tb, name)
         local f = funcs[name]
         if f then
             return f
         end
 
         local v = vars[name]
-        if v then
-            return indexer(state, v[1])
+        if v and v[1] then
+            return indexer(nil, v[1], state, desc)
         else
-            print("not find")
+            print("not find 1")
         end
     end,
 
     __newindex = function(tb, name, value)
+        print(tb, name)
         local v = vars[name]
-        if v then
-            indexer(state, v[2], value)
+        if v and v[2] then
+            indexer(value, v[2], state, desc)
         else
-            print("not find")
+            print("not find 2")
         end
     end,
 
@@ -46,7 +48,7 @@ return {
 )V0G0N";
 
 /* declared type metatable */
-static const char* kDeclaredMetatable = R"V0G0N(
+static const char* kFudMetatable = R"V0G0N(
 local state, indexer, type_name, funcs, vars = ...
 return {
     __index = function (obj, name)
@@ -55,9 +57,9 @@ return {
             return f
         end
 
-        local v = vars[name]
-        if v then
-            return indexer(state, obj, v[1])
+        local var = vars[name]
+        if var and var[1] then
+            return indexer(nil, var[1], state, obj)
         end
         print("type[%s] does not own member[%s]", type_name, name)
         return nil
@@ -66,7 +68,7 @@ return {
     __newindex = function (obj, name, value)
         local v = vars[name]
         if v then
-            indexer(state, obj, v[2], value)
+            indexer(value, v[2], state, obj)
             return
         end
 
@@ -92,10 +94,10 @@ static const char* kLudMetatable = R"V0G0N(
 local state, unpack_ptr, indexer, types = ...
 return {
     __index = function (ptr, name)
-        local id = parser(ptr)
+        local id, ptr, desc = unpack_ptr(ptr)
         local t = types[id]
         if not t then
-            print("error")
+            print("error 11")
             return
         end
 
@@ -104,32 +106,33 @@ return {
             return f
         end
 
-        local v = t.vars[name]
-        if v then
-            return indexer(state, ptr, v)
+        local var = t.vars[name]
+        if var and var[1] then
+            return indexer(nil, var[1], state, ptr, desc)
         end
 
-        print("not find")
+        print("not find 11")
         return
     end,
 
     __newindex = function (ptr, name, value)
-        local id = parser(ptr)
+        local id, ptr, desc = unpack_ptr(ptr)
         local t = types[id]
         if not t then
-            print("error")
+            print("error 22")
             return
         end
 
-        local v = t.vars[name]
-        if v then
-            set(ptr, v)
+        local var = t.vars[name]
+        if var and var[2] then
+            indexer(value, var[2], state, ptr, desc)
         else
-            print("not find");
+            print("not find 22");
         end
     end,
 
     __tostring = function(ptr)
+        return "light user data"
     end,
 
     __pairs = function (ptr)

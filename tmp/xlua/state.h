@@ -245,14 +245,14 @@ namespace internal {
         union {
             // raw ptr
             struct {
-                int64_t lud_index : 8;
                 int64_t ptr : 56;
+                int64_t lud_index : 8;
             };
             // weak obj ref
             struct {
-                int64_t weak_index : 8;     // same as lud_index
                 int64_t ref_index : 24;
                 int64_t ref_serial : 32;
+                int64_t weak_index : 8;     // same as lud_index
             };
             // none
             struct {
@@ -482,6 +482,8 @@ namespace internal {
                 } else {
                     name = "unknown";
                 }
+            } else if (lty == LUA_TNIL) {
+                name = "nil";
             } else {
                 name = lua_typename(l_, index);
             }

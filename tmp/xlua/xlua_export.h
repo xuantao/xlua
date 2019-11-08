@@ -497,13 +497,13 @@ namespace internal {
         template <typename Fy, typename std::enable_if<!IsMember<Fy>::value, int>::type = 0>
         static inline int Get(State* s, void* obj, const TypeDesc* src, const TypeDesc* dest, Fy f) {
             MetaGet(s, f);
-            return 0;
+            return 1;
         }
 
         template <typename Fy, typename std::enable_if<!IsMember<Fy>::value, int>::type = 0>
         static inline int Set(State* s, void* obj, const TypeDesc* src, const TypeDesc* dest, StringView name, Fy f) {
             MetaSet(s, dest, name, f);
-            return 1;
+            return 0;
         }
 
         static inline void Get(State* s, void* obj, const TypeDesc* src, const TypeDesc* dest, std::nullptr_t) {

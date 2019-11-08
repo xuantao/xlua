@@ -204,7 +204,7 @@ namespace internal {
                 return nullptr;
             return _XLUA_TO_SUPER_PTR(ptr, cache_desc, desc);
         } else if (info.type == LudType::Type::kPtr) {
-            if (IsBaseOf(desc, info.desc))
+            if (!IsBaseOf(desc, info.desc))
                 return nullptr;
             return _XLUA_TO_SUPER_PTR(ld.ToObj(), info.desc, desc);
         }
@@ -215,7 +215,7 @@ namespace internal {
         if (desc->lud_index == 0)
             return LightUd::Make(nullptr);
 
-        if (desc->weak_proc.tag) {
+        if (desc->weak_index) {
             WeakObjRef ref = desc->weak_proc.maker(obj);
             if (ref.index <= kMaxLudObjIndex) {
                 SetWeakObjDesc(ref.index, ref.serial, desc);
@@ -248,22 +248,39 @@ namespace meta {
     }
 
     static int __index_global(lua_State* l) {
-        auto* s = static_cast<State*>(lua_touserdata(l, 1));
-        auto* indexer = static_cast<LuaIndexer>(lua_touserdata(l, 2));
-        return indexer(s, nullptr, nullptr);
+        /* the bottom stack value is __newindex value */
+        auto* indexer = (LuaIndexer)(lua_touserdata(l, 2));
+        auto* state = (State*)(lua_touserdata(l, 3));
+        auto* desc = (const TypeDesc*)(lua_touserdata(l, 4));
+        return indexer(state, nullptr, desc);
     }
 
     static int __index_member(lua_State* l) {
-        auto* s = static_cast<State*>(lua_touserdata(l, 1));
-        auto* ud = static_cast<FullUd*>(lua_touserdata(l, 2));
-        auto* indexer = static_cast<LuaIndexer>(lua_touserdata(l, 3));
-        ASSERT_FUD(ud);
-        //TODO: check ud valid
-        return indexer(s, ud->ptr, ud->desc);
+        /* the bottom stack value is __newindex value */
+        auto* indexer = static_cast<LuaIndexer>(lua_touserdata(l, 2));
+        auto* state = static_cast<State*>(lua_touserdata(l, 3));
+        auto* ud = static_cast<FullUd*>(lua_touserdata(l, 4));
+        
+        if (!ud->IsValid()) {
+            //TODO: error
+            assert(false);
+            return 0;
+        }
+
+        auto* obj = ud->ptr;
+        if (ud->major == UdMajor::kDeclaredType && ud->minor == UdMinor::kPtr && ud->desc->weak_index)
+            obj = ud->desc->weak_proc.getter(ud->ref);
+        if (obj == nullptr) {
+            //TODO: error
+            assert(false);
+            return 0;
+        }
+
+        return indexer(state, ud->ptr, ud->desc);
     }
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
-    // unpack lud ptr, return (id, obj ptr, type desc)
+    // unpack lud ptr, return (id, obj_ptr, type_desc)
     static int __unpack_lud(lua_State* l) {
         auto lud = LightUd::Make(lua_touserdata(l, 1));
         void* ptr = nullptr;
@@ -286,11 +303,13 @@ namespace meta {
     }
 
     static int __index_lud(lua_State* l) {
-        auto* s = static_cast<State*>(lua_touserdata(l, 1));
-        auto* ptr = lua_touserdata(l, 2);
-        auto* desc = static_cast<const TypeDesc*>(lua_touserdata(l, 3));
-        auto* indexer = static_cast<LuaIndexer>(lua_touserdata(l, 4));
-        return indexer(s, ptr, desc);
+        /* the bottom stack value is __newindex value */
+        auto* indexer = (LuaIndexer)(lua_touserdata(l, 2));     // indexer function
+        auto* state = (State*)(lua_touserdata(l, 3));           // xlua state
+        auto* ptr = lua_touserdata(l, 4);                       // obj
+        auto* desc = (const TypeDesc*)(lua_touserdata(l, 5));   // type desc
+        lua_settop(l, 1);                                       // pop all not uesed any alue
+        return indexer(state, ptr, desc);
     }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
@@ -327,7 +346,7 @@ namespace meta {
         lua_pushstring(l, buf);
         return 1;
     }
-}
+} // namespace meta
 
 namespace internal {
     static size_t GetVarNum(const TypeData& td, bool global) {
@@ -444,6 +463,9 @@ namespace internal {
         lua_pushcfunction(s->GetLuaState(), &meta::__pairs_collection);
         lua_setfield(s->GetLuaState(), -2, "__paris");
 
+        lua_pushcfunction(s->GetLuaState(), &meta::__pairs_collection);
+        lua_setfield(s->GetLuaState(), -2, "__iparis");
+
         lua_pushcfunction(s->GetLuaState(), &meta::__tostring_collection);
         lua_setfield(s->GetLuaState(), -2, "__tostring");
 
@@ -550,7 +572,7 @@ namespace internal {
                 lua_pushlightuserdata(l, static_cast<void*>(v.setter));
             else
                 lua_pushnil(l);
-            lua_seti(l, -2, 1);
+            lua_seti(l, -2, 2);
             lua_setfield(l, -2, v.name);
         }
     }
@@ -566,13 +588,14 @@ namespace internal {
                 ::strlen(script::kGlobalMetatable),
                 "global_metatable");                                // load meta function
             lua_pushlightuserdata(s->state_.l_, s);                 // push State*
+            lua_pushlightuserdata(s->state_.l_, (TypeDesc*)&td);    // push TypeDesc*
             lua_pushcfunction(s->state_.l_, &meta::__index_global); // push indexer
             lua_pushstring(s->state_.l_, td.name);                  // push md_name
             lua_createtable(s->state_.l_, 0, (int)gfn);             // create function table
             PushFuncs(s->GetLuaState(), td, true);
             lua_createtable(s->state_.l_, 0, (int)gvn);             // create var table
             PushVars(s->GetLuaState(), td, true);
-            lua_pcall(s->GetLuaState(), 5, 1, 0);                   // get metatable
+            lua_pcall(s->GetLuaState(), 6, 1, 0);                   // get metatable
             lua_setmetatable(s->GetLuaState(), -2);                 // set metatable
             s->PopTop(1);                                           // pop global table
         }
@@ -602,8 +625,8 @@ namespace internal {
         lua_pop(s->state_.l_, 2);                       // desc_list_table, desc_table
 
         // create metatable
-        luaL_loadbuffer(s->GetLuaState(), script::kDeclaredMetatable,
-            ::strlen(script::kDeclaredMetatable), "declared_metatable");
+        luaL_loadbuffer(s->GetLuaState(), script::kFudMetatable,
+            ::strlen(script::kFudMetatable), "declared_metatable");
         lua_pushlightuserdata(s->GetLuaState(), s);
         lua_pushcfunction(s->GetLuaState(), &meta::__index_member);
         lua_pushstring(s->GetLuaState(), td.name);
@@ -726,13 +749,13 @@ namespace internal {
         bool CheckRename(const char* name, bool global) const {
             auto& vars = (global ? global_vars : member_vars);
             for (const auto& v : vars) {
-                if (::strcmp(v.name, name) != 0)
+                if (::strcmp(v.name, name) == 0)
                     return false;
             }
 
             auto& funcs = (global ? global_funcs : member_funcs);
             for (const auto& f : funcs) {
-                if (::strcmp(f.name, name) != 0)
+                if (::strcmp(f.name, name) == 0)
                     return false;
             }
             return true;
@@ -746,7 +769,7 @@ namespace internal {
             g_env.declared.desc_list.push_back(data);
 
             data->name = type_name;
-            data->lud_index = GetLudIndex();
+            data->lud_index = GetLudIndex(data);
             data->weak_index = GetWeakIndex();
             data->weak_proc = weak_proc;
             data->caster = caster;
@@ -822,7 +845,7 @@ namespace internal {
             return (int)(it - tags.begin());
         }
 
-        uint8_t GetLudIndex() const {
+        uint8_t GetLudIndex(TypeDesc* desc) const {
             if (is_global)
                 return 0;
 
@@ -843,6 +866,7 @@ namespace internal {
                     auto& info = g_env.declared.lud_list[i];
                     if (info.type == LudType::Type::kNone) {
                         info.type = LudType::Type::kPtr;
+                        info.desc = desc;
                         return (uint8_t)i;
                     }
                 }

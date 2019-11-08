@@ -757,6 +757,12 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, s
     }
 };
 
+/* std array support */
+template <typename Ty, size_t N>
+struct Support<std::array<Ty, N>> : ValueCategory<std::array<Ty, N>, true> {
+    //TODO:
+};
+
 /* vector collection processor */
 template <typename Ty>
 struct VectorCollection : ICollection {
@@ -785,7 +791,7 @@ struct VectorCollection : ICollection {
         if (idx == (int)vec->size())
             vec->push_back(supporter::Load(s, 3));
         else
-            vec[idx - 1] = supporter::Load(s, 3);
+            (*vec)[idx - 1] = supporter::Load(s, 3);
         return 0;
     }
 
@@ -795,7 +801,7 @@ struct VectorCollection : ICollection {
         if (idx == 0 || !CheckRange(s, idx, vec->size()) || !CheckValue(s))
             return 0;
 
-        vec->insert(idx -1, supporter::Load(s, 3));
+        vec->insert(vec->begin() + (idx - 1), supporter::Load(s, 3));
         s->Push(true);
         return 1;
     }
@@ -811,7 +817,7 @@ struct VectorCollection : ICollection {
     }
 
     int Iter(void* obj, State* s) override {
-        lua_pushcfunction(s->GetLuaState(), &Iter);
+        lua_pushcfunction(s->GetLuaState(), &sIter);
         lua_pushlightuserdata(s->GetLuaState(), obj);
         lua_pushnumber(s->GetLuaState(), 0);
         return 3;
@@ -858,7 +864,7 @@ protected:
         return false;
     }
 
-    static int Iter(lua_State* l) {
+    static int sIter(lua_State* l) {
         auto* obj = As(lua_touserdata(l, 1));
         int idx = (int)lua_tonumber(l, 2);
         if (idx < obj->size()) {
@@ -942,7 +948,7 @@ struct MapCollection : ICollection {
     }
 
     int Iter(void* obj, State* s) override {
-        lua_pushcfunction(s->GetLuaState(), &Iter);
+        lua_pushcfunction(s->GetLuaState(), &sIter);
         lua_pushlightuserdata(s->GetLuaState(), obj);
         s->state_.NewAloneObj<iterator>(As(obj)->begin());
         return 0;
@@ -973,7 +979,7 @@ protected:
         return false;
     }
 
-    static int Iter(lua_State* l) {
+    static int sIter(lua_State* l) {
         auto* obj = As(lua_touserdata(l, 1));
         auto* data = static_cast<internal::ObjData<iterator>*>(lua_touserdata(l, 2));
         if (data->obj != obj->end()) {
@@ -990,16 +996,14 @@ protected:
 
 XLUA_NAMESPACE_END
 
-template <typename Ty>//, typename std::enable_if<xlua::IsSupport<Ty>::value, int>::type = 0>
+template <typename Ty, typename std::enable_if<xlua::IsSupport<Ty>::value, int>::type = 0>
 xlua::ICollection* xLuaGetCollection(xlua::Identity<std::vector<Ty>>) {
-    //static XLUA_NAMESPACE VectorCollection<Ty> sVec;
-    //return &sVec;
-    return nullptr;
+    static XLUA_NAMESPACE VectorCollection<Ty> sVec;
+    return &sVec;
 }
 
-//template <typename Ky, typename Ty, typename std::enable_if<xlua::IsSupport<Ky>::value && xlua::IsSupport<Ty>::value, int>::type = 0>
-//xlua::ICollection* xLuaGetCollection(xlua::Identity<std::map<Ky, Ty>>) {
-//    //static XLUA_NAMESPACE MapCollection<Ky, Ty> sMap;
-//    //return &sMap;
-//    return nullptr;
-//}
+template <typename Ky, typename Ty, typename std::enable_if<xlua::IsSupport<Ky>::value && xlua::IsSupport<Ty>::value, int>::type = 0>
+xlua::ICollection* xLuaGetCollection(xlua::Identity<std::map<Ky, Ty>>) {
+    static XLUA_NAMESPACE MapCollection<Ky, Ty> sMap;
+    return &sMap;
+}
