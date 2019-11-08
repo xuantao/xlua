@@ -455,6 +455,10 @@ public:
         }
     }
 
+    inline bool IsNil(int index) {
+        return lua_isnil(state_.l_, index);
+    }
+
     inline void PushNil() {
         lua_pushnil(state_.l_);
     }

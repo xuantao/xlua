@@ -222,17 +222,18 @@ public:
 
 /* check the type is collection */
 template <typename Ty>
-struct IsCollctionType {
+struct IsCollectionType {
 private:
     template <typename U> static auto Check(int)->decltype(xLuaGetCollection(Identity<U>()), std::true_type());
     template <typename U> static auto Check(...)->std::false_type;
 public:
-    static constexpr bool value = decltype(Check<typename std::decay<Ty>::type>(0))::value;
+    //static constexpr bool value = decltype(Check<typename std::decay<Ty>::type>(0))::value;
+    static constexpr bool value = decltype(Check<Ty>(0))::value;
 };
 
 template <typename Ty>
 struct IsObjectType {
-    static constexpr bool value = IsLuaType<Ty>::value || IsCollctionType<Ty>::value;
+    static constexpr bool value = IsLuaType<Ty>::value || IsCollectionType<Ty>::value;
 };
 
 /* traits type is support xlua weak object reference */

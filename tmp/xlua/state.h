@@ -2,6 +2,8 @@
 #include "xlua_def.h"
 #include <array>
 #include <vector>
+#include <list>
+#include <map>
 #include <unordered_map>
 #include <assert.h>
 #include <lua.hpp>
@@ -20,7 +22,7 @@ namespace internal {
         return xLuaGetTypeDesc(Identity<Ty>());
     }
 
-    template <typename Ty, typename std::enable_if<IsCollctionType<Ty>::value, int>::type = 0>
+    template <typename Ty, typename std::enable_if<IsCollectionType<Ty>::value, int>::type = 0>
     inline ICollection* GetTypeDesc() {
         return xLuaGetCollection(Identity<Ty>());
     }
@@ -628,7 +630,7 @@ namespace internal {
         }
 
         // collection ptr
-        template <typename Ty, typename std::enable_if<IsCollctionType<Ty>::value, int>::type = 0>
+        template <typename Ty, typename std::enable_if<IsCollectionType<Ty>::value, int>::type = 0>
         inline void PushUd(Ty* ptr) {
             if (ptr == nullptr) {
                 lua_pushnil(l_);
