@@ -180,6 +180,12 @@ static void test_delcared_obj(xlua::State* s) {
     } else {
         printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
     }
+
+    auto ptr = std::make_shared<Derived>();
+    if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", ptr)) {
+    } else {
+        printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
+    }
 }
 
 void test_export() {

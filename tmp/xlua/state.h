@@ -198,7 +198,6 @@ namespace internal {
     template <typename Ty>
     struct ObjUdImpl : FullUd {
         typedef ObjData<typename std::decay<Ty>::type> ObjData;
-        //static_assert(std::is_base_of<IObjData, Ty>::value, "not allow");
         template <typename Dy, typename... Args>
         ObjUdImpl(Dy desc, Args&&... args) : FullUd(nullptr, UdMinor::kValue, desc) {
             auto* p = new (storage_) ObjData(std::forward<Args>(args)...);
@@ -209,10 +208,11 @@ namespace internal {
     };
 
     template <typename Sy>
-    struct SmartPtrUdImpl : FullUd {
+    struct SmartPtrUd : FullUd {
         typedef SmartPtrDataImpl<typename std::decay<Sy>::type> ObjData;
+
         template <typename Dy, typename... Args>
-        ObjUdImpl(void* ptr, Dy desc, Args&&... args) : FullUd(ptr, UdMinor::kSmartPtr, desc) {
+        SmartPtrUd(void* ptr, Dy desc, Args&&... args) : FullUd(ptr, UdMinor::kSmartPtr, desc) {
             new (storage_) ObjData(std::forward<Args>(args)...);
         }
 
@@ -730,7 +730,7 @@ namespace internal {
 
         template <typename Ty, typename Dy, typename Sy>
         inline FullUd* NewSmartPtrUd(Ty* ptr, Dy desc, Sy&& s, size_t tag) {
-            typedef ObjUdImpl<SmartPtrDataImpl<typename std::decay<Sy>::type>> value_type;
+            typedef SmartPtrUd<Sy> value_type;
             void* d = (void*)lua_newuserdata(l_, sizeof(value_type));
             return new (d) value_type(ptr, desc, std::forward<Sy>(s), tag);
         }
@@ -886,6 +886,7 @@ namespace internal {
                     }
                 }
             } else if (ud->minor == UdMinor::kSmartPtr) {
+                //TODO: declared type or collection
                 auto it = smart_ptrs_.find(ud->ptr);
                 if (it != smart_ptrs_.end()) {
                     cache = it->second;
