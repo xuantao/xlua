@@ -168,26 +168,6 @@ namespace internal {
         typedef typename std::add_pointer<
             typename std::remove_cv<typename std::remove_pointer<Ty>::type>::type>::type type;
     };
-
-    template <>
-    struct PurifyPtrType<const char*, true> {
-        typedef const char* type;
-    };
-
-    template <>
-    struct PurifyPtrType<const volatile char*, true> {
-        typedef const char* type;
-    };
-
-    template <>
-    struct PurifyPtrType<const void*, true> {
-        typedef const void* type;
-    };
-
-    template <>
-    struct PurifyPtrType<const volatile void*, true> {
-        typedef const void* type;
-    };
 } // namepace internal
 
   /* purify type, supporter use raw type or pointer type */
@@ -201,13 +181,6 @@ template <typename Ty>
 struct PurifyType<Ty&> {
     typedef typename internal::PurifyPtrType<
         typename std::remove_cv<Ty>::type, std::is_pointer<Ty>::value>::type type;
-};
-
-/* check the type is supported*/
-template <typename Ty>
-struct IsSupport {
-    static constexpr bool value =
-        !std::is_same<not_support_tag, typename Support<typename PurifyType<Ty>::type>::category>::value;
 };
 
 /* check the type is declared to export to lua */
@@ -288,6 +261,19 @@ struct ObjectWrapper<void> {
 namespace internal {
     State* GetState(lua_State* l);
 }
+
+/* traits supporter information */
+template <typename Ty>
+struct SupportTraits {
+    typedef Support<typename PurifyType<Ty>::type> supporter;
+    typedef typename supporter::category category;
+    typedef typename supporter::value_type value_type;
+
+    static constexpr bool is_support = !std::is_same<not_support_tag, category>::value;
+    static constexpr bool is_obj_type = std::is_same<object_category_tag_, category>::value;
+    static constexpr bool is_obj_value = !std::is_pointer<value_type>::value && is_obj_type;
+    static constexpr bool is_allow_nil = supporter::allow_nil;
+};
 
 XLUA_NAMESPACE_END
 

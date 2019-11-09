@@ -300,10 +300,11 @@ namespace internal {
     struct Checker {
         template <typename... Args>
         static inline bool Do(State* s, int index) {
-            typedef typename PurifyType<
-                typename std::tuple_element<sizeof...(Args) - Idx, std::tuple<Args...>>::type>::type type;
-            static_assert(IsSupport<type>::value, "not support type");
-            return Support<type>::Check(s, index) &&
+            using traits = SupportTraits<
+                typename std::tuple_element<sizeof...(Args) - Idx, std::tuple<Args...>>::type>;
+            static_assert(traits::is_support, "not support type");
+            using supporter = typename traits::supporter;
+            return supporter::Check(s, index) &&
                 Checker<Idx - 1>::template Do<Args...>(s, index + 1);
         }
     };
@@ -312,10 +313,11 @@ namespace internal {
     struct Checker<1> {
         template <typename... Args>
         static inline bool Do(State* s, int index) {
-            typedef typename PurifyType<
-                typename std::tuple_element<sizeof...(Args) - 1, std::tuple<Args...>>::type>::type type;
-            static_assert(IsSupport<type>::value, "not support type");
-            return Support<type>::Check(s, index);
+            using traits = SupportTraits<
+                typename std::tuple_element<sizeof...(Args) - 1, std::tuple<Args...>>::type>;
+            static_assert(traits::is_support, "not support type");
+            using supporter = typename traits::supporter;
+            return supporter::Check(s, index);
         }
     };
 
@@ -364,8 +366,9 @@ namespace internal {
     template <size_t S = 64>
     struct StringCache {
         StringCache(StringView str) {
-            ::memcpy(cache_, str.str, str.len);
-            cache_[S - 1] = 0;
+            size_t len = str.len > (S - 1) ? (S - 1) : str.len;
+            ::memcpy(cache_, str.str, len);
+            cache_[len] = 0;
         }
 
         inline const char* Str() { return cache_; }

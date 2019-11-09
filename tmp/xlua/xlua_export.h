@@ -197,7 +197,7 @@ namespace internal {
     template <typename Ry>
     inline void MetaSet_(State* s, const TypeDesc* desc, StringView name, Ry* data, std::false_type) {
         if (CheckMetaVar<Ry>(s, 1, desc, name))
-            *data = Support<typename PurifyType<Ry>::type>::Load(s, 1);
+            *data = SupportTraits<Ry>::supporter::Load(s, 1);
     }
 
     template <typename Ty, typename Ry>
@@ -209,7 +209,7 @@ namespace internal {
     template <typename Ty, typename Ry>
     inline void MetaSet_(State* s, Ty* obj, const TypeDesc* desc, StringView name, Ry Ty::*data, std::false_type) {
         if (CheckMetaVar<Ry>(s, 1, desc, name))
-            obj->*data = Support<typename PurifyType<Ry>::type>::Load(s, 1);
+            obj->*data = SupportTraits<Ry>::supporter::Load(s, 1);
     }
 
     template <typename Ry>
@@ -230,7 +230,7 @@ namespace internal {
     template <typename Ry>
     inline void MetaSet(State* s, const TypeDesc* desc, StringView name, void(*func)(Ry)) {
         if (CheckMetaVar<Ry>(s, 1, desc, name))
-            func(Support<typename PurifyType<Ry>::type>::Load(s, 1));
+            func(SupportTraits<Ry>::supporter::Load(s, 1));
     }
 
     template <typename Obj, typename Ty, typename Ry>
@@ -251,7 +251,7 @@ namespace internal {
     template <typename Obj, typename Ty, typename Ry>
     inline void MetaSet(State* s, Obj* obj, const TypeDesc* desc, StringView name, void(Ty::*func)(Ry)) {
         if (CheckMetaVar<Ry>(s, 1, desc, name))
-            (obj->*func)(Support<typename PurifyType<Ry>::type>::Load(s, 1));
+            (obj->*func)(SupportTraits<Ry>::supporter::Load(s, 1));
     }
 
     template <typename Ty>
@@ -294,51 +294,10 @@ namespace internal {
         (obj->*func)(s->GetState());
     }
 
-    /* extend member var */
-    /*template <typename Ty, typename Ry>
-    inline void MetaGet(State* s, Ty* obj, Ry(*func)(Ty*)) {
-        s->Push(func(obj));
-    }
-
-    template <typename Ty, typename Ry>
-    inline void MetaSet(State* s, Ty* obj, void(*func)(Ty*, Ry)) {
-        func(obj, s->Load<typename std::decay<Ry>::type>(1));
-    }
-
-    template <typename Ty>
-    inline void MetaGet(State* s, Ty* obj, int(*func)(Ty*, State*)) {
-        func(obj, s);
-    }
-
-    template <typename Ty>
-    inline void MetaSet(State* s, Ty* obj, int(*func)(Ty*, State*)) {
-        func(obj, s);
-    }
-
-    template <typename Ty>
-    inline void MetaSet(State* s, Ty* obj, void(*func)(Ty*, State*)) {
-        func(obj, s);
-    }
-
-    template <typename Ty>
-    inline void MetaGet(State* s, Ty* obj, int(*func)(Ty*, lua_State*)) {
-        func(obj, s->GetState());
-    }
-
-    template <typename Ty>
-    inline void MetaSet(State* s, Ty* obj, int(*func)(Ty*, lua_State*)) {
-        func(obj, s->GetState());
-    }
-
-    template <typename Ty>
-    inline void MetaSet(State* s, Ty* obj, void(*func)(Ty*, lua_State*)) {
-        func(obj, s->GetState());
-    }*/
-
     template <typename Ty, class Cy, typename Ry, typename... Args, size_t... Idxs>
     inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, Ry(Cy::*func)(Args...), index_sequence<Idxs...>) {
         if (CheckMetaParameters<Args...>(s, 2, desc, name)) {
-            s->Push((obj->*func)(Support<typename PurifyType<Args>::type>::Load(s, 2 + Idxs)...));
+            s->Push((obj->*func)(SupportTraits<Args>::supporter::Load(s, 2 + Idxs)...));
             return 1;
         }
         return 0;
@@ -352,7 +311,7 @@ namespace internal {
     template <typename Ty, class Cy, typename Ry, typename... Args, size_t... Idxs>
     inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, Ry(Cy::*func)(Args...)const, index_sequence<Idxs...>) {
         if (CheckMetaParameters<Args...>(s, 2, desc, name)) {
-            s->Push((obj->*func)(Support<typename PurifyType<Args>::type>::Load(s, 2 + Idxs)...));
+            s->Push((obj->*func)(SupportTraits<Args>::supporter::Load(s, 2 + Idxs)...));
             return 1;
         }
         return 0;
@@ -366,7 +325,7 @@ namespace internal {
     template <typename Ty, class Cy, typename... Args, size_t... Idxs>
     inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(Args...), index_sequence<Idxs...>) {
         if (CheckMetaParameters<Args...>(s, 2, desc, name))
-            (obj->*func)(Support<typename PurifyType<Args>::type>::Load(s, 2 + Idxs)...);
+            (obj->*func)(SupportTraits<Args>::supporter::Load(s, 2 + Idxs)...);
         return 0;
     }
 
@@ -378,7 +337,7 @@ namespace internal {
     template <typename Ty, class Cy, typename... Args, size_t... Idxs>
     inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Cy::*func)(Args...)const, index_sequence<Idxs...>) {
         if (CheckMetaParameters<Args...>(s, 2, desc, name))
-            (obj->*func)(Support<typename PurifyType<Args>::type>::Load(s, 2 + Idxs)...);
+            (obj->*func)(SupportTraits<Args>::supporter::Load(s, 2 + Idxs)...);
         return 0;
     }
 
@@ -434,7 +393,7 @@ namespace internal {
     template <typename Ry, typename... Args, size_t... Idxs>
     inline int MetaCall(State* s, const TypeDesc* desc, StringView name, Ry(*func)(Args...), index_sequence<Idxs...>) {
         if (CheckMetaParameters<Args...>(s, 1, desc, name)) {
-            s->Push(func(Support<typename PurifyType<Args>::type>::Load(s, 1 + Idxs)...));
+            s->Push(func(SupportTraits<Args>::supporter::Load(s, 1 + Idxs)...));
             return 1;
         }
         return 0;
@@ -448,7 +407,7 @@ namespace internal {
     template <typename... Args, size_t... Idxs>
     inline int MetaCall(State* s, const TypeDesc* desc, StringView name, void(*func)(Args...), index_sequence<Idxs...>) {
         if (CheckMetaParameters<Args...>(s, 1, desc, name))
-            func(Support<typename PurifyType<Args>::type>::Load(s, 1 + Idxs)...);
+            func(SupportTraits<Args>::supporter::Load(s, 1 + Idxs)...);
         return 0;
     }
 

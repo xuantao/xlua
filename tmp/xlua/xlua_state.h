@@ -532,22 +532,21 @@ public:
             const_cast<State*>(this), index);
     }
 
-    template <typename Ty, typename std::enable_if<std::is_pointer<Ty>::value, int>::type = 0>
-    Ty Load(int index) {
-        static_assert(IsSupport<Ty>::value, "not support type");
-        return Support<typename PurifyType<Ty>::type>::Load(this, index);
-    }
-
-    template <typename Ty, typename std::enable_if<!std::is_pointer<Ty>::value, int>::type = 0>
-    Ty Load(int index) {
-        //static_assert(!IsObjectType<Ty>::value, "can not directly load object type, use load pointer instead");
-        return Support<typename PurifyType<Ty>::type>::Load(this, index);
+    template <typename Ty>
+    auto Load(int index) -> typename SupportTraits<Ty>::value_type {
+        using traits = SupportTraits<Ty>;
+        using supporter = typename traits::supporter;
+        static_assert(traits::is_support, "not support type");
+        static_assert(!traits::is_obj_value, "not support load object value directly");
+        return supporter::Load(this, index);
     }
 
     template <typename Ty>
     void Push(Ty&& val) {
-        static_assert(IsSupport<Ty>::value, "not support push value to lua");
-        Support<typename PurifyType<Ty>::type>::Push(this, std::forward<Ty>(val));
+        using traits = SupportTraits<Ty>;
+        using supporter = typename traits::supporter;
+        static_assert(traits::is_support, "not support type");
+        supporter::Push(this, std::forward<Ty>(val));
     }
 
     template <typename... Ty>
