@@ -1,27 +1,18 @@
 #pragma once
 XLUA_NAMESPACE_BEGIN
 
-template <typename Cat, typename Ty, bool AllowNil, typename Tag = Ty>
+template <typename Cat, typename Ty, bool AllowNil>
 struct SupportCategory {
-    typedef Cat category;   // value, collection, delcarted type
+    typedef Cat category;   // value, object or not support
     typedef Ty value_type;
-    typedef Tag tag_type;
-
     static constexpr bool allow_nil = AllowNil; // load as function parameter is allow nil
-    static const size_t tag;                    // tag id, specify a group type
 };
-// assign static const member
-template <typename Cat, typename Ty, bool AllowNil, typename Tag>
-const size_t SupportCategory<Cat, Ty, AllowNil, Tag>::tag = typeid(Tag).hash_code();
 
-template <typename Ty, bool AllowNil, typename Tag = Ty>
-struct ValueCategory : SupportCategory<value_category_tag, Ty, AllowNil, Tag> {};
+template <typename Ty, bool AllowNil>
+struct ValueCategory : SupportCategory<value_category_tag, Ty, AllowNil> {};
 
-template <typename Ty, typename Tag = Ty>
-struct DeclaredCategory : SupportCategory<declared_category_tag, Ty, std::is_pointer<Ty>::value, Tag> {};
-
-template <typename Ty, typename Tag = Ty>
-struct CollectionCategory : SupportCategory<collection_category_tag, Ty, std::is_pointer<Ty>::value, Tag> {};
+template <typename Ty>
+struct ObjectCategory : SupportCategory<object_category_tag_, Ty, std::is_pointer<Ty>::value> {};
 
 namespace internal {
     template <typename Ty>
@@ -34,100 +25,70 @@ namespace internal {
     struct enum_tag {};
     struct number_tag {};
     struct declared_tag {};
-    struct collection_tag {};
 
     /* traits dispacth tag, declared/enum/void tag */
     template <typename Ty>
     struct DisaptchTag {
         typedef typename std::conditional<IsLuaType<Ty>::value, declared_tag,
-            typename std::conditional<IsCollectionType<Ty>::value, collection_tag,
-                typename std::conditional<std::is_enum<Ty>::value, enum_tag, void_tag>::type>::type>::type type_tag;
+                typename std::conditional<std::is_enum<Ty>::value, enum_tag, void_tag>::type>::type type_tag;
     };
 
     template <typename Ty>
     struct DisaptchTag<Ty*> {
-        typedef typename std::conditional<IsLuaType<Ty>::value, declared_tag,
-            typename std::conditional<IsCollectionType<Ty>::value, collection_tag, void_tag>::type>::type type_tag;
+        typedef typename std::conditional<IsLuaType<Ty>::value, declared_tag, void_tag>::type type_tag;
+    };
+
+    /* object value */
+    template <typename Ty>
+    struct ObjectSupport : ObjectCategory<Ty> {
+        typedef Support<Ty*> supporter;
+
+        static inline bool Check(State* l, int index) {
+            return supporter::Load(l, index) != nullptr;
+        }
+        static inline ObjectWrapper<Ty> Load(State* l, int index) {
+            return ObjectWrapper<Ty>(supporter::Load(l, index));
+        }
+        static inline void Push(State* l, const Ty& obj) {
+            l->state_.PushUd(obj, supporter::TypeInfo());
+        }
+        static inline void Push(State* l, Ty&& obj) {
+            l->state_.PushUd(std::move(obj), supporter::TypeInfo());
+        }
+    };
+
+    /* object pointer */
+    template <typename Ty>
+    struct ObjectSupport<Ty*> : ObjectCategory<Ty*> {
+        typedef Support<Ty*> supporter;
+
+        static inline bool Check(State* l, int index) {
+            return l->state_.IsUd<Ty>(index, supporter::TypeInfo());
+        }
+        static inline Ty* Load(State* l, int index) {
+            return l->state_.LoadUd<Ty>(index, supporter::TypeInfo());
+        }
+        static inline void Push(State* l, Ty* ptr) {
+            l->state_.PushUd(ptr, supporter::TypeInfo());
+        }
     };
 
     template <typename Ty, typename Tag>
-    struct ExportSupport : SupportCategory<not_support_tag, void, true, void_tag> {
+    struct ExportSupport : SupportCategory<not_support_tag, void, true> {
     };
 
-    /* declared type pointer */
+    /* declared type support */
     template <typename Ty>
-    struct ExportSupport<Ty*, declared_tag> : DeclaredCategory<Ty*> {
-        //static inline const TypeDesc* Desc() { return xLuaGetTypeDesc(Identity<Ty>()); }
-        static inline const char* Name() { return xLuaGetTypeDesc(Identity<Ty>())->name;  }
-        static inline bool Check(State* l, int index) {
-            return l->state_.IsUd<Ty>(index);
+    struct ExportSupport<Ty, declared_tag> : ObjectSupport<Ty> {
+        static inline const TypeDesc* TypeInfo() {
+            return xLuaGetTypeDesc(Identity<typename std::remove_pointer<Ty>::type>());
         }
-        static inline Ty* Load(State* l, int index) {
-            return l->state_.LoadUd<Ty>(index);
-        }
-        static inline void Push(State* l, Ty* ptr) {
-            l->state_.PushUd(ptr);
-        }
-    };
-
-    /* declared type value */
-    template <typename Ty>
-    struct ExportSupport<Ty, declared_tag> : DeclaredCategory<Ty> {
-        typedef ExportSupport<Ty*, declared_tag> supporter;
-
-        static inline const char* Name() { return supporter::Name(); }
-        static inline bool Check(State* l, int index) {
-            return supporter::Load(l, index) != nullptr;
-        }
-        static inline ObjectWrapper<Ty> Load(State* l, int index) {
-            return ObjectWrapper<Ty>(supporter::Load(l, index));
-        }
-        static inline void Push(State* l, const Ty& obj) {
-            l->state_.PushUd(obj);
-        }
-        static inline void Push(State* l, Ty&& obj) {
-            l->state_.PushUd(std::move(obj));
-        }
-    };
-
-    /* collection type pointer */
-    template <typename Ty>
-    struct ExportSupport<Ty*, collection_tag> : CollectionCategory<Ty*> {
-        static inline const char* Name() { return xLuaGetCollection(Identity<Ty>())->Name(); }
-        static inline bool Check(State* l, int index) {
-            return l->state_.IsUd<Ty>(index);
-        }
-        static inline Ty* Load(State* l, int index) {
-            return l->state_.LoadUd<Ty>(index);
-        }
-        static inline void Push(State* l, Ty* ptr) {
-            l->state_.PushUd(ptr);
-        }
-    };
-
-    /* collection type value */
-    template <typename Ty>
-    struct ExportSupport<Ty, collection_tag> : CollectionCategory<Ty> {
-        typedef ExportSupport<Ty*, collection_tag> supporter;
-
-        static inline const char* Name() { return supporter::Name(); }
-        static inline bool Check(State* l, int index) {
-            return supporter::Load(l, index) != nullptr;
-        }
-        static inline ObjectWrapper<Ty> Load(State* l, int index) {
-            return ObjectWrapper<Ty>(supporter::Load(l, index));
-        }
-        static inline void Push(State* l, const Ty& obj) {
-            l->state_.PushUd(obj);
-        }
-        static inline void Push(State* l, Ty&& obj) {
-            l->state_.PushUd(std::move(obj));
-        }
+        static inline const char* Name() { return TypeInfo()->name;  }
     };
 
     /* enum support */
     template <typename Ty>
-    struct ExportSupport<Ty, enum_tag> : ValueCategory<typename std::underlying_type<Ty>::type, false, number_tag> {
+    struct ExportSupport<Ty, enum_tag> : ValueCategory<typename std::underlying_type<Ty>::type, false> {
         typedef Support<typename std::underlying_type<Ty>::type> supporter;
         typedef typename supporter::value_type underlying_type;
         typedef Ty value_type;
@@ -146,7 +107,7 @@ namespace internal {
 
     /* number value support */
     template <typename Ty>
-    struct NumberSupport : ValueCategory<Ty, false, number_tag> {
+    struct NumberSupport : ValueCategory<Ty, false> {
         static inline bool Check(State* l, int index) {
             return lua_type(l->GetLuaState(), index) == LUA_TNUMBER;
         }
@@ -189,6 +150,24 @@ namespace internal {
         static inline U DoLoad(State* l, int index) {
             return static_cast<U>(lua_tointeger(l->GetLuaState(), index));
         }
+    };
+
+    /* collection support */
+    template <typename Ty, typename CollTy>
+    struct CollectionSupport : ObjectSupport<Ty> {
+        static inline ICollection* TypeInfo() { return &coll_; }
+        static inline const char* Name() { return TypeInfo()->Name(); }
+    private:
+        static CollTy coll_;
+    };
+    template <typename Ty, typename CollTy> CollTy CollectionSupport<Ty, CollTy>::coll_;
+
+    template <typename Ty, typename CollTy>
+    struct CollectionSupport<Ty*, CollTy> : ObjectSupport<Ty*> {
+        typedef CollectionSupport<Ty, CollTy> supporter;
+
+        static inline ICollection* TypeInfo() { return supporter::TypeInfo(); }
+        static inline const char* Name() { return supporter::Name(); }
     };
 } // namespace internal
 
@@ -268,7 +247,7 @@ _XLUA_NUMBER_SUPPORT(double)
 struct boolean_tag {};
 
 template <>
-struct Support<bool> : ValueCategory<bool, true, boolean_tag> {
+struct Support<bool> : ValueCategory<bool, true> {
     static inline const char* Name() { return "boolean"; }
 
     static inline bool Check(State* s, int index) {
@@ -289,7 +268,7 @@ struct Support<bool> : ValueCategory<bool, true, boolean_tag> {
 struct string_tag {};
 
 template <>
-struct Support<const char*> : ValueCategory<const char*, true, string_tag> {
+struct Support<const char*> : ValueCategory<const char*, true> {
     static inline const char* Name() { return "const char*"; }
 
     static inline bool Check(State* s, int index) {
@@ -307,7 +286,7 @@ struct Support<const char*> : ValueCategory<const char*, true, string_tag> {
 };
 
 template <>
-struct Support<char*> : ValueCategory<char*, true, string_tag> {
+struct Support<char*> : ValueCategory<char*, true> {
     static inline const char* Name() {
         return "char*";
     }
@@ -325,7 +304,7 @@ struct Support<char*> : ValueCategory<char*, true, string_tag> {
 
 // char array is act as const char*
 template <size_t N>
-struct Support<char[N]> : ValueCategory<char*, true, string_tag> {
+struct Support<char[N]> : ValueCategory<char*, true> {
     static_assert(N > 0, "char array size must greater than 0");
     static inline const char* Name() {
         return "char[]";
@@ -343,7 +322,7 @@ struct Support<char[N]> : ValueCategory<char*, true, string_tag> {
 };
 
 template <size_t N>
-struct Support<const char[N]> : ValueCategory<const char*, true, string_tag> {
+struct Support<const char[N]> : ValueCategory<const char*, true> {
     static_assert(N > 0, "char array size must greater than 0");
     static inline const char* Name() {
         return "const char[]";
@@ -361,7 +340,7 @@ struct Support<const char[N]> : ValueCategory<const char*, true, string_tag> {
 };
 
 template <class Trait, class Alloc>
-struct Support<std::basic_string<char, Trait, Alloc>> : ValueCategory<std::basic_string<char, Trait, Alloc>, true, string_tag>{
+struct Support<std::basic_string<char, Trait, Alloc>> : ValueCategory<std::basic_string<char, Trait, Alloc>, true>{
     typedef std::basic_string<char, Trait, Alloc> value_type;
 
     static inline const char* Name() {
@@ -571,7 +550,7 @@ namespace internal {
 struct function_tag;
 
 template <>
-struct Support<int(lua_State*)> : ValueCategory<int(lua_State*), true, function_tag> {
+struct Support<int(lua_State*)> : ValueCategory<int(lua_State*), true> {
     typedef int (*value_type)(lua_State*);
 
     static inline const char* Name() { return "cfunction"; }
@@ -591,7 +570,7 @@ struct Support<int(lua_State*)> : ValueCategory<int(lua_State*), true, function_
 };
 
 template <>
-struct Support<int(State*)> : ValueCategory<int(State*), true, function_tag>{
+struct Support<int(State*)> : ValueCategory<int(State*), true>{
     typedef int (*value_type)(State*);
 
     static inline const char* Name() { return "cfunction"; }
@@ -627,7 +606,7 @@ private:
 };
 
 template <typename Ry, typename... Args>
-struct Support<Ry(Args...)> : ValueCategory<Ry(Args...), true, function_tag> {
+struct Support<Ry(Args...)> : ValueCategory<Ry(Args...), true> {
     typedef Ry (*value_type)(Args...);
     typedef value_category_tag category;
 
@@ -664,7 +643,7 @@ private:
 };
 
 template <typename Ry, typename... Args>
-struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args...)>, true, function_tag> {
+struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args...)>, true> {
     typedef std::function<Ry(Args...)> value_type;
     typedef internal::ObjData<value_type> ObjData;
     static inline const char* Name() { return "std::function"; }
@@ -710,10 +689,11 @@ struct std_shared_ptr_tag {};
 
 /* smart ptr support */
 template <typename Ty>
-struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, std_shared_ptr_tag> {
-    static_assert(IsObjectType<Ty>::value, "only support object");
-    typedef ValueCategory<std::shared_ptr<Ty>, true, std_shared_ptr_tag> base_type_;
+struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true> {
+    //static_assert(IsObjectType<Ty>::value, "only support object");
+    typedef ValueCategory<std::shared_ptr<Ty>, true> base_type_;
     typedef typename base_type_::value_type value_type;
+    typedef Support<typename PurifyType<Ty>::type> supporter;
 
     static const char* Name() { return "std::shared_ptr"; }
 
@@ -726,7 +706,7 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, s
         if (ptr->tag != base_type_::tag)
             return false;
 
-        return s->state_.IsUd<Ty>(ud);
+        return s->state_.IsUd<Ty>(ud, supporter::TypeInfo());
     }
 
     static value_type Load(State* s, int index) {
@@ -735,10 +715,10 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, s
             return value_type();
 
         auto* ptr = static_cast<internal::ObjUd*>(ud)->As<internal::SmartPtrData>();
-        if (ptr->tag != base_type_::tag)
+        if (ptr->tag != tag_)
             return value_type();
 
-        auto* obj = internal::As(ud, internal::GetTypeDesc<Ty>());
+        auto* obj = internal::As(ud, supporter::TypeInfo());
         return value_type(*static_cast<value_type*>(ptr->data), (Ty*)obj);
     }
 
@@ -746,16 +726,21 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true, s
         if (!ptr)
             lua_pushnil(s->GetLuaState());
         else
-            s->state_.PushSmartPtr(ptr.get(), ptr, base_type_::tag);
+            s->state_.PushSmartPtr(ptr.get(), ptr, tag_, supporter::TypeInfo());
     }
 
     static void Push(State* l, value_type&& ptr) {
         if (!ptr)
             lua_pushnil(l->GetLuaState());
         else
-            l->state_.PushSmartPtr(ptr.get(), std::move(ptr), base_type_::tag);
+            l->state_.PushSmartPtr(ptr.get(), std::move(ptr), tag_, supporter::TypeInfo());
     }
+
+private:
+    static size_t tag_;
 };
+template <typename Ty>
+size_t Support<std::shared_ptr<Ty>>::tag_ = typeid(std_shared_ptr_tag).hash_code();
 
 /* std array support */
 template <typename Ty, size_t N>
@@ -763,247 +748,259 @@ struct Support<std::array<Ty, N>> : ValueCategory<std::array<Ty, N>, true> {
     //TODO:
 };
 
-/* vector collection processor */
-template <typename Ty>
-struct VectorCollection : ICollection {
-    typedef std::vector<Ty> vector_type;
-    typedef typename PurifyType<Ty>::type value_type;
-    typedef Support<value_type> supporter;
+namespace internal {
+    /* vector collection processor */
+    template <typename VecTy>
+    struct VectorCollection : ICollection {
+        typedef VecTy vector_type;
+        typedef typename PurifyType<typename VecTy::value_type>::type value_type;
+        typedef Support<value_type> supporter;
 
-    const char* Name() override { return "std::vector"; }
+        const char* Name() override { return "std::vector"; }
 
-    int Index(void* obj, State* s) override {
-        auto* vec = As(obj);
-        int idx = LoadIndex(s);
-        if (idx == 0 || !CheckRange(s, idx, vec->size()))
-            return 0;
+        int Index(void* obj, State* s) override {
+            auto* vec = As(obj);
+            int idx = LoadIndex(s);
+            if (idx == 0 || !CheckRange(s, idx, vec->size()))
+                return 0;
 
-        s->Push(vec->at(idx - 1));
-        return 1;
-    }
-
-    int NewIndex(void* obj, State* s) override {
-        auto* vec = As(obj);
-        int idx = LoadIndex(s);
-        if (idx == 0 || !CheckRange(s, idx, vec->size() + 1) || !CheckValue(s))
-            return 0;
-
-        if (idx == (int)vec->size())
-            vec->push_back(supporter::Load(s, 3));
-        else
-            (*vec)[idx - 1] = supporter::Load(s, 3);
-        return 0;
-    }
-
-    int Insert(void* obj, State* s) override {
-        auto* vec = As(obj);
-        int idx = LoadIndex(s);
-        if (idx == 0 || !CheckRange(s, idx, vec->size()) || !CheckValue(s))
-            return 0;
-
-        vec->insert(vec->begin() + (idx - 1), supporter::Load(s, 3));
-        s->Push(true);
-        return 1;
-    }
-
-    int Remove(void* obj, State* s) override {
-        auto* vec = As(obj);
-        int idx = LoadIndex(s);
-        if (idx == 0 || !CheckRange(s, idx, vec->size()))
-            return 0;
-
-        vec->erase(vec->begin() + (idx - 1));
-        return 0;
-    }
-
-    int Iter(void* obj, State* s) override {
-        lua_pushcfunction(s->GetLuaState(), &sIter);
-        lua_pushlightuserdata(s->GetLuaState(), obj);
-        lua_pushnumber(s->GetLuaState(), 0);
-        return 3;
-    }
-
-    int Length(void* obj) override {
-        return (int)As(obj)->size();
-    }
-
-    void Clear(void* obj) override {
-        As(obj)->clear();
-    }
-
-protected:
-    static inline vector_type* As(void* obj) { return static_cast<vector_type*>(obj); }
-
-    inline int LoadIndex(State* s) {
-        if (!lua_isnumber(s->GetLuaState(), 2)) {
-            luaL_error(s->GetLuaState(), "vector only accept number index key");
-            return 0;
+            s->Push(vec->at(idx - 1));
+            return 1;
         }
 
-        int idx = s->Load<int>(2);
-        if (idx <= 0) {
-            luaL_error(s->GetLuaState(), "vector index must greater than '0'");
-            return 0;
-        }
-        return idx;
-    }
+        int NewIndex(void* obj, State* s) override {
+            auto* vec = As(obj);
+            int idx = LoadIndex(s);
+            if (idx == 0 || !CheckRange(s, idx, vec->size() + 1) || !CheckValue(s))
+                return 0;
 
-    inline bool CheckRange(State* s, int idx, size_t sz) {
-        if (idx > 0 && idx <= (int)sz)
-            return true;
-
-        luaL_error(s->GetLuaState(), "vector index is out of range");
-        return false;
-    }
-
-    inline bool CheckValue(State* s) {
-        if (internal::DoCheckParam<value_type>(s, 3))
-            return true;
-
-        luaL_error(s->GetLuaState(), "vector value is not allow");
-        return false;
-    }
-
-    static int sIter(lua_State* l) {
-        auto* obj = As(lua_touserdata(l, 1));
-        int idx = (int)lua_tonumber(l, 2);
-        if (idx < obj->size()) {
-            lua_pushnumber(l, idx + 1);                 // next key
-            internal::GetState(l)->Push(obj->at(idx));  // value
-        } else {
-            lua_pushnil(l);
-            lua_pushnil(l);
-        }
-        return 2;
-    }
-};
-
-/* map collection processor */
-template <typename KeyTy, typename ValueTy>
-struct MapCollection : ICollection {
-    typedef std::map<KeyTy, ValueTy> map_type;
-    typedef typename map_type::iterator iterator;
-    typedef typename PurifyType<KeyTy>::type key_type;
-    typedef typename PurifyType<ValueTy>::type value_type;
-    typedef Support<key_type> key_supporter;
-    typedef Support<value_type> value_supporter;
-
-    const char* Name() override { return "std::map"; }
-
-    int Index(void* obj, State* s) override {
-        if (!CheckKey(s))
-            return 0;
-
-        key_type key = key_supporter::Load(s, 2);
-        auto* map = As(obj);
-        auto it = map->find(key);
-
-        if (it == map->end())
-            s->PushNil();
-        else
-            s->Push(it->second);
-        return 1;
-    }
-
-    int NewIndex(void* obj, State* s) override {
-        if (!CheckKey(s))
-            return 0;
-
-        key_type key = key_supporter::Load(s, 2);
-        auto* map = As(obj);
-        if (s->IsNil(3)) {
-            map->erase(key);
-        } else if (CheckValue(s)) {
-            auto it = map->find(key);
-            if (it == map->end())
-                map->insert(std::make_pair((KeyTy)key, (ValueTy)value_supporter::Load(s, 3)));
+            if (idx == (int)vec->size())
+                vec->push_back(supporter::Load(s, 3));
             else
-                it->second = value_supporter::Load(s, 3);
-        }
-        return 0;
-    }
-
-    int Insert(void* obj, State* s) override {
-        if (!CheckKey(s) || !CheckValue(s))
+                (*vec)[idx - 1] = supporter::Load(s, 3);
             return 0;
-
-        key_type key = key_supporter::Load(s, 2);
-        auto* map = As(obj);
-        if (map->cend() == map->find(key)) {
-            map->insert(std::make_pair((KeyTy)key, (ValueTy)value_supporter::Load(s, 3)));
-            s->Push(true);
-        } else {
-            s->Push(false);
         }
-        return 1;
-    }
 
-    int Remove(void* obj, State* s) override {
-        if (CheckKey(s)) {
+        int Insert(void* obj, State* s) override {
+            auto* vec = As(obj);
+            int idx = LoadIndex(s);
+            if (idx == 0 || !CheckRange(s, idx, vec->size()) || !CheckValue(s))
+                return 0;
+
+            vec->insert(vec->begin() + (idx - 1), supporter::Load(s, 3));
+            s->Push(true);
+            return 1;
+        }
+
+        int Remove(void* obj, State* s) override {
+            auto* vec = As(obj);
+            int idx = LoadIndex(s);
+            if (idx == 0 || !CheckRange(s, idx, vec->size()))
+                return 0;
+
+            vec->erase(vec->begin() + (idx - 1));
+            return 0;
+        }
+
+        int Iter(void* obj, State* s) override {
+            lua_pushcfunction(s->GetLuaState(), &sIter);
+            lua_pushlightuserdata(s->GetLuaState(), obj);
+            lua_pushnumber(s->GetLuaState(), 0);
+            return 3;
+        }
+
+        int Length(void* obj) override {
+            return (int)As(obj)->size();
+        }
+
+        void Clear(void* obj) override {
+            As(obj)->clear();
+        }
+
+    protected:
+        static inline vector_type* As(void* obj) { return static_cast<vector_type*>(obj); }
+
+        inline int LoadIndex(State* s) {
+            if (!lua_isnumber(s->GetLuaState(), 2)) {
+                luaL_error(s->GetLuaState(), "vector only accept number index key");
+                return 0;
+            }
+
+            int idx = s->Load<int>(2);
+            if (idx <= 0) {
+                luaL_error(s->GetLuaState(), "vector index must greater than '0'");
+                return 0;
+            }
+            return idx;
+        }
+
+        inline bool CheckRange(State* s, int idx, size_t sz) {
+            if (idx > 0 && idx <= (int)sz)
+                return true;
+
+            luaL_error(s->GetLuaState(), "vector index is out of range");
+            return false;
+        }
+
+        inline bool CheckValue(State* s) {
+            if (internal::DoCheckParam<value_type>(s, 3))
+                return true;
+
+            luaL_error(s->GetLuaState(), "vector value is not allow");
+            return false;
+        }
+
+        static int sIter(lua_State* l) {
+            auto* obj = As(lua_touserdata(l, 1));
+            int idx = (int)lua_tonumber(l, 2);
+            if (idx < obj->size()) {
+                lua_pushnumber(l, idx + 1);                 // next key
+                internal::GetState(l)->Push(obj->at(idx));  // value
+            } else {
+                lua_pushnil(l);
+                lua_pushnil(l);
+            }
+            return 2;
+        }
+    };
+
+    /* map collection processor */
+    template <typename MapTy>
+    struct MapCollection : ICollection {
+        typedef MapTy map_type;
+        typedef typename map_type::iterator iterator;
+        typedef typename map_type::key_type key_type;
+        typedef typename map_type::mapped_type value_type;
+        typedef Support<typename PurifyType<key_type>::type> key_supporter;
+        typedef Support<typename PurifyType<value_type>::type> value_supporter;
+
+        const char* Name() override { return "std::map"; }
+
+        int Index(void* obj, State* s) override {
+            if (!CheckKey(s))
+                return 0;
+
             key_type key = key_supporter::Load(s, 2);
             auto* map = As(obj);
-            map->erase(key);
+            auto it = map->find(key);
+
+            if (it == map->end())
+                s->PushNil();
+            else
+                s->Push(it->second);
+            return 1;
         }
-        return 0;
-    }
 
-    int Iter(void* obj, State* s) override {
-        lua_pushcfunction(s->GetLuaState(), &sIter);
-        lua_pushlightuserdata(s->GetLuaState(), obj);
-        s->state_.NewAloneObj<iterator>(As(obj)->begin());
-        return 0;
-    }
+        int NewIndex(void* obj, State* s) override {
+            if (!CheckKey(s))
+                return 0;
 
-    int Length(void* obj) override {
-        return (int)As(obj)->size();
-    }
-
-    void Clear(void* obj) override {
-        As(obj)->clear();
-    }
-
-protected:
-    static inline map_type* As(void* obj) { return static_cast<map_type*>(obj); }
-
-    inline bool CheckKey(State* s) {
-        if (key_supporter::Check(s, 2))
-            return true;
-        luaL_error(s->GetLuaState(), "vector index is out of range");
-        return false;
-    }
-
-    inline bool CheckValue(State* s) {
-        if (internal::DoCheckParam<value_type>(s, 3))
-            return true;
-        luaL_error(s->GetLuaState(), "vector value is not allow");
-        return false;
-    }
-
-    static int sIter(lua_State* l) {
-        auto* obj = As(lua_touserdata(l, 1));
-        auto* data = static_cast<internal::ObjData<iterator>*>(lua_touserdata(l, 2));
-        if (data->obj != obj->end()) {
-            lua_pushvalue(l, 1);
-            value_supporter::Push(internal::GetState(l), data->obj->second);
-            ++ data->obj;   // move iterator
-        } else {
-            lua_pushnil(l);
-            lua_pushnil(l);
+            key_type key = key_supporter::Load(s, 2);
+            auto* map = As(obj);
+            if (s->IsNil(3)) {
+                map->erase(key);
+            } else if (CheckValue(s)) {
+                auto it = map->find(key);
+                if (it == map->end())
+                    map->insert(std::make_pair(key, (value_type)value_supporter::Load(s, 3)));
+                else
+                    it->second = value_supporter::Load(s, 3);
+            }
+            return 0;
         }
-        return 2;
-    }
+
+        int Insert(void* obj, State* s) override {
+            if (!CheckKey(s) || !CheckValue(s))
+                return 0;
+
+            key_type key = key_supporter::Load(s, 2);
+            auto* map = As(obj);
+            if (map->cend() == map->find(key)) {
+                map->insert(std::make_pair(key, (value_type)value_supporter::Load(s, 3)));
+                s->Push(true);
+            } else {
+                s->Push(false);
+            }
+            return 1;
+        }
+
+        int Remove(void* obj, State* s) override {
+            if (CheckKey(s)) {
+                key_type key = key_supporter::Load(s, 2);
+                auto* map = As(obj);
+                map->erase(key);
+            }
+            return 0;
+        }
+
+        int Iter(void* obj, State* s) override {
+            lua_pushcfunction(s->GetLuaState(), &sIter);
+            lua_pushlightuserdata(s->GetLuaState(), obj);
+            s->state_.NewAloneObj<iterator>(As(obj)->begin());
+            return 0;
+        }
+
+        int Length(void* obj) override {
+            return (int)As(obj)->size();
+        }
+
+        void Clear(void* obj) override {
+            As(obj)->clear();
+        }
+
+    protected:
+        static inline map_type* As(void* obj) { return static_cast<map_type*>(obj); }
+
+        inline bool CheckKey(State* s) {
+            if (key_supporter::Check(s, 2))
+                return true;
+            luaL_error(s->GetLuaState(), "vector index is out of range");
+            return false;
+        }
+
+        inline bool CheckValue(State* s) {
+            if (internal::DoCheckParam<value_type>(s, 3))
+                return true;
+            luaL_error(s->GetLuaState(), "vector value is not allow");
+            return false;
+        }
+
+        static int sIter(lua_State* l) {
+            auto* obj = As(lua_touserdata(l, 1));
+            auto* data = static_cast<internal::ObjData<iterator>*>(lua_touserdata(l, 2));
+            if (data->obj != obj->end()) {
+                lua_pushvalue(l, 1);
+                value_supporter::Push(internal::GetState(l), data->obj->second);
+                ++ data->obj;   // move iterator
+            } else {
+                lua_pushnil(l);
+                lua_pushnil(l);
+            }
+            return 2;
+        }
+    };
+} // namespace internal
+
+template <typename Ty, typename Alloc>
+struct Support<std::vector<Ty, Alloc>>
+    : internal::CollectionSupport<std::vector<Ty, Alloc>, internal::VectorCollection<std::vector<Ty, Alloc>>> {
+};
+
+template <typename Ty, typename Alloc>
+struct Support<std::vector<Ty, Alloc>*>
+    : internal::CollectionSupport<std::vector<Ty, Alloc>*, internal::VectorCollection<std::vector<Ty, Alloc>>> {
+};
+
+template <typename KeyType, typename ValueType, typename PrTy, typename Alloc>
+struct Support<std::map<KeyType, ValueType, PrTy, Alloc>>
+    : internal::CollectionSupport<std::map<KeyType, ValueType, PrTy, Alloc>,
+        internal::MapCollection<std::map<KeyType, ValueType, PrTy, Alloc>>> {
+};
+
+template <typename KeyType, typename ValueType, typename PrTy, typename Alloc>
+struct Support<std::map<KeyType, ValueType, PrTy, Alloc>*>
+    : internal::CollectionSupport<std::map<KeyType, ValueType, PrTy, Alloc>*,
+        internal::MapCollection<std::map<KeyType, ValueType, PrTy, Alloc>>> {
 };
 
 XLUA_NAMESPACE_END
-
-template <typename Ty, typename std::enable_if<xlua::IsSupport<Ty>::value, int>::type = 0>
-xlua::ICollection* xLuaGetCollection(xlua::Identity<std::vector<Ty>>) {
-    static XLUA_NAMESPACE VectorCollection<Ty> sVec;
-    return &sVec;
-}
-
-template <typename Ky, typename Ty, typename std::enable_if<xlua::IsSupport<Ky>::value && xlua::IsSupport<Ty>::value, int>::type = 0>
-xlua::ICollection* xLuaGetCollection(xlua::Identity<std::map<Ky, Ty>>) {
-    static XLUA_NAMESPACE MapCollection<Ky, Ty> sMap;
-    return &sMap;
-}

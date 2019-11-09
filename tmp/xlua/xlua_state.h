@@ -118,7 +118,7 @@ public:
 
 public:
     template <typename Ky>
-    VarType LoadFeild(const Ky& key);
+    VarType LoadField(const Ky& key);
 
     template <typename Ky>
     void SetField(const Ky& key);
@@ -540,7 +540,7 @@ public:
 
     template <typename Ty, typename std::enable_if<!std::is_pointer<Ty>::value, int>::type = 0>
     Ty Load(int index) {
-        static_assert(!IsObjectType<Ty>::value, "can not directly load object type, use load pointer instead");
+        //static_assert(!IsObjectType<Ty>::value, "can not directly load object type, use load pointer instead");
         return Support<typename PurifyType<Ty>::type>::Load(this, index);
     }
 
@@ -636,13 +636,13 @@ inline Ty UserData::As() {
 
 /* lua table */
 template <typename Ky>
-VarType Table::LoadFeild(const Ky& key) {
+VarType Table::LoadField(const Ky& key) {
     if (!IsValid())
         return VarType::kNil;
 
     StackGuard guard(state_);
     state_->PushVar(*this);
-    state_->LoadFeild(key, -1);
+    state_->LoadField(key, -1);
     lua_remove(state_->GetLuaState(), -2);
     return state_->GetType(-1);
 }
@@ -687,7 +687,7 @@ CallGuard Table::Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args) 
     if (!IsValid())
         return CallGuard();
 
-    LoadFeild(key);
+    LoadField(key);
     if (state_->GetType(-1) == VarType::kFunction)
         return state_->Call(std::move(ret), *this, std::forward<Args>(args)...);
 
@@ -700,7 +700,7 @@ CallGuard Table::DotCall(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... arg
     if (!IsValid())
         return CallGuard();
 
-    LoadFeild(key);
+    LoadField(key);
     if (state_->GetType(-1) == VarType::kFunction)
         return state_->Call(std::move(ret), std::forward<Args>(args)...);
 

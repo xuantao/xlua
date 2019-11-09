@@ -17,16 +17,6 @@ XLUA_NAMESPACE_BEGIN
 #endif
 
 namespace internal {
-    template <typename Ty, typename std::enable_if<IsLuaType<Ty>::value, int>::type = 0>
-    inline const TypeDesc* GetTypeDesc() {
-        return xLuaGetTypeDesc(Identity<Ty>());
-    }
-
-    template <typename Ty, typename std::enable_if<IsCollectionType<Ty>::value, int>::type = 0>
-    inline ICollection* GetTypeDesc() {
-        return xLuaGetCollection(Identity<Ty>());
-    }
-
     enum class UdMajor : int8_t {
         kNone = 0,
         kDeclaredType,
@@ -149,20 +139,6 @@ namespace internal {
             return nullptr;
         return ud->ptr;
     }
-
-    //template <typename Ty, typename std::enable_if<IsLuaType<Ty>::value, int>::type = 0>
-    //inline Ty* As(FullUd* ud) {
-    //    if (ud->IsValid())
-    //        return static_cast<Ty*>(As(ud, xLuaGetTypeDesc<Identity<Ty>()));
-    //    return nullptr;
-    //}
-
-    //template <typename Ty, typename std::enable_if<IsCollctionType<Ty>::value, int>::type = 0>
-    //inline Ty* As(FullUd* ud) {
-    //    if (ud->IsValid())
-    //        return static_cast<Ty*>(As(ud, xLuaGetCollection(Identity<Ty>()));
-    //    return nullptr;
-    //}
 
 #define ASSERT_FUD(ud) assert(ud && ud->IsValid())
 
@@ -317,16 +293,6 @@ namespace internal {
     inline void* As(LightUd ld, ICollection* collection) {
         return nullptr;
     }
-
-    //template <typename Ty, , typename std::enable_if<IsLuaType<Ty>::value>::type = 0>
-    //inline Ty* As(LightUd ld) {
-    //    return static_cast<Ty*>(As(ld, xLuaGetTypeDesc(Identity<Ty>())));
-    //}
-
-    //template <typename Ty, , typename std::enable_if<IsCollctionType<Ty>::value>::type = 0>
-    //inline Ty* As(LightUd ld) {
-    //    return nullptr;
-    //}
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
     /* check lua stack value is specify type */
@@ -591,55 +557,52 @@ namespace internal {
             return ud;
         }
 
-        template <typename Ty>
-        inline bool IsUd(int index) {
+        template <typename Ty, typename InfoType>
+        inline bool IsUd(int index, InfoType* info) {
 #if XLUA_ENABLE_LUD_OPTIMIZE
             if (lua_islightuserdata(l_, index))
-                return IsLud(LightUd::Make(lua_touserdata(l_, index)), GetTypeDesc<Ty>());
+                return IsLud(LightUd::Make(lua_touserdata(l_, index)), info);
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
             auto* ud = LoadRawUd(index);
             if (ud)
-                return IsFud(ud, GetTypeDesc<Ty>());
+                return IsFud(ud, info);
             return false;
         }
 
-        template <typename Ty>
-        Ty* LoadUd(int index) {
+        template <typename Ty, typename InfoTy>
+        Ty* LoadUd(int index, InfoTy* info) {
 #if XLUA_ENABLE_LUD_OPTIMIZE
             if (lua_islightuserdata(l_, index)) {
-                return (Ty*)As(LightUd::Make(lua_touserdata(l_, index)), GetTypeDesc<Ty>());
+                return (Ty*)As(LightUd::Make(lua_touserdata(l_, index)), info);
             }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
             auto* ud = LoadRawUd(index);
             if (ud)
-                return (Ty*)As(ud, GetTypeDesc<Ty>());
+                return (Ty*)As(ud, info);
             return nullptr;
         }
 
         // value
-        template <typename Ty>
-        inline void PushUd(const Ty& obj) {
-            auto* desc = GetTypeDesc<Ty>();
-            NewObjUd(obj, desc);
-            SetMetatable(desc);
+        template <typename Ty, typename InfoTy>
+        inline void PushUd(const Ty& obj, InfoTy* info) {
+            NewObjUd(obj, info);
+            SetMetatable(info);
         }
 
-        template <typename Ty>
-        inline void PushUd(Ty&& obj) {
-            auto* desc = GetTypeDesc<Ty>();
-            NewObjUd(std::forward<Ty>(obj), desc);
-            SetMetatable(desc);
+        template <typename Ty, typename InfoTy>
+        inline void PushUd(Ty&& obj, InfoTy* info) {
+            NewObjUd(std::forward<Ty>(obj), info);
+            SetMetatable(info);
         }
 
         // collection ptr
-        template <typename Ty, typename std::enable_if<IsCollectionType<Ty>::value, int>::type = 0>
-        inline void PushUd(Ty* ptr) {
+        template <typename Ty>
+        inline void PushUd(Ty* ptr, ICollection* col) {
             if (ptr == nullptr) {
                 lua_pushnil(l_);
                 return;
             }
 
-            auto col = xLuaGetCollection(Identity<Ty>());
             auto it = collection_ptrs_.find(static_cast<void*>(ptr));
             if (it == collection_ptrs_.end()) {
                 NewFud(ptr, col);
@@ -651,14 +614,13 @@ namespace internal {
         }
 
         // delcared type ptr
-        template <typename Ty, typename std::enable_if<IsLuaType<Ty>::value, int>::type = 0>
-        inline void PushUd(Ty* ptr) {
+        template <typename Ty>
+        inline void PushUd(Ty* ptr, const TypeDesc* desc) {
             if (ptr == nullptr) {
                 lua_pushnil(l_);
                 return;
             }
 
-            auto desc = xLuaGetTypeDesc(Identity<Ty>());
 #if XLUA_ENABLE_LUD_OPTIMIZE
             if (LightUd ld = PackLightUd(ptr, desc)) {
                 lua_pushlightuserdata(l_, ld.value);
@@ -719,8 +681,7 @@ namespace internal {
 
         // smart ptr
         template <typename Ty, typename Sty>
-        inline void PushSmartPtr(Ty* ptr, Sty&& s, size_t tag) {
-            auto* desc = GetTypeDesc<Ty>();
+        inline void PushSmartPtr(Ty* ptr, Sty&& s, size_t tag, const TypeDesc* desc) {
             auto* tsp = _XLUA_TO_SUPER_PTR(ptr, desc, nullptr);
             auto it = smart_ptrs_.find(tsp);
             if (it == smart_ptrs_.end()) {
@@ -737,6 +698,11 @@ namespace internal {
                     SetMetatable(desc);
                 }
             }
+        }
+
+        template <typename Ty, typename Sty>
+        inline void PushSmartPtr(Ty* ptr, Sty&& s, size_t tag, ICollection* col) {
+            //TODO:
         }
 
         template <typename... Args>
