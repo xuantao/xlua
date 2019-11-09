@@ -162,18 +162,24 @@ Derived.sIdx = 101
 print("2222222", obj.sIdx, Derived.sIdx)
 local s = Derived.StaticCall(obj)
 print("3333333", s)
-Derived.StaticCall(nil)
+--Derived.StaticCall(nil)
+)V0G0N";
+
+static const char* kTestCollection = R"V0G0N(
+
 )V0G0N";
 
 static void test_delcared_obj(xlua::State* s) {
     Derived d;
-    luaL_loadbuffer(s->GetLuaState(), kTestDeclaredObj, 
-        ::strlen(kTestDeclaredObj), "test_delcared_obj");
-    s->Push(&d);
-    if (LUA_OK != lua_pcall(s->GetLuaState(), 1, 0, 0))
-        printf("call failed:%s\n", lua_tostring(s->GetLuaState(), -1));
+    if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", &d)) {
+    } else {
+        printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
+    }
 
-    printf("d1:%d d2:%d s:%s \n", d.a, Derived::sIdx, d.szName);
+    if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", d)) {
+    } else {
+        printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
+    }
 }
 
 void test_export() {

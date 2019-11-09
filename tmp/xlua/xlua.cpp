@@ -579,7 +579,7 @@ namespace internal {
 
     static bool RegDeclared(State* s, const TypeData& td) {
         // create global table
-        StackGuard guard(s);
+        StackGuard guard(s->GetLuaState());
         size_t gfn = GetFuncNum(td, true);
         size_t gvn = GetVarNum(td, true);
         if (gfn || gvn) {

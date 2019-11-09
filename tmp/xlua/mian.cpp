@@ -4,5 +4,6 @@
 
 int main(int argc, char* argv) {
     test_export();
+    system("pause");
     return 0;
 }

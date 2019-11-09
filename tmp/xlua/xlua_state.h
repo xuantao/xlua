@@ -23,20 +23,26 @@ enum class VarType : int8_t {
 class StackGuard {
 public:
     StackGuard() : top_(0), l_(nullptr) {}
-    StackGuard(State* l);
-    StackGuard(State* l, int off);
+    StackGuard(lua_State* l) : l_(l) {
+        top_ = lua_gettop(l_);
+    }
+    StackGuard(lua_State* l, int off) : l_(l) {
+        top_ = lua_gettop(l_) + off;
+    }
     StackGuard(StackGuard&& other) : l_(other.l_), top_(other.top_) {
         other.l_ = nullptr;
     }
 
-    ~StackGuard();
+    ~StackGuard() {
+        if (l_) lua_settop(l_, top_);
+    }
 
     StackGuard(const StackGuard&) = delete;
     StackGuard& operator = (const StackGuard&) = delete;
 
 protected:
     int top_;
-    State* l_;
+    lua_State* l_;
 };
 
 /* lua函数调用堆栈保护
@@ -48,19 +54,23 @@ class CallGuard : private StackGuard {
 
 public:
     CallGuard() : StackGuard() {}
-    CallGuard(State* l) : StackGuard(l) {}
-    CallGuard(State* l, int off) : StackGuard(l, off) {}
+    CallGuard(lua_State* l) : StackGuard(l) {}
+    CallGuard(lua_State* l, int off) : StackGuard(l, off) {}
     CallGuard(CallGuard&& other) : StackGuard(std::move(other)), ok_(other.ok_) {}
 
     CallGuard(const CallGuard&) = delete;
     void operator = (const CallGuard&) = delete;
 
 public:
-    explicit operator bool() const { return ok_; }
+    explicit inline operator bool() const { return ok_; }
 
 private:
     bool ok_ = false;
 };
+
+inline bool operator == (const CallGuard& g, bool ok) {
+    return (bool)g == ok;
+}
 
 /* lua object */
 class Object {
@@ -289,9 +299,6 @@ public:
     inline int GetTop() const { return lua_gettop(state_.l_); }
     inline void SetTop(int top) { lua_settop(state_.l_, top); }
     inline void PopTop(int n) { lua_pop(state_.l_, n); }
-    inline bool DoString(const char* script, const char* chunk) {
-        return state_.DoString(script, chunk);
-    }
 
     VarType GetType(int index) {
         int lty = lua_type(state_.l_, index);
@@ -467,6 +474,22 @@ public:
         lua_newtable(state_.l_);
     }
 
+    template <typename... Args>
+    CallGuard DoString(const char* script, const char* chunk, Args&&... args) {
+        CallGuard guard(state_.l_);
+        int ret = luaL_loadbuffer(state_.l_, script, std::char_traits<char>::length(script), chunk);
+        if (LUA_OK != ret)
+            return guard;
+
+        PushMul(std::forward<Args>(args)...);
+        ret = lua_pcall(state_.l_, (int)sizeof...(Args), 1, 0);
+        if (LUA_OK != ret)
+            return guard;
+
+        guard.ok_ = true;
+        return guard;
+    }
+
     /* load global var on stack */
     inline VarType LoadGlobal(const char* path) {
         state_.LoadGlobal(path);
@@ -475,7 +498,7 @@ public:
 
     template <typename Ty>
     inline Ty GetGlobal(const char* path) {
-        StackGuard guard(this);
+        StackGuard guard(state_.l_);
         LoadGlobal(path);
         return Load<Ty>(-1);
     }
@@ -486,7 +509,7 @@ public:
 
     template <typename Ty>
     bool SetGlobal(const char* path, Ty& val, bool create) {
-        StackGuard guard(this);
+        StackGuard guard(state_.l_);
         Push(val);
         return SetGlobal(path, create);
     }
@@ -518,7 +541,7 @@ public:
 
     template <typename Ky, typename Ty>
     Ty GetField(int index, const Ky& key) {
-        StackGuard guard(this);
+        StackGuard guard(state_.l_);
         LoadField(index, key);
         return Load<Ty>(-1);
     }
@@ -573,7 +596,7 @@ public:
     template <typename... Rys, typename... Args>
     inline CallGuard Call(std::tuple<Rys&...>&& ret, Args&&... args) {
         int top = GetTop();
-        CallGuard guard(this, -1);
+        CallGuard guard(state_.l_, -1);
 
         PushMul(std::forward<Args>(args)...);
         if (lua_pcall(state_.l_, sizeof...(Args), sizeof...(Rys), 0) == LUA_OK) {
@@ -587,19 +610,6 @@ public:
 
     internal::StateData state_;
 };
-
-/* lua stack guarder */
-inline StackGuard::StackGuard(State* l) : l_(l) {
-    top_ = l->GetTop();
-}
-
-inline StackGuard::StackGuard(State* l, int off) : l_(l) {
-    top_ = l_->GetTop() + off;
-}
-
-inline StackGuard::~StackGuard() {
-    if (l_) l_->SetTop(top_);
-}
 
 /* lua object */
 inline void Object::AddRef() {

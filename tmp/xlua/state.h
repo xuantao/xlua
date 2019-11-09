@@ -182,34 +182,41 @@ namespace internal {
     {
         template <typename Ty, typename std::enable_if<std::is_base_of<IObjData, Ty>::value, int>::type = 0>
         inline Ty* As() {
-            return static_cast<Ty*>(reinterpret_cast<void*>(storage_));
+            return reinterpret_cast<Ty*>(storage_);
         }
 
     private:
         ObjUd() = delete;
         ObjUd(const ObjUd&) = delete;
 
+        //ObjUd() :FullUd(storage_, UdMinor::kValue, desc)
+
+        //IObjData* obj;
         char storage_[1];
     };
 
     template <typename Ty>
     struct ObjUdImpl : FullUd {
+        typedef ObjData<typename std::decay<Ty>::type> ObjData;
+        //static_assert(std::is_base_of<IObjData, Ty>::value, "not allow");
         template <typename Dy, typename... Args>
-        ObjUdImpl(Dy desc, Args&&... args) : FullUd(storage_, UdMinor::kValue, desc) {
-            new (storage_) Ty(std::forward<Args>(args)...);
+        ObjUdImpl(Dy desc, Args&&... args) : FullUd(nullptr, UdMinor::kValue, desc) {
+            auto* p = new (storage_) ObjData(std::forward<Args>(args)...);
+            ptr = &p->obj;
         }
 
-        char storage_[sizeof(Ty)];
+        char storage_[sizeof(ObjData)];
     };
 
     template <typename Sy>
-    struct ObjUdImpl<SmartPtrDataImpl<Sy>> : FullUd {
+    struct SmartPtrUdImpl : FullUd {
+        typedef SmartPtrDataImpl<typename std::decay<Sy>::type> ObjData;
         template <typename Dy, typename... Args>
         ObjUdImpl(void* ptr, Dy desc, Args&&... args) : FullUd(ptr, UdMinor::kSmartPtr, desc) {
-            new (storage_) SmartPtrDataImpl<Sy>(std::forward<Args>(args)...);
+            new (storage_) ObjData(std::forward<Args>(args)...);
         }
 
-        char storage_[sizeof(SmartPtrDataImpl<Sy>)];
+        char storage_[sizeof(ObjData)];
     };
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
@@ -716,7 +723,7 @@ namespace internal {
 
         template <typename Ty, typename Dy>
         inline FullUd* NewObjUd(Ty&& v, Dy desc) {
-            typedef ObjUdImpl<ObjData<typename std::decay<Ty>::type>> value_type;
+            typedef ObjUdImpl<Ty> value_type;
             void* d = (void*)lua_newuserdata(l_, sizeof(value_type));
             return new (d) value_type(desc, std::forward<Ty>(v));
         }
