@@ -127,7 +127,11 @@ namespace internal {
     static constexpr int kMaxLudIndex = 0xff;
 
     /* xlua env data */
-    static struct {
+    struct Env{
+        Env() = default;
+        Env(const Env&) = delete;
+        void operator = (const Env&) = delete;
+
         struct {
             std::array<LudType, 256> lud_list;
             std::vector<TypeData*> desc_list{nullptr};
@@ -142,10 +146,13 @@ namespace internal {
             std::vector<ArrayObj> objs{ArrayObj()};
         } obj_ary;
 
-        ExportNode* node_head = nullptr;
         SerialAlloc allocator{8*1024};
         std::vector<std::pair<lua_State*, State*>> state_list;
-    } g_env;
+    };
+
+    /* seperate the global export node list */
+    static ExportNode* g_node_head = nullptr;
+    static Env g_env;
 
     State* GetState(lua_State* l) {
         auto it = std::find_if(g_env.state_list.begin(), g_env.state_list.end(),
@@ -365,10 +372,10 @@ namespace internal {
 
     /* append export node to list tail */
     void AppendNode(ExportNode* node) {
-        if (g_env.node_head == nullptr) {
-            g_env.node_head = node;
+        if (g_node_head == nullptr) {
+            g_node_head = node;
         } else {
-            auto* tail = g_env.node_head;
+            auto* tail = g_node_head;
             while (tail->next)
                 tail = tail->next;
             tail->next = node;
@@ -646,7 +653,7 @@ namespace internal {
     }
 
     static void Reg(State* l) {
-        auto* node = g_env.node_head;
+        auto* node = g_node_head;
         // reg const value and reg type
         while (node) {
             if (node->type == NodeType::kConst)
@@ -657,7 +664,7 @@ namespace internal {
         }
 
         // reg liternal script
-        node = g_env.node_head;
+        node = g_node_head;
         while (node) {
             if (node->type == NodeType::kScript)
                 RegScript(l, static_cast<ScriptNode*>(node));
