@@ -461,10 +461,13 @@ namespace internal {
         lua_setfield(s->GetLuaState(), -2, "__newindex");
 
         lua_pushcfunction(s->GetLuaState(), &meta::__pairs_collection);
-        lua_setfield(s->GetLuaState(), -2, "__paris");
+        lua_setfield(s->GetLuaState(), -2, "__pairs");
 
         lua_pushcfunction(s->GetLuaState(), &meta::__pairs_collection);
-        lua_setfield(s->GetLuaState(), -2, "__iparis");
+        lua_setfield(s->GetLuaState(), -2, "__ipairs");
+
+        lua_pushcfunction(s->GetLuaState(), &meta::__len_collection);
+        lua_setfield(s->GetLuaState(), -2, "__len");
 
         lua_pushcfunction(s->GetLuaState(), &meta::__tostring_collection);
         lua_setfield(s->GetLuaState(), -2, "__tostring");

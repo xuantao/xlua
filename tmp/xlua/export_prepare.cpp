@@ -165,26 +165,62 @@ print("3333333", s)
 --Derived.StaticCall(nil)
 )V0G0N";
 
-static const char* kTestCollection = R"V0G0N(
+static const char* kTestVector = R"V0G0N(
+local vec = ...
+
+vec[#vec+1] = #vec
+vec[#vec+1] = #vec
+vec[#vec+1] = #vec
+
+for k, v in pairs(vec) do
+    print(k, v)
+end
 
 )V0G0N";
 
 static void test_delcared_obj(xlua::State* s) {
-    Derived d;
-    if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", &d)) {
+    auto ptr_derived = std::make_shared<Derived>();
+    printf("test push Derived value\n");
+    if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", *ptr_derived)) {
     } else {
         printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
     }
 
-    if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", d)) {
+    printf("test push Derived pointer\n");
+    if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", ptr_derived.get())) {
     } else {
         printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
     }
 
-    auto ptr = std::make_shared<Derived>();
-    if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", ptr)) {
+    printf("test push Derived shared_ptr\n");
+    if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", ptr_derived)) {
     } else {
         printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
+    }
+
+    auto ptr_vec = std::make_shared<std::vector<int>>();
+    printf("test push vector value\n");
+    if (auto guard = s->DoString(kTestVector, "test_vector", *ptr_vec)) {
+        for (auto v : *ptr_vec)
+            printf("vec v:%d\n", v);
+    } else {
+        printf("call test_vector failed, error:%s\n", s->Load<const char*>(-1));
+    }
+
+    printf("test push vector pointer\n");
+    if (auto guard = s->DoString(kTestVector, "test_vector", ptr_vec.get())) {
+        for (auto v : *ptr_vec)
+            printf("vec v:%d\n", v);
+    } else {
+        printf("call test_vector failed, error:%s\n", s->Load<const char*>(-1));
+    }
+
+    printf("test push vector shared_ptr\n");
+    if (auto guard = s->DoString(kTestVector, "test_vector", ptr_vec)) {
+        for (auto v : *ptr_vec)
+            printf("vec v:%d\n", v);
+    } else {
+        printf("call test_vector failed, error:%s\n", s->Load<const char*>(-1));
     }
 }
 

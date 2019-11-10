@@ -476,9 +476,13 @@ namespace internal {
         //    return buff;
         //}
 
-        inline bool DoString(const char* script, const char* chunk) {
-            luaL_loadbuffer(l_, script, ::strlen(script), chunk);
-            return true;
+        //inline bool DoString(const char* script, const char* chunk) {
+        //    luaL_loadbuffer(l_, script, ::strlen(script), chunk);
+        //    return true;
+        //}
+
+        inline bool IsNil(int index) {
+            return lua_isnil(l_, index);
         }
 
         inline void PushNil() {
@@ -712,7 +716,15 @@ namespace internal {
 
         template <typename Ty, typename Sty>
         inline void PushSmartPtr(Ty* ptr, Sty&& s, size_t tag, ICollection* col) {
-            //TODO:
+            auto it = smart_ptrs_.find(ptr);
+            if (it == smart_ptrs_.end()) {
+                NewSmartPtrUd(ptr, col, std::forward<Sty>(s), tag);
+                SetMetatable(col);
+                smart_ptrs_.insert(std::make_pair(ptr, CacheUd()));
+            } else {
+                assert(static_cast<ObjUd*>(it->second.ud)->As<SmartPtrData>()->tag == tag);
+                LoadCache(it->second.ref);
+            }
         }
 
         template <typename... Args>
@@ -790,7 +802,7 @@ namespace internal {
             obj_ary_.empty = obj.next;
             obj.ref = ref;
             obj.count = 1;
-            return obj_idx;;
+            return obj_idx;
         }
 
         inline bool LoadRef(int obj_idx) {
@@ -886,8 +898,13 @@ namespace internal {
                     }
                 }
             } else if (ud->minor == UdMinor::kSmartPtr) {
-                //TODO: declared type or collection
-                auto it = smart_ptrs_.find(ud->ptr);
+                void* ptr = nullptr;
+                if (ud->major == UdMajor::kDeclaredType)
+                    ptr = _XLUA_TO_SUPER_PTR(ud->ptr, ud->desc, nullptr);
+                else
+                    ptr = ud->ptr;
+
+                auto it = smart_ptrs_.find(ptr);
                 if (it != smart_ptrs_.end()) {
                     cache = it->second;
                     smart_ptrs_.erase(it);

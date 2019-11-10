@@ -720,7 +720,7 @@ namespace internal {
             if (idx == 0 || !CheckRange(s, idx, vec->size() + 1) || !CheckValue(s))
                 return 0;
 
-            if (idx == (int)vec->size())
+            if (idx == (int)vec->size() + 1)
                 vec->push_back(supporter::Load(s, 3));
             else
                 (*vec)[idx - 1] = supporter::Load(s, 3);

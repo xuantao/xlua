@@ -299,6 +299,9 @@ public:
     inline int GetTop() const { return lua_gettop(state_.l_); }
     inline void SetTop(int top) { lua_settop(state_.l_, top); }
     inline void PopTop(int n) { lua_pop(state_.l_, n); }
+    inline bool IsNil(int index) { return state_.IsNil(index); }
+    inline void PushNil() { state_.PushNil(); }
+    inline void NewTable() { state_.NewTable(); }
 
     VarType GetType(int index) {
         int lty = lua_type(state_.l_, index);
@@ -388,7 +391,7 @@ public:
         auto* l = state_.l_;
         switch (var.GetType()) {
         case VarType::kNil:
-            lua_pushnil(l);
+            state_.PushNil();
             break;
         case VarType::kBoolean:
             lua_pushboolean(l, var.ToBoolean());
@@ -408,7 +411,7 @@ public:
                 assert(this == var.obj_.state_);
                 state_.LoadRef(var.obj_.index_);
             } else {
-                lua_pushnil(state_.l_);
+                state_.PushNil();
             }
             break;
         case VarType::kLightUserData:
@@ -424,7 +427,7 @@ public:
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
                     state_.LoadRef(var.obj_.index_);
             } else {
-                lua_pushnil(state_.l_);
+                state_.PushNil();
             }
             break;
         }
@@ -435,7 +438,7 @@ public:
             assert(this == var.state_);
             state_.LoadRef(var.index_);
         } else {
-            lua_pushnil(state_.l_);
+            state_.PushNil();
         }
     }
 
@@ -444,7 +447,7 @@ public:
             assert(this == var.state_);
             state_.LoadRef(var.index_);
         } else {
-            lua_pushnil(state_.l_);
+            state_.PushNil();
         }
     }
 
@@ -458,20 +461,8 @@ public:
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
                 state_.LoadRef(var.index_);
         } else {
-            lua_pushnil(state_.l_);
+            state_.PushNil();
         }
-    }
-
-    inline bool IsNil(int index) {
-        return lua_isnil(state_.l_, index);
-    }
-
-    inline void PushNil() {
-        lua_pushnil(state_.l_);
-    }
-
-    inline void NewTable() {
-        lua_newtable(state_.l_);
     }
 
     template <typename... Args>
@@ -602,8 +593,6 @@ public:
         if (lua_pcall(state_.l_, sizeof...(Args), sizeof...(Rys), 0) == LUA_OK) {
             LoadMul(top, std::move(ret));
             guard.ok_ = true;
-        } else {
-            //TODO: log error meesage
         }
         return std::move(guard);
     }
