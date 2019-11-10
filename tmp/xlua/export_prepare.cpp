@@ -113,42 +113,42 @@ static void test_load_push(xlua::State* l) {
     int i;
     bool b;
     std::string s;
-    l->LoadMul(1, std::tie(i, b, s));
+    l->GetMul(1, std::tie(i, b, s));
 
     TestObj obj;
     l->Push(TestObj());
     l->Push(obj);
     l->Push(&obj);
     l->Push(TestEnum::kTwo);
-    TestEnum te_1 = l->Load<TestEnum>(-1);
+    TestEnum te_1 = l->Get<TestEnum>(-1);
 
     auto sp = std::make_shared<TestObj>();
     l->Push(sp);
     l->Push(std::make_shared<TestObj>());
-    l->Load<std::shared_ptr<TestObj>>(-1);
+    l->Get<std::shared_ptr<TestObj>>(-1);
 
     std::function<int(int)> f = [](int i) {
         return i + 1;
     };
     l->Push(f);
-    auto f2 = l->Load<std::function<int(int)>>(-1);
+    auto f2 = l->Get<std::function<int(int)>>(-1);
 
     std::function<void(int)> f3 = [](int i) {
     };
     l->Push(f3);
-    auto f4 = l->Load<std::function<void(int)>>(-1);
+    auto f4 = l->Get<std::function<void(int)>>(-1);
 
     std::vector<int> vec_int;
     l->Push(vec_int);
-    l->Load<std::vector<int>*>(-1);
+    l->Get<std::vector<int>*>(-1);
 
     std::vector<std::vector<int>> vec_int2;
     l->Push(vec_int2);
-    l->Load<std::vector<std::vector<int>>*>(-1);
+    l->Get<std::vector<std::vector<int>>*>(-1);
 
     std::map<int, std::vector<const char*>> map_int;
     l->Push(map_int);
-    l->Load<std::map<int, std::vector<const char*>>*>(-1);
+    l->Get<std::map<int, std::vector<const char*>>*>(-1);
 }
 
 static const char* kTestDeclaredObj = R"V0G0N(
@@ -183,19 +183,19 @@ static void test_delcared_obj(xlua::State* s) {
     printf("test push Derived value\n");
     if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", *ptr_derived)) {
     } else {
-        printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
+        printf("call test_delcared_obj failed, error:%s\n", s->Get<const char*>(-1));
     }
 
     printf("test push Derived pointer\n");
     if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", ptr_derived.get())) {
     } else {
-        printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
+        printf("call test_delcared_obj failed, error:%s\n", s->Get<const char*>(-1));
     }
 
     printf("test push Derived shared_ptr\n");
     if (auto guard = s->DoString(kTestDeclaredObj, "test_delcared_obj", ptr_derived)) {
     } else {
-        printf("call test_delcared_obj failed, error:%s\n", s->Load<const char*>(-1));
+        printf("call test_delcared_obj failed, error:%s\n", s->Get<const char*>(-1));
     }
 
     auto ptr_vec = std::make_shared<std::vector<int>>();
@@ -204,7 +204,7 @@ static void test_delcared_obj(xlua::State* s) {
         for (auto v : *ptr_vec)
             printf("vec v:%d\n", v);
     } else {
-        printf("call test_vector failed, error:%s\n", s->Load<const char*>(-1));
+        printf("call test_vector failed, error:%s\n", s->Get<const char*>(-1));
     }
 
     printf("test push vector pointer\n");
@@ -212,7 +212,7 @@ static void test_delcared_obj(xlua::State* s) {
         for (auto v : *ptr_vec)
             printf("vec v:%d\n", v);
     } else {
-        printf("call test_vector failed, error:%s\n", s->Load<const char*>(-1));
+        printf("call test_vector failed, error:%s\n", s->Get<const char*>(-1));
     }
 
     printf("test push vector shared_ptr\n");
@@ -220,7 +220,7 @@ static void test_delcared_obj(xlua::State* s) {
         for (auto v : *ptr_vec)
             printf("vec v:%d\n", v);
     } else {
-        printf("call test_vector failed, error:%s\n", s->Load<const char*>(-1));
+        printf("call test_vector failed, error:%s\n", s->Get<const char*>(-1));
     }
 }
 

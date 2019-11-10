@@ -175,7 +175,7 @@ namespace internal {
 
     /* set array value, only support string */
     inline void MetaSetArray(State* s, char* buf, size_t sz) {
-        const char* str = s->Load<const char*>(1);
+        const char* str = s->Get<const char*>(1);
         if (str)
             snprintf(buf, sz, str);
         else
@@ -477,7 +477,7 @@ namespace internal {
 
         template <typename Fy, typename std::enable_if<std::is_member_function_pointer<Fy>::value, int>::type = 0>
         static inline int Call(State* s, const TypeDesc* desc, StringView name, Fy f) {
-            Ty* obj = s->Load<Ty*>(1);
+            Ty* obj = s->Get<Ty*>(1);
             if (obj == nullptr) {
                 luaL_error(s->GetLuaState(), "attempt call function[%s.%s] failed, obj is nil\n%s", desc->name, "");
                 return 0;

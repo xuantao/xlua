@@ -303,6 +303,138 @@ public:
     inline void PushNil() { state_.PushNil(); }
     inline void NewTable() { state_.NewTable(); }
 
+    template <typename... Tys>
+    bool IsType(int index) const {
+        constexpr size_t arg_num = sizeof...(Tys);
+        if (GetTop() - index + 1 < arg_num)
+            return false;
+        return internal::Checker<arg_num>::template Do<Tys...>(
+            const_cast<State*>(this), index);
+    }
+
+    template <typename... Args>
+    CallGuard DoString(const char* script, const char* chunk, Args&&... args) {
+        CallGuard guard(state_.l_);
+        int ret = luaL_loadbuffer(state_.l_, script, std::char_traits<char>::length(script), chunk);
+        if (LUA_OK != ret)
+            return guard;
+
+        PushMul(std::forward<Args>(args)...);
+        ret = lua_pcall(state_.l_, (int)sizeof...(Args), 1, 0);
+        if (LUA_OK != ret)
+            return guard;
+
+        guard.ok_ = true;
+        return guard;
+    }
+
+    /* load global var on stack */
+    inline VarType LoadGlobal(const char* path) {
+        state_.LoadGlobal(path);
+        return GetType(-1);
+    }
+
+    template <typename Ty>
+    inline Ty GetGlobal(const char* path) {
+        StackGuard guard(state_.l_);
+        LoadGlobal(path);
+        return Get<Ty>(-1);
+    }
+
+    inline bool SetGlobal(const char* path, bool create) {
+        return state_.SetGlobal(path, create, false);
+    }
+
+    template <typename Ty>
+    bool SetGlobal(const char* path, Ty& val, bool create) {
+        StackGuard guard(state_.l_);
+        Push(val);
+        return SetGlobal(path, create);
+    }
+
+    template <typename Ky>
+    VarType LoadField(int index, const Ky& key) {
+        if (!lua_istable(state_.l_, index)) {
+            PushNil();
+            return VarType.kNil;
+        }
+
+        index = lua_absindex(state_.l_, index);
+        Push(key);
+        lua_gettable(state_.l_, index);
+        return GetType(-1);
+    }
+
+    template <typename Ky, typename Ty>
+    bool SetField(int index, const Ky& key, Ty& val) {
+        if (!lua_istable(state_.l_, index))
+            return false;
+
+        index = lua_absindex(state_.l_, index);
+        Push(key);
+        PushVar(val);
+        lua_settable(state_.l_, index);
+        return true;
+    }
+
+    template <typename Ky, typename Ty>
+    Ty GetField(int index, const Ky& key) {
+        StackGuard guard(state_.l_);
+        LoadField(index, key);
+        return Get<Ty>(-1);
+    }
+
+    template <typename Ty>
+    auto Get(int index) -> typename SupportTraits<Ty>::value_type {
+        using traits = SupportTraits<Ty>;
+        using supporter = typename traits::supporter;
+        static_assert(traits::is_support, "not support type");
+        static_assert(!traits::is_obj_value, "not support load object value directly");
+        return supporter::Load(this, index);
+    }
+
+    template <typename Ty>
+    void Push(Ty&& val) {
+        using traits = SupportTraits<Ty>;
+        using supporter = typename traits::supporter;
+        static_assert(traits::is_support, "not support type");
+        supporter::Push(this, std::forward<Ty>(val));
+    }
+
+    template <typename... Ty>
+    inline void GetMul(int index, std::tuple<Ty&...>&& ret) {
+        GetMul(index, std::move(ret), make_index_sequence_t<sizeof...(Ty)>());
+    }
+
+    template <typename... Ty, size_t... Idxs>
+    inline void GetMul(int index, std::tuple<Ty&...>&& ret, index_sequence<Idxs...>) {
+        using ints = int[];
+        (void)ints {
+            0, (std::get<Idxs>(ret) = Get<Ty>(index++), 0)...
+        };
+    }
+
+    template<typename... Ty>
+    inline void PushMul(Ty&&... vals) {
+        using ints = int[];
+        (void)ints {
+            0, (Push(std::forward<Ty>(vals)), 0)...
+        };
+    }
+
+    template <typename... Rys, typename... Args>
+    inline CallGuard Call(std::tuple<Rys&...>&& ret, Args&&... args) {
+        int top = GetTop();
+        CallGuard guard(state_.l_, -1);
+
+        PushMul(std::forward<Args>(args)...);
+        if (lua_pcall(state_.l_, sizeof...(Args), sizeof...(Rys), 0) == LUA_OK) {
+            GetMul(top, std::move(ret));
+            guard.ok_ = true;
+        }
+        return std::move(guard);
+    }
+
     VarType GetType(int index) {
         int lty = lua_type(state_.l_, index);
         void* ptr = nullptr;
@@ -347,7 +479,7 @@ public:
         return vt;
     }
 
-    Variant LoadVar(int index) {
+    Variant GetVar(int index) {
         auto* l = state_.l_;
         int lty = lua_type(l, index);
         size_t len = 0;
@@ -465,138 +597,6 @@ public:
         }
     }
 
-    template <typename... Args>
-    CallGuard DoString(const char* script, const char* chunk, Args&&... args) {
-        CallGuard guard(state_.l_);
-        int ret = luaL_loadbuffer(state_.l_, script, std::char_traits<char>::length(script), chunk);
-        if (LUA_OK != ret)
-            return guard;
-
-        PushMul(std::forward<Args>(args)...);
-        ret = lua_pcall(state_.l_, (int)sizeof...(Args), 1, 0);
-        if (LUA_OK != ret)
-            return guard;
-
-        guard.ok_ = true;
-        return guard;
-    }
-
-    /* load global var on stack */
-    inline VarType LoadGlobal(const char* path) {
-        state_.LoadGlobal(path);
-        return GetType(-1);
-    }
-
-    template <typename Ty>
-    inline Ty GetGlobal(const char* path) {
-        StackGuard guard(state_.l_);
-        LoadGlobal(path);
-        return Load<Ty>(-1);
-    }
-
-    inline bool SetGlobal(const char* path, bool create) {
-        return state_.SetGlobal(path, create, false);
-    }
-
-    template <typename Ty>
-    bool SetGlobal(const char* path, Ty& val, bool create) {
-        StackGuard guard(state_.l_);
-        Push(val);
-        return SetGlobal(path, create);
-    }
-
-    template <typename Ky>
-    VarType LoadField(int index, const Ky& key) {
-        if (!lua_istable(state_.l_, index)) {
-            PushNil();
-            return VarType.kNil;
-        }
-
-        index = lua_absindex(state_.l_, index);
-        Push(key);
-        lua_gettable(state_.l_, index);
-        return GetType(-1);
-    }
-
-    template <typename Ky, typename Ty>
-    bool SetField(int index, const Ky& key, Ty& val) {
-        if (!lua_istable(state_.l_, index))
-            return false;
-
-        index = lua_absindex(state_.l_, index);
-        Push(key);
-        PushVar(val);
-        lua_settable(state_.l_, index);
-        return true;
-    }
-
-    template <typename Ky, typename Ty>
-    Ty GetField(int index, const Ky& key) {
-        StackGuard guard(state_.l_);
-        LoadField(index, key);
-        return Load<Ty>(-1);
-    }
-
-    template <typename... Tys>
-    bool IsType(int index) const {
-        constexpr size_t arg_num = sizeof...(Tys);
-        if (GetTop() - index + 1 < arg_num)
-            return false;
-        return internal::Checker<arg_num>::template Do<Tys...>(
-            const_cast<State*>(this), index);
-    }
-
-    template <typename Ty>
-    auto Load(int index) -> typename SupportTraits<Ty>::value_type {
-        using traits = SupportTraits<Ty>;
-        using supporter = typename traits::supporter;
-        static_assert(traits::is_support, "not support type");
-        static_assert(!traits::is_obj_value, "not support load object value directly");
-        return supporter::Load(this, index);
-    }
-
-    template <typename Ty>
-    void Push(Ty&& val) {
-        using traits = SupportTraits<Ty>;
-        using supporter = typename traits::supporter;
-        static_assert(traits::is_support, "not support type");
-        supporter::Push(this, std::forward<Ty>(val));
-    }
-
-    template <typename... Ty>
-    inline void LoadMul(int index, std::tuple<Ty&...>&& ret) {
-        LoadMul(index, std::move(ret), make_index_sequence_t<sizeof...(Ty)>());
-    }
-
-    template <typename... Ty, size_t... Idxs>
-    inline void LoadMul(int index, std::tuple<Ty&...>&& ret, index_sequence<Idxs...>) {
-        using ints = int[];
-        (void)ints {
-            0, (std::get<Idxs>(ret) = Load<Ty>(index++), 0)...
-        };
-    }
-
-    template<typename... Ty>
-    inline void PushMul(Ty&&... vals) {
-        using ints = int[];
-        (void)ints {
-            0, (Push(std::forward<Ty>(vals)), 0)...
-        };
-    }
-
-    template <typename... Rys, typename... Args>
-    inline CallGuard Call(std::tuple<Rys&...>&& ret, Args&&... args) {
-        int top = GetTop();
-        CallGuard guard(state_.l_, -1);
-
-        PushMul(std::forward<Args>(args)...);
-        if (lua_pcall(state_.l_, sizeof...(Args), sizeof...(Rys), 0) == LUA_OK) {
-            LoadMul(top, std::move(ret));
-            guard.ok_ = true;
-        }
-        return std::move(guard);
-    }
-
     internal::StateData state_;
 };
 
@@ -617,19 +617,19 @@ inline bool UserData::IsType() {
     if (!IsValid())
         return false;
 
-    StackGuard guard(state_);
+    StackGuard guard(state_->GetLuaState());
     state_->PushVar(*this);
     return state_->IsType<Ty>(-1);
 }
 
 template <typename Ty>
 inline Ty UserData::As() {
-    StackGuard guard(state_);
+    StackGuard guard(state_->GetLuaState());
     if (!IsValid())
         state_->PushNil();
     else
         state_->PushVar(*this);
-    return state_->Load<Ty>(-1);
+    return state_->Get<Ty>(-1);
 }
 
 /* lua table */
@@ -638,7 +638,7 @@ VarType Table::LoadField(const Ky& key) {
     if (!IsValid())
         return VarType::kNil;
 
-    StackGuard guard(state_);
+    StackGuard guard(state_->GetLuaState());
     state_->PushVar(*this);
     state_->LoadField(key, -1);
     lua_remove(state_->GetLuaState(), -2);
@@ -650,7 +650,7 @@ void Table::SetField(const Ky& key) {
     if (!IsValid() || state_->GetTop() == 0)
         return;
 
-    StackGuard guard(state_);
+    StackGuard guard(state_->GetLuaState());
     state_->PushVar(*this);
     state_->Push(key);
     lua_rotate(state_->state_.l_, -3, 1);   //TODO: 这里还不确定参数是否合法
@@ -659,7 +659,7 @@ void Table::SetField(const Ky& key) {
 
 template <typename Ky, typename Ty>
 Ty Table::GetField(const Ky& key) {
-    StackGuard guard(state_);
+    StackGuard guard(state_->GetLuaState());
     if (!IsValid()) {
         state_->PushNil();
     } else {
@@ -667,7 +667,7 @@ Ty Table::GetField(const Ky& key) {
         state_->LoadField(-1, key);
     }
 
-    return state_->Load<Ty>(-1);
+    return state_->Get<Ty>(-1);
 }
 
 template <typename Ky, typename Ty>
@@ -675,7 +675,7 @@ void Table::SetField(const Ky& key, Ty& val) {
     if (!IsValid())
         return;
 
-    StackGuard guard(state_);
+    StackGuard guard(state_->GetLuaState());
     state_->PushVar(*this);
     state_->SetField(-1, key, val);
 }
@@ -689,7 +689,7 @@ CallGuard Table::Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args) 
     if (state_->GetType(-1) == VarType::kFunction)
         return state_->Call(std::move(ret), *this, std::forward<Args>(args)...);
 
-    lua_pop(state_->state_.l_, 1);
+    state_->PopTop(1);
     return CallGuard();
 }
 
@@ -702,7 +702,7 @@ CallGuard Table::DotCall(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... arg
     if (state_->GetType(-1) == VarType::kFunction)
         return state_->Call(std::move(ret), std::forward<Args>(args)...);
 
-    lua_pop(state_->state_.l_, 1);
+    state_->PopTop(1);
     return CallGuard();
 }
 

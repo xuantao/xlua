@@ -179,7 +179,7 @@ template <>
 struct Support<Variant> : ValueCategory<Variant, true> {
     static inline const char* Name() { return "xlua::Variant"; }
     static inline bool Check(State* s, int index) { return true; }
-    static inline Variant Load(State* s, int index) { return s->LoadVar(index); }
+    static inline Variant Load(State* s, int index) { return s->GetVar(index); }
     static inline void Push(State* s, const Variant& var) { s->PushVar(var); }
 };
 
@@ -189,7 +189,7 @@ struct Support<Table> : ValueCategory<Table, true> {
     static inline bool Check(State* s, int index) {
         return lua_type(s->GetLuaState(), index) == LUA_TTABLE;
     }
-    static inline Table Load(State* s, int index) { return s->LoadVar(index).ToTable(); }
+    static inline Table Load(State* s, int index) { return s->GetVar(index).ToTable(); }
     static inline void Push(State* s, const Table& var) { s->PushVar(var); }
 };
 
@@ -199,7 +199,7 @@ struct Support<Function> : ValueCategory<Function, true> {
     static inline bool Check(State* s, int index) {
         return lua_type(s->GetLuaState(), index) == LUA_TFUNCTION;
     }
-    static inline Function Load(State* s, int index) { return s->LoadVar(index).ToFunction(); }
+    static inline Function Load(State* s, int index) { return s->GetVar(index).ToFunction(); }
     static inline void Push(State* s, const Function& var) { s->PushVar(var); }
 };
 
@@ -210,7 +210,7 @@ struct Support<UserData> : ValueCategory<UserData, true> {
         int lty = lua_type(s->GetLuaState(), index);
         return lty == LUA_TUSERDATA || lty == LUA_TLIGHTUSERDATA;
     }
-    static inline UserData Load(State* s, int index) { return s->LoadVar(index).ToUserData(); }
+    static inline UserData Load(State* s, int index) { return s->GetVar(index).ToUserData(); }
     static inline void Push(State* s, const UserData& var) { s->PushVar(var); }
 };
 
@@ -613,7 +613,7 @@ struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args
         }
 
         // other type funtion
-        return internal::MakeFunc<Ry, Args...>(s->Load<Function>(index));
+        return internal::MakeFunc<Ry, Args...>(s->Get<Function>(index));
     }
 
     static inline void Push(State* s, const value_type& val) {
@@ -772,7 +772,7 @@ namespace internal {
                 return 0;
             }
 
-            int idx = s->Load<int>(2);
+            int idx = s->Get<int>(2);
             if (idx <= 0) {
                 luaL_error(s->GetLuaState(), "vector index must greater than '0'");
                 return 0;
