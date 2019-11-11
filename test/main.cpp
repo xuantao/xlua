@@ -5,8 +5,8 @@
 
 
 int main(int argc, char* argvp[]) {
-    xlua::Startup(nullptr);
-    xlua::xLuaState* l = xlua::Create(nullptr);
+//    xlua::Startup(nullptr);
+    xlua::State* l = xlua::CreateState(nullptr);
 
     l->LoadGlobal("_G");
     assert(LUA_TTABLE == l->GetType(-1));
@@ -16,11 +16,10 @@ int main(int argc, char* argvp[]) {
     TestExport(l);
     TestGlobal(l);
 
-
-
     Triangle* triangle = nullptr;
     l->Push(triangle);
 
-    l->Release();
+    //l->Release();
+    xlua::DestoryState(l);
     return 0;
 }

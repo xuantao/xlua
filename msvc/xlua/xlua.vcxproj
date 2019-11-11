@@ -19,20 +19,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\xlua\detail\global.cpp" />
-    <ClCompile Include="..\..\xlua\detail\type_desc.cpp" />
     <ClCompile Include="..\..\xlua\xlua.cpp" />
-    <ClCompile Include="..\..\xlua\xlua_state.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\xlua\detail\common.h" />
-    <ClInclude Include="..\..\xlua\detail\export.h" />
-    <ClInclude Include="..\..\xlua\detail\extractor.h" />
-    <ClInclude Include="..\..\xlua\detail\global.h" />
-    <ClInclude Include="..\..\xlua\detail\serial_alloc.h" />
-    <ClInclude Include="..\..\xlua\detail\state.h" />
-    <ClInclude Include="..\..\xlua\detail\traits.h" />
-    <ClInclude Include="..\..\xlua\detail\type_desc.h" />
+    <ClInclude Include="..\..\xlua\scripts.hpp" />
+    <ClInclude Include="..\..\xlua\state.h" />
+    <ClInclude Include="..\..\xlua\support.hpp" />
     <ClInclude Include="..\..\xlua\xlua.h" />
     <ClInclude Include="..\..\xlua\xlua_config.h" />
     <ClInclude Include="..\..\xlua\xlua_def.h" />
