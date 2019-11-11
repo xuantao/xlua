@@ -267,7 +267,7 @@ namespace meta {
         auto* indexer = static_cast<LuaIndexer>(lua_touserdata(l, 2));
         auto* state = static_cast<State*>(lua_touserdata(l, 3));
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 4));
-        
+
         if (!ud->IsValid()) {
             //TODO: error
             assert(false);
@@ -519,19 +519,22 @@ namespace internal {
         return true;
     }
 
-    static bool RegConst(State* s, const ConstValueNode* constValue) {
+    static bool RegConst(State* s, const ConstValueNode* node) {
         char buf[1024];
-        PurifyTypeName(buf, kBuffCacheSize, constValue->value->name);
+        PurifyTypeName(buf, kBuffCacheSize, node->name);
         MakeGlobal(s, buf);
 
-        const auto* val = constValue->value->vals;
-        while (val->name) {
+        const auto* val = node->gen();
+        while (val->type != ConstValue::Type::kNone) {
             auto view = PurifyMemberName(val->name);
             lua_pushlstring(s->GetLuaState(), view.str, view.len);
 
             switch (val->type) {
-            case ConstValue::Type::kNumber:
-                lua_pushnumber(s->GetLuaState(), val->number_val);
+            case ConstValue::Type::kFloat:
+                lua_pushnumber(s->GetLuaState(), val->float_val);
+                break;
+            case ConstValue::Type::kInteger:
+                lua_pushinteger(s->GetLuaState(), val->integer_val);
                 break;
             case ConstValue::Type::kString:
                 lua_pushstring(s->GetLuaState(), val->string_val);
@@ -548,9 +551,8 @@ namespace internal {
         return true;
     }
 
-    static bool RegScript(State* s, const ScriptNode* script) {
-        //TODO: here need process error info, need set module scope
-        luaL_dostring(s->GetLuaState(), script->script.script);
+    static bool RegScript(State* s, const ScriptNode* node) {
+        s->DoString(node->script, node->name);
         return true;
     }
 
@@ -659,7 +661,7 @@ namespace internal {
             if (node->type == NodeType::kConst)
                 RegConst(l, static_cast<ConstValueNode*>(node));
             else if (node->type == NodeType::kType)
-                static_cast<TypeNode*>(node)->Reg();
+                static_cast<TypeNode*>(node)->reg();
             node = node->next;
         }
 

@@ -11,40 +11,45 @@ namespace internal {
         /* value type */
         enum class Type {
             kNone,
-            kNumber,
+            kFloat,
+            kInteger,
             kString,
         };
 
-        struct Value {
-            Type type;
-            const char* name;
-            union {
-                double number_val;
-                const char* string_val;
-            };
+        Type type;
+        const char* name;
+        union {
+            unsigned long long integer_val;
+            double float_val;
+            const char* string_val;
         };
 
-        const char* name;
-        const Value* vals;
-
-        static inline Value Make() {
-            Value cv;
+        static inline ConstValue Make() {
+            ConstValue cv;
             cv.type = Type::kNone;
             cv.name = nullptr;
             cv.string_val = nullptr;
             return cv;
         }
 
-        static inline Value Make(const char* name, double val) {
-            Value cv;
-            cv.type = Type::kNumber;
+        static inline ConstValue Make(const char* name, double val) {
+            ConstValue cv;
+            cv.type = Type::kFloat;
             cv.name = name;
-            cv.number_val = val;
+            cv.float_val = val;
             return cv;
         }
 
-        static inline Value Make(const char* name, const char* val) {
-            Value cv;
+        static inline ConstValue Make(const char* name, unsigned long long val) {
+            ConstValue cv;
+            cv.type = Type::kInteger;
+            cv.name = name;
+            cv.integer_val = val;
+            return cv;
+        }
+
+        static inline ConstValue Make(const char* name, const char* val) {
+            ConstValue cv;
             cv.type = Type::kString;
             cv.name = name;
             cv.string_val = val;
@@ -52,18 +57,13 @@ namespace internal {
         }
 
         template <typename Ty, typename std::enable_if<std::is_enum<Ty>::value, int>::type = 0>
-        static inline Value Make(const char* name, Ty val) {
-            Value cv;
+        static inline ConstValue Make(const char* name, Ty val) {
+            ConstValue cv;
             cv.type = Type::kInteger;
             cv.name = name;
-            cv.number_val = (int)val;
+            cv.integer_val = (int)val;
             return cv;
         }
-    };
-
-    struct ScriptValue {
-        const char* name;
-        const char* script;
     };
 
     enum class NodeType {
@@ -87,29 +87,27 @@ namespace internal {
     };
 
     struct ConstValueNode : ExportNode {
-        ConstValueNode(const ConstValue* vls) :
-            ExportNode(NodeType::kConst), value(vls) {}
+        typedef const ConstValue* (*Gen)();
+        ConstValueNode(const char* m, Gen g) :
+            ExportNode(NodeType::kConst), name(m), gen(g) {}
 
-        const ConstValue* value;
+        const char* name;
+        Gen gen;
     };
 
     struct ScriptNode : ExportNode {
-        ScriptNode(ScriptValue s) :
-            ExportNode(NodeType::kScript), script(s) {}
+        ScriptNode(const char* m, const char* s) :
+            ExportNode(NodeType::kScript), name(m), script(s) {}
 
-        const ScriptValue script;
+        const char* name;
+        const char* script;
     };
 
     struct TypeNode : ExportNode {
-        TypeNode() : ExportNode(NodeType::kType) {}
-        virtual void Reg() = 0;
-    };
+        typedef void(*Reg)();
+        TypeNode(Reg r) : ExportNode(NodeType::kType), reg(r) {}
 
-    template <typename Ty>
-    struct TypeExportNode : TypeNode {
-        void Reg() override {
-            ::xLuaGetTypeDesc(Identity<Ty>());
-        }
+        Reg reg;
     };
 
     template <typename Dy, typename By>
@@ -496,6 +494,19 @@ namespace internal {
     template <> struct BaseType<> { typedef void type; };
     template <typename Ty> struct BaseType<Ty> { typedef Ty type; };
 
+    template <typename GetTy, typename SetTy>
+    struct IndexerTrait {
+    private:
+        static constexpr bool all_nullptr = (is_null_pointer<GetTy>::value && is_null_pointer<SetTy>::value);
+        static constexpr bool one_nullptr = (is_null_pointer<GetTy>::value || is_null_pointer<SetTy>::value);
+        static constexpr bool is_get_member = (std::is_member_pointer<GetTy>::value || std::is_member_function_pointer<GetTy>::value);
+        static constexpr bool is_set_member = (std::is_member_pointer<SetTy>::value || std::is_member_function_pointer<SetTy>::value);
+
+    public:
+        static constexpr bool is_allow = !all_nullptr && (one_nullptr || (is_get_member == is_set_member));
+        static constexpr bool is_member = (is_get_member || is_set_member);
+    };
+
     struct conv_any_tag;
     struct conv_normal_tag;
     struct conv_const_tag;
@@ -638,6 +649,9 @@ namespace internal {
         }
     };
 
+    template<class Ty>
+    struct is_null_pointer : std::is_same<std::nullptr_t, typename std::remove_cv<Ty>::type> {};
+
     ITypeFactory* CreateFactory(bool global, const char* path, const TypeDesc* super);
 } // namespace internal
 
@@ -666,155 +680,113 @@ XLUA_NAMESPACE_END
 #define _XLUA_ANONYMOUS         _XLUA_ANONYMOUS_1(__LINE__)
 
 /* 获取基类 */
-#define _XLUA_SUPER_CLASS(...)      typename xlua::internal::BaseType<__VA_ARGS__>::type
+#define _XLUA_SUPER_CLASS(...)              typename xlua::internal::BaseType<__VA_ARGS__>::type
 /* 提取指定版本的成员函数 */
-#define _EXTRACT_METHOD(Func, ...)  xlua::internal::Extractor<__VA_ARGS__>::extract(xlua::internal::conv_const_tag(), Func)
+#define _XLUA_EXTRACT_METHOD(Func, ...)     xlua::internal::Extractor<__VA_ARGS__>::extract(xlua::internal::conv_const_tag(), Func)
 
 // 导出实现
-#define _XLUA_EXPORT_FUNC_(Name, Func, Meta, IsGlobal)                                  \
-    static_assert(!xlua::detail::is_null_pointer<decltype(Func)>::value,                \
-        "can not export func:"#Name" with null pointer"                                 \
-    );                                                                                  \
-    struct _XLUA_ANONYMOUS {                                                            \
-        static int call(lua_State* l) {                                                 \
-            auto* xl = (xlua::xLuaState*)(lua_touserdata(l, lua_upvalueindex(1)));      \
-            assert(xl);                                                                 \
-            return xlua::detail::Meta<class_type>::Call(xl, s_type_info,                \
-                xlua::detail::PerifyMemberName(#Name), Func);                           \
-        }                                                                               \
-    };                                                                                  \
-    desc->AddMember(#Name, &_XLUA_ANONYMOUS::call, IsGlobal);
+#define _XLUA_EXPORT_FUNC_(Name, Func, IsGlobal)                                                \
+    factory->AddMember(IsGlobal, #Name, [](lua_State* l)->int {                                 \
+        static_assert(!xlua::internal::is_null_pointer<decltype(Func)>::value,                  \
+            "can not export func:"#Name" with null pointer");                                   \
+        constexpr xlua::internal::StringView name = xlua::internal::PurifyMemberName(#Name);    \
+        return meta::Call(xlua::internal::GetState(l), desc, name, Func);                       \
+    });
 
-#define _XLUA_EXPORT_FUNC(Name, Func, Meta)   _XLUA_EXPORT_FUNC_(Name, Func, Meta, !std::is_member_function_pointer<decltype(Func)>::value)
+#define _XLUA_EXPORT_FUNC(Name, Func)       \
+    _XLUA_EXPORT_FUNC_(Name, Func, !std::is_member_function_pointer<decltype(Func)>::value)
 
-#define _XLUA_EXPORT_VAR_(Name, GetOp, SetOp, Meta, IsGlobal)                           \
-    static_assert(                                                                      \
-        xlua::detail::IndexerTrait<decltype(GetOp), decltype(SetOp)>::is_allow,         \
-        "can not export var:"#Name" to lua"                                             \
-    );                                                                                  \
-    struct _XLUA_ANONYMOUS {                                                            \
-        static void Get(xlua::xLuaState* l, void* obj, const xlua::detail::TypeInfo* info) {    \
-            xlua::detail::Meta<class_type>::Get(l, obj, info, s_type_info, GetOp);      \
-        }                                                                               \
-        static void Set(xlua::xLuaState* l, void* obj, const xlua::detail::TypeInfo* info) {    \
-            xlua::detail::Meta<class_type>::Set(l, obj, info, s_type_info,              \
-                xlua::detail::PerifyMemberName(#Name), SetOp);                          \
-        }                                                                               \
-    };                                                                                  \
-    desc->AddMember(#Name,                                                              \
-        xlua::detail::is_null_pointer<decltype(GetOp)>::value ? nullptr : &_XLUA_ANONYMOUS::Get,\
-        xlua::detail::is_null_pointer<decltype(SetOp)>::value ? nullptr : &_XLUA_ANONYMOUS::Set,\
-        IsGlobal                                                                        \
+#define _XLUA_EXPORT_VAR_(Name, GetOp, SetOp, IsGlobal)                                         \
+    static_assert(xlua::internal::IndexerTrait<decltype(GetOp), decltype(SetOp)>::is_allow,     \
+        "can not export var:"#Name" to lua" );                                                  \
+    struct _XLUA_ANONYMOUS {                                                                    \
+        static int Get(xlua::State* s, void* obj, const xlua::TypeDesc* src) {                  \
+            return meta::Get(s, obj, src, desc, GetOp);                                         \
+        }                                                                                       \
+        static int Set(xlua::State* s, void* obj, const xlua::TypeDesc* src) {                  \
+            constexpr xlua::internal::StringView name = xlua::internal::PurifyMemberName(#Name);\
+            return meta::Set(s, obj, src, desc, name, SetOp);                                   \
+        }                                                                                       \
+    };                                                                                          \
+    factory->AddMember(IsGlobal, #Name,                                                         \
+        xlua::internal::is_null_pointer<decltype(GetOp)>::value ? nullptr : &_XLUA_ANONYMOUS::Get,\
+        xlua::internal::is_null_pointer<decltype(SetOp)>::value ? nullptr : &_XLUA_ANONYMOUS::Set \
     );
 
-#define _XLUA_IS_STATIC_VAR(GetOp, SetOp)           !xlua::detail::IndexerTrait<decltype(GetOp), decltype(SetOp)>::is_member
-#define _XLUA_EXPORT_VAR(Name, GetOp, SetOp, Meta)  _XLUA_EXPORT_VAR_(Name, GetOp, SetOp, Meta, _XLUA_IS_STATIC_VAR(GetOp, SetOp))
+#define _XLUA_IS_STATIC_VAR(GetOp, SetOp)               \
+    !xlua::internal::IndexerTrait<decltype(GetOp), decltype(SetOp)>::is_member
+#define _XLUA_EXPORT_VAR(Name, GetOp, SetOp)            \
+    _XLUA_EXPORT_VAR_(Name, GetOp, SetOp, _XLUA_IS_STATIC_VAR(GetOp, SetOp))
 
 /* 导出Lua类开始 */
 #define XLUA_EXPORT_CLASS_BEGIN(ClassName, ...)                                         \
-    static_assert(std::is_void<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value ||                \
-        std::is_base_of<_XLUA_SUPER_CLASS(__VA_ARGS__), ClassName>::value,              \
-        "external class is not inherited"                                               \
-    );                                                                                  \
-    static_assert(std::is_void<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value ||                \
-        xlua::detail::IsLuaType<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value,                 \
-        "base type is not declare to export to lua"                                     \
-    );                                                                                  \
     namespace {                                                                         \
-        xlua::detail::TypeNode _XLUA_ANONYMOUS([]() -> const xlua::detail::TypeInfo* {  \
-            return xLuaGetTypeInfo(xlua::Identity<ClassName>());                        \
+        xlua::internal::TypeNode _XLUA_ANONYMOUS([]() {                                 \
+            xLuaGetTypeDesc(xlua::Identity<ClassName>());                               \
         });                                                                             \
-    } /* end namespace */                                                               \
-    const xlua::detail::TypeInfo* xLuaGetTypeInfo(xlua::Identity<ClassName>) {          \
-        using class_type = ClassName;                                                   \
-        using super_type = _XLUA_SUPER_CLASS(__VA_ARGS__);                              \
-        static const xlua::detail::TypeInfo* s_type_info = nullptr;                     \
-        if (s_type_info)                                                                \
-            return s_type_info;                                                         \
-        auto* global = xlua::detail::GlobalVar::GetInstance();                          \
-        if (global == nullptr)                                                          \
-            return nullptr;                                                             \
-        auto* desc = global->AllocType(xlua::detail::TypeCategory::kClass, #ClassName,  \
-            xlua::detail::HasObjIndex<ClassName>::value,                                \
-            xlua::detail::IsWeakObjPtr<ClassName>::value,                               \
-            xlua::detail::GetTypeInfoImpl<super_type>()                                 \
-        );                                                                              \
-        if (desc == nullptr)                                                            \
-            return nullptr;                                                             \
-        static xlua::detail::TypeCasterImpl<ClassName, super_type> s_caster;            \
-        desc->SetCaster(&s_caster);
+    }                                                                                   \
+                                                                                        \
+    const xlua::TypeDesc* xLuaGetTypeDesc(xlua::Identity<ClassName>) {                  \
+        static_assert(std::is_void<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value ||            \
+            std::is_base_of<_XLUA_SUPER_CLASS(__VA_ARGS__), ClassName>::value,          \
+            "external class is not inherited");                                         \
+        static_assert(std::is_void<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value ||            \
+            xlua::IsLuaType<_XLUA_SUPER_CLASS(__VA_ARGS__)>::value,                     \
+            "base type is not declare to export to lua");                               \
+        static const xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {               \
+            using meta = xlua::internal::Meta<ClassName>;                               \
+            auto* factory = xlua::CreateFactory<                                        \
+                ClassName, _XLUA_SUPER_CLASS(__VA_ARGS__)>(#ClassName);
 
 /* 导出lua类结束 */
 #define XLUA_EXPORT_CLASS_END()                                                         \
-        s_type_info = desc->Finalize();                                                 \
-        s_caster.info_ = s_type_info;                                                   \
-        return s_type_info;                                                             \
-    }
+            return factory->Finalize();                                                 \
+        }();                                                                            \
+        return desc;                                                                    \
+    }                                                                                   \
 
 /* 导出全局表 */
 #define XLUA_EXPORT_GLOBAL_BEGIN(Name)                                                  \
     namespace {                                                                         \
-        xlua::detail::TypeNode _XLUA_ANONYMOUS([]() -> const xlua::detail::TypeInfo* {  \
-            using class_type = void;                                                    \
-            static const xlua::detail::TypeInfo* s_type_info = nullptr;                 \
-            if (s_type_info)                                                            \
-                return s_type_info;                                                     \
-            auto* global = xlua::detail::GlobalVar::GetInstance();                      \
-            if (global == nullptr)                                                      \
-                return nullptr;                                                         \
-            auto* desc = global->AllocType(xlua::detail::TypeCategory::kGlobal, #Name,  \
-                false, false, nullptr);                                                 \
-            if (desc == nullptr)                                                        \
-                return nullptr;                                                         \
+        xlua::internal::TypeNode _XLUA_ANONYMOUS([]() {                                 \
+            static xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {                 \
+                using meta = xlua::internal::Meta<void>;                                \
+                auto* factory = xlua::CreateFactory<>();                                \
 
 #define XLUA_EXPORT_GLOBAL_END()                                                        \
-            s_type_info = desc->Finalize();                                             \
-            return s_type_info;                                                         \
-        });                                                                             \
-    }   /* end namespace*/
+                return factory->Finalize();                                             \
+            }();                                                                        \
+        }                                                                               \
+    }
 
-/* 成员函数, 支持静态成员函数 */
-#define XLUA_MEMBER_FUNC(Func)                  _XLUA_EXPORT_FUNC(Func, _EXTRACT_METHOD(Func), MetaFunc)
-#define XLUA_MEMBER_FUNC_AS(Name, Func, ...)    _XLUA_EXPORT_FUNC(Name, _EXTRACT_METHOD(Func, __VA_ARGS__), MetaFunc)
-/* 将外部函数包装为成员函数 */
-#define XLUA_MEMBER_FUNC_EXTEND(Name, Func)     _XLUA_EXPORT_FUNC_(Name, Func, MetaFuncEx, false)
+/* export function, 支持静态成员函数 */
+#define XLUA_FUNCTION(Func)                  _XLUA_EXPORT_FUNC(Func, _XLUA_EXTRACT_METHOD(Func))
+#define XLUA_FUNCTION_AS(Name, Func, ...)    _XLUA_EXPORT_FUNC(Name, _XLUA_EXTRACT_METHOD(Func, __VA_ARGS__))
 
-/* 成员变量, 支持静态成员变量 */
-#define XLUA_MEMBER_VAR(Var)                    _XLUA_EXPORT_VAR(Var, Var, Var, MetaVar)
-#define XLUA_MEMBER_VAR_AS(Name, Var)           _XLUA_EXPORT_VAR(Name, Var, Var, MetaVar)
-#define XLUA_MEMBER_VAR_WRAP(Name, Get, Set)    _XLUA_EXPORT_VAR(Name, Get, Set, MetaVar)
-/* 将外部函数导出为成员变量(非静态) */
-#define XLUA_MEMBER_VAR_EXTEND(Name, Get, Set)  _XLUA_EXPORT_VAR_(Name, Get, Set, MetaVarEx, false)
-
-/* 全局函数 */
-#define XLUA_GLOBAL_FUNC(Func)                  _XLUA_EXPORT_FUNC(Func, Func, MetaFunc)
-#define XLUA_GLOBAL_FUNC_AS(Name, Func)         _XLUA_EXPORT_FUNC(Name, Func, MetaFunc)
-/* 全局变量 */
-#define XLUA_GLOBAL_VAR(Var)                    _XLUA_EXPORT_VAR(Var, Var, Var, MetaVar)
-#define XLUA_GLOBAL_VAR_AS(Name, Var)           _XLUA_EXPORT_VAR(Name, Var, Var, MetaVar)
-#define XLUA_GLOBAL_VAR_WARP(Name, Get, Set)    _XLUA_EXPORT_VAR(Name, Get, Set, MetaVar)
+/* export variate, 支持静态成员变量 */
+#define XLUA_VARIATE(Var)                    _XLUA_EXPORT_VAR(Var, Var, Var)
+#define XLUA_VARIATE_AS(Name, Var)           _XLUA_EXPORT_VAR(Name, Var, Var)
+#define XLUA_VARIATE_WRAP(Name, Get, Set)    _XLUA_EXPORT_VAR(Name, Get, Set)
 
 /* 导出常量表 */
 #define XLUA_EXPORT_CONSTANT_BEGIN(Name)                                                \
     namespace {                                                                         \
-        xlua::detail::ConstNode _XLUA_ANONYMOUS([]()-> const xlua::detail::ConstInfo* { \
-            static xlua::detail::ConstInfo info;                                        \
-            info.name = #Name;                                                          \
-            static xlua::detail::ConstValue values[] = {
+        xlua::internal::ConstValueNode _XLUA_ANONYMOUS(#Name,                           \
+            []()-> const xlua::internal::ConstValue* {                                  \
+                static xlua::internal::ConstValue values[] = {
 
 #define XLUA_EXPORT_CONSTANT_END()                                                      \
-                xlua::detail::MakeConstValue()                                          \
-            };                                                                          \
-            info.values = values;                                                       \
-            return &info;                                                               \
-        }); /* end function */                                                          \
+                    xlua::internal::ConstValue::Make()                                  \
+                };                                                                      \
+                return values;                                                          \
+        });                                                                             \
     } /* end namespace*/
 
-#define XLUA_CONST_VAR(Var)             xlua::detail::MakeConstValue(#Var, Var),
-#define XLUA_CONST_VAR_AS(Name, Var)    xlua::detail::MakeConstValue(#Name, Var),
+#define XLUA_CONSTANT(Var)             xlua::internal::ConstValue::Make(#Var, Var),
+#define XLUA_CONSTANT_AS(Name, Var)    xlua::internal::ConstValue::Make(#Name, Var),
 
 /* 导出预设脚本 */
 #define XLUA_EXPORT_SCRIPT(Name, Str)                                                   \
     namespace {                                                                         \
-        xlua::detail::ScriptNode _XLUA_ANONYMOUS(Name, Str);                            \
+        xlua::internal::ScriptNode _XLUA_ANONYMOUS(Name, Str);                          \
     }

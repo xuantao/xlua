@@ -355,8 +355,7 @@ namespace internal {
             while (s[i] == p[i] && p[i])
                 ++i;
             if (i == l)
-                return s + l;
-
+                return s;
             ++s;
         }
         return nullptr;

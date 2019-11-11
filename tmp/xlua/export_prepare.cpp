@@ -4,82 +4,80 @@
 #include "xlua.h"
 
 int Derived::sIdx = 0;
+//
+//const xlua::TypeDesc* xLuaGetTypeDesc(xlua::Identity<TestObj>) {
+//    using meta = xlua::internal::Meta<Derived>;
+//    using StringView = xlua::internal::StringView;
+//    using xlua::internal::PurifyMemberName;
+//    using xlua::internal::GetState;
+//
+//    static const xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {
+//        auto* factory = xlua::CreateFactory<TestObj>("TestObj");
+//        factory->AddMember(false, "test", [](lua_State*l)->int {
+//            StringView name("test");
+//            return meta::Call(GetState(l), desc, name, &TestObj::test);
+//        });
+//
+//        factory->AddMember(false, "a", [](xlua::State* s, void* obj, const xlua::TypeDesc* info) {
+//            return meta::Get(s, obj, info, desc, &TestObj::a);
+//        }, [](xlua::State* s, void* obj, const xlua::TypeDesc* info) {
+//            constexpr StringView name("a");
+//            return meta::Set(s, obj, info, desc, name, &TestObj::a);
+//        });
+//        return factory->Finalize();
+//    }();
+//
+//    return desc;
+//}
+//
+//const xlua::TypeDesc* xLuaGetTypeDesc(xlua::Identity<Derived>) {
+//    using meta = xlua::internal::Meta<Derived>;
+//    using StringView = xlua::internal::StringView;
+//    using xlua::internal::PurifyMemberName;
+//    using xlua::internal::GetState;
+//
+//    static const xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {
+//        auto* factory = xlua::CreateFactory<Derived, TestObj>("Derived");
+//
+//        factory->AddMember(false, "print", [](lua_State*l)->int {
+//            return meta::Call(GetState(l), desc, PurifyMemberName("print"), &Derived::print);
+//        });
+//
+//        factory->AddMember(false, "szName", [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
+//            return meta::Get(l, obj, info, desc, &Derived::szName);
+//        }, [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
+//            constexpr StringView name = PurifyMemberName("szName"); // this will avoid purify name every call
+//            return meta::Set(l, obj, info, desc, name, &Derived::szName);
+//        });
+//
+//        factory->AddMember(true, "StaticCall", [](lua_State*l)->int {
+//            return meta::Call(GetState(l), desc, PurifyMemberName("print"), &Derived::StaticCall);
+//        });
+//
+//        factory->AddMember(true, "sIdx", [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
+//            return meta::Get(l, obj, info, desc, &Derived::sIdx);
+//        }, [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
+//            return meta::Set(l, obj, info, desc, PurifyMemberName("sIdx"), &Derived::sIdx);
+//        });
+//
+//        return factory->Finalize();
+//    }();
+//
+//    return desc;
+//}
+const xlua::TypeDesc* xLuaGetTypeDesc(xlua::Identity<TestObj>);
+XLUA_EXPORT_CLASS_BEGIN(TestObj)
+XLUA_FUNCTION(&TestObj::test)
+XLUA_VARIATE(&TestObj::a)
+XLUA_EXPORT_CLASS_END()
 
-const xlua::TypeDesc* xLuaGetTypeDesc(xlua::Identity<TestObj>) {
-    using meta = xlua::internal::Meta<Derived>;
-    using StringView = xlua::internal::StringView;
-    using xlua::internal::PurifyMemberName;
-    using xlua::internal::GetState;
-
-    static const xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {
-        auto* factory = xlua::CreateFactory<TestObj>("TestObj");
-        factory->AddMember(false, "test", [](lua_State*l)->int {
-            StringView name("test");
-            return meta::Call(GetState(l), desc, name, &TestObj::test);
-        });
-
-        factory->AddMember(false, "a", [](xlua::State* s, void* obj, const xlua::TypeDesc* info) {
-            return meta::Get(s, obj, info, desc, &TestObj::a);
-        }, [](xlua::State* s, void* obj, const xlua::TypeDesc* info) {
-            constexpr StringView name("a");
-            return meta::Set(s, obj, info, desc, name, &TestObj::a);
-        });
-        return factory->Finalize();
-    }();
-
-    return desc;
-}
-
-const xlua::TypeDesc* xLuaGetTypeDesc(xlua::Identity<Derived>) {
-    using meta = xlua::internal::Meta<Derived>;
-    using StringView = xlua::internal::StringView;
-    using xlua::internal::PurifyMemberName;
-    using xlua::internal::GetState;
-
-    static const xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {
-        auto* factory = xlua::CreateFactory<Derived, TestObj>("Derived");
-
-        factory->AddMember(false, "print", [](lua_State*l)->int {
-            return meta::Call(GetState(l), desc, PurifyMemberName("print"), &Derived::print);
-        });
-
-        factory->AddMember(false, "szName", [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
-            return meta::Get(l, obj, info, desc, &Derived::szName);
-        }, [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
-            constexpr StringView name = PurifyMemberName("szName"); // this will avoid purify name every call
-            return meta::Set(l, obj, info, desc, name, &Derived::szName);
-        });
-
-        factory->AddMember(true, "StaticCall", [](lua_State*l)->int {
-            return meta::Call(GetState(l), desc, PurifyMemberName("print"), &Derived::StaticCall);
-        });
-
-        factory->AddMember(true, "sIdx", [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
-            return meta::Get(l, obj, info, desc, &Derived::sIdx);
-        }, [](xlua::State* l, void* obj, const xlua::TypeDesc* info) {
-            return meta::Set(l, obj, info, desc, PurifyMemberName("sIdx"), &Derived::sIdx);
-        });
-
-        return factory->Finalize();
-    }();
-
-    return desc;
-}
-
-/* register to xlua system */
-namespace {
-    struct TypeNode_1 : xlua::internal::TypeNode {
-        void Reg() override {
-            xLuaGetTypeDesc(xlua::Identity<TestObj>());
-        }
-    } g1;
-
-    struct TypeNode_2 : xlua::internal::TypeNode {
-        void Reg() override {
-            xLuaGetTypeDesc(xlua::Identity<Derived>());
-        }
-    } g2;
-}
+const xlua::TypeDesc* xLuaGetTypeDesc(xlua::Identity<Derived>);
+XLUA_EXPORT_CLASS_BEGIN(Derived, TestObj)
+XLUA_FUNCTION(&Derived::print)
+XLUA_FUNCTION(&Derived::StaticCall)
+XLUA_VARIATE(&Derived::szName)
+XLUA_VARIATE(&Derived::sIdx)
+XLUA_EXPORT_CLASS_END()
 
 struct TestNone;
 
@@ -93,6 +91,12 @@ enum class TestEnum {
     kOne,
     kTwo,
 };
+
+XLUA_EXPORT_CONSTANT_BEGIN(TestEnum)
+XLUA_CONSTANT(TestEnum::kNone)
+XLUA_CONSTANT(TestEnum::kOne)
+XLUA_CONSTANT(TestEnum::kTwo)
+XLUA_EXPORT_CONSTANT_END()
 
 static void test_load_push(xlua::State* l) {
     l->Push(1);

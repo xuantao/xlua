@@ -61,7 +61,7 @@ return {
         if var and var[1] then
             return indexer(nil, var[1], state, obj)
         end
-        print("type[%s] does not own member[%s]", type_name, name)
+        print(string.format("type[%s] does not own member[%s]", type_name, name))
         return nil
     end,
 
@@ -73,9 +73,9 @@ return {
         end
 
         if funcs[name] then
-            print("can not modify type:[%s] member function:[%s]", type_name, name)
+            print(string.format("can not modify type:[%s] member function:[%s]", type_name, name))
         else
-            print("type[%s] does not own member[%s]", type_name, name)
+            print(string.format("type[%s] does not own member[%s]", type_name, name))
         end
     end,
 
