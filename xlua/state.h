@@ -465,20 +465,39 @@ namespace internal {
             return name;
         };
 
-        //char* GetTypeName(char* buff, size_t sz, int index, int count) const {
-        //    buff[0] = 0;
-        //    for (int i = 0, tail = count - 1; i < count; ++i) {
-        //        std::strncat(buff, GetTypeName(index + i), sz);
-        //        if (i < tail)
-        //            std::strncat(buff, ", ", sz);
-        //    }
-        //    return buff;
-        //}
+        size_t GetCallStack(char* buff, size_t size) {
+            lua_Debug dbg;
+            int level = 1;
+            int sz = (int)sz;
+            int len = snprintf(buff, size, "stack taceback:");
+            if (len < 0 || len > sz)
+                return sz;
+            sz -= len;
 
-        //inline bool DoString(const char* script, const char* chunk) {
-        //    luaL_loadbuffer(l_, script, ::strlen(script), chunk);
-        //    return true;
-        //}
+            while (sz && lua_getstack(l_, level, &dbg)) {
+                lua_getinfo(l_, "nSl", &dbg);
+                ++level;
+
+                if (dbg.name)
+                    len = snprintf(buff, sz, "    %s:%d, in faild '%s'", dbg.source, dbg.currentline, dbg.name);
+                else
+                    len = snprintf(buff, sz, "    %s:%d, in main chunk", dbg.source, dbg.currentline);
+
+                if (len < 0 || len > sz)
+                    return sz;
+                else
+                    sz -= len;
+            }
+
+            if (level == 1) {
+                len = snprintf(buff, sz, "    in C?");
+                if (len < 0 || len > sz)
+                    return size;
+                else
+                    sz -= len;
+            }
+            return size - sz;
+        }
 
         inline bool IsNil(int index) {
             return lua_isnil(l_, index);

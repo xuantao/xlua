@@ -333,6 +333,10 @@ public:
         return guard;
     }
 
+    inline size_t GetCallStack(char* buff, size_t size) {
+        return state_.GetCallStack(buff, size);
+    }
+
     /* load global var on stack */
     inline VarType LoadGlobal(const char* path) {
         state_.LoadGlobal(path);

@@ -356,6 +356,14 @@ namespace meta {
 } // namespace meta
 
 namespace utility {
+    static int __type(lua_State* l) {
+        return 0;
+    }
+
+    static int __is_valid(lua_State* l) {
+        return 0;
+    }
+
     /* delcared type cast */
     static int __cast(lua_State* l) {
         return 0;
