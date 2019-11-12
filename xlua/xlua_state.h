@@ -23,15 +23,12 @@ enum class VarType : int8_t {
 class StackGuard {
 public:
     StackGuard() : top_(0), l_(nullptr) {}
-    StackGuard(lua_State* l) : l_(l) {
-        top_ = lua_gettop(l_);
-    }
-    StackGuard(lua_State* l, int off) : l_(l) {
-        top_ = lua_gettop(l_) + off;
-    }
-    StackGuard(StackGuard&& other) : l_(other.l_), top_(other.top_) {
-        other.l_ = nullptr;
-    }
+    StackGuard(std::nullptr_t) : top_(0), l_(nullptr) {}
+    StackGuard(lua_State* l) : l_(l) { Init(0); }
+    StackGuard(lua_State* l, int off) : l_(l) { Init(0); }
+    StackGuard(State* s);
+    StackGuard(State* s, int off);
+    StackGuard(StackGuard&& other) : l_(other.l_), top_(other.top_) { other.l_ = nullptr; }
 
     ~StackGuard() {
         if (l_) lua_settop(l_, top_);
@@ -39,6 +36,11 @@ public:
 
     StackGuard(const StackGuard&) = delete;
     StackGuard& operator = (const StackGuard&) = delete;
+
+private:
+    inline void Init(int off) {
+        if (l_) top_ = lua_gettop(l_) + off;
+    }
 
 protected:
     int top_;
@@ -54,8 +56,11 @@ class CallGuard : private StackGuard {
 
 public:
     CallGuard() : StackGuard() {}
+    CallGuard(std::nullptr_t) : StackGuard() {}
     CallGuard(lua_State* l) : StackGuard(l) {}
     CallGuard(lua_State* l, int off) : StackGuard(l, off) {}
+    CallGuard(State* s) : StackGuard(s) {}
+    CallGuard(State* s, int off) : StackGuard(s, off) {}
     CallGuard(CallGuard&& other) : StackGuard(std::move(other)), ok_(other.ok_) {}
 
     CallGuard(const CallGuard&) = delete;
@@ -314,7 +319,7 @@ public:
 
     template <typename... Args>
     CallGuard DoString(const char* script, const char* chunk, Args&&... args) {
-        CallGuard guard(state_.l_);
+        CallGuard guard(this);
         int ret = luaL_loadbuffer(state_.l_, script, std::char_traits<char>::length(script), chunk);
         if (LUA_OK != ret)
             return guard;
@@ -341,22 +346,35 @@ public:
         return Get<Ty>(-1);
     }
 
-    inline bool SetGlobal(const char* path, bool create) {
-        return state_.SetGlobal(path, create, false);
+    /* set the stack top value as global value and pop stack */
+    inline bool SetGlobal(const char* path) {
+        return state_.SetGlobal(path, false, false);
     }
 
     template <typename Ty>
-    bool SetGlobal(const char* path, Ty& val, bool create) {
+    inline bool SetGlobal(const char* path, Ty&& val) {
         StackGuard guard(state_.l_);
-        Push(val);
-        return SetGlobal(path, create);
+        Push(std::forward<Ty>(val));
+        return SetGlobal(path);
+    }
+
+    /* set global value, is the path is not exist will auto create the table */
+    inline bool MakeGlobal(const char* path) {
+        return state_.SetGlobal(path, true, false);
+    }
+
+    template <typename Ty>
+    inline bool MakeGlobal(const char* path, Ty&& val) {
+        StackGuard guard(state_.l_);
+        Push(std::forward<Ty>(val));
+        return MakeGlobal(path);
     }
 
     template <typename Ky>
     VarType LoadField(int index, const Ky& key) {
         if (!lua_istable(state_.l_, index)) {
             PushNil();
-            return VarType.kNil;
+            return VarType::kNil;
         }
 
         index = lua_absindex(state_.l_, index);
@@ -379,9 +397,9 @@ public:
 
     template <typename Ty, typename Ky>
     Ty GetField(int index, const Ky& key) {
-        using traits = SupportTraits<Ty>;
-        static_assert(traits::is_support, "not support type");
-        static_assert(!traits::is_obj_value, "not support load object value directly");
+        //using traits = SupportTraits<Ty>;
+        //static_assert(traits::is_support, "not support type");
+        //static_assert(!traits::is_obj_value, "not support load object value directly");
         StackGuard guard(state_.l_);
         LoadField(index, key);
         return Get<Ty>(-1);
@@ -438,7 +456,7 @@ public:
     template <typename... Rys, typename... Args>
     inline CallGuard Call(std::tuple<Rys&...>&& ret, Args&&... args) {
         int top = GetTop(); // do call function is on the top stack
-        CallGuard guard(state_.l_, -1);
+        CallGuard guard(this, -1);
 
         PushMul(std::forward<Args>(args)...);
         if (lua_pcall(state_.l_, sizeof...(Args), sizeof...(Rys), 0) == LUA_OK) {
@@ -454,40 +472,40 @@ public:
         VarType vt = VarType::kNil;
 
         switch (lty) {
-        case LUA_TNIL:
-            break;
-        case LUA_TBOOLEAN:
-            vt = VarType::kBoolean;
-            break;
-        case LUA_TLIGHTUSERDATA:
-            ptr = lua_touserdata(state_.l_, index);
+            case LUA_TNIL:
+                break;
+            case LUA_TBOOLEAN:
+                vt = VarType::kBoolean;
+                break;
+            case LUA_TLIGHTUSERDATA:
+                ptr = lua_touserdata(state_.l_, index);
 #if XLUA_ENABLE_LUD_OPTIMIZE
-            if (internal::LightUd::IsValid(ptr))
-                vt = VarType::kUserData;
-            else
+                if (internal::LightUd::IsValid(ptr))
+                    vt = VarType::kUserData;
+                else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-                vt = VarType::kLightUserData;
-            break;
-        case LUA_TNUMBER:
-            if (lua_isinteger(state_.l_, index))
-                vt = VarType::kInteger;
-            else
-                vt = VarType::kNumber;
-            break;
-        case LUA_TSTRING:
-            vt = VarType::kString;
-            break;
-        case LUA_TTABLE:
-            vt = VarType::kTable;
-            break;
-        case LUA_TFUNCTION:
-            vt = VarType::kFunction;
-            break;
-        case LUA_TUSERDATA:
-            ptr = lua_touserdata(state_.l_, index);
-            if (static_cast<internal::FullUd*>(ptr)->IsValid())
-                vt = VarType::kUserData;
-            break;
+                    vt = VarType::kLightUserData;
+                break;
+            case LUA_TNUMBER:
+                if (lua_isinteger(state_.l_, index))
+                    vt = VarType::kInteger;
+                else
+                    vt = VarType::kNumber;
+                break;
+            case LUA_TSTRING:
+                vt = VarType::kString;
+                break;
+            case LUA_TTABLE:
+                vt = VarType::kTable;
+                break;
+            case LUA_TFUNCTION:
+                vt = VarType::kFunction;
+                break;
+            case LUA_TUSERDATA:
+                ptr = lua_touserdata(state_.l_, index);
+                if (static_cast<internal::FullUd*>(ptr)->IsValid())
+                    vt = VarType::kUserData;
+                break;
         }
         return vt;
     }
@@ -500,34 +518,34 @@ public:
         void* ptr = nullptr;
 
         switch (lty) {
-        case LUA_TNIL:
-            break;
-        case LUA_TBOOLEAN:
-            return Variant((bool)lua_toboolean(state_.l_, index));
-        case LUA_TLIGHTUSERDATA:
-            ptr = lua_touserdata(l, index);
+            case LUA_TNIL:
+                break;
+            case LUA_TBOOLEAN:
+                return Variant((bool)lua_toboolean(state_.l_, index));
+            case LUA_TLIGHTUSERDATA:
+                ptr = lua_touserdata(l, index);
 #if XLUA_ENABLE_LUD_OPTIMIZE
-            if (internal::LightUd::IsValid(ptr))
-                return Variant(ptr, Object(-1, this));
+                if (internal::LightUd::IsValid(ptr))
+                    return Variant(ptr, Object(-1, this));
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-            return Variant(ptr);
-        case LUA_TNUMBER:
-            if (lua_isinteger(l, index))
-                return Variant(lua_tointeger(l, index));
-            else
-                return Variant(lua_tonumber(l, index));
-        case LUA_TSTRING:
-            str = lua_tolstring(l, index, &len);
-            return Variant(str, len);
-        case LUA_TTABLE:
-            return Variant(VarType::kTable, Object(state_.RefObj(index), this));
-        case LUA_TFUNCTION:
-            return Variant(VarType::kFunction, Object(state_.RefObj(index), this));
-        case LUA_TUSERDATA:
-            ptr = lua_touserdata(l, index);
-            if (static_cast<internal::FullUd*>(ptr)->IsValid())
-                return Variant(VarType::kUserData, Object(state_.RefObj(index), this));
-            break;
+                return Variant(ptr);
+            case LUA_TNUMBER:
+                if (lua_isinteger(l, index))
+                    return Variant(lua_tointeger(l, index));
+                else
+                    return Variant(lua_tonumber(l, index));
+            case LUA_TSTRING:
+                str = lua_tolstring(l, index, &len);
+                return Variant(str, len);
+            case LUA_TTABLE:
+                return Variant(VarType::kTable, Object(state_.RefObj(index), this));
+            case LUA_TFUNCTION:
+                return Variant(VarType::kFunction, Object(state_.RefObj(index), this));
+            case LUA_TUSERDATA:
+                ptr = lua_touserdata(l, index);
+                if (static_cast<internal::FullUd*>(ptr)->IsValid())
+                    return Variant(VarType::kUserData, Object(state_.RefObj(index), this));
+                break;
         }
         return Variant();
     }
@@ -535,46 +553,46 @@ public:
     void PushVar(const Variant& var) {
         auto* l = state_.l_;
         switch (var.GetType()) {
-        case VarType::kNil:
-            state_.PushNil();
-            break;
-        case VarType::kBoolean:
-            lua_pushboolean(l, var.ToBoolean());
-            break;
-        case VarType::kNumber:
-            lua_pushnumber(l, var.ToDobule());
-            break;
-        case VarType::kInteger:
-            lua_pushinteger(l, var.ToInt64());
-            break;
-        case VarType::kString:
-            lua_pushlstring(l, var.str_.c_str(), var.str_.length());
-            break;
-        case VarType::kTable:
-        case VarType::kFunction:
-            if (var.obj_.IsValid()) {
-                assert(this == var.obj_.state_);
-                state_.LoadRef(var.obj_.index_);
-            } else {
+            case VarType::kNil:
                 state_.PushNil();
-            }
-            break;
-        case VarType::kLightUserData:
-            lua_pushlightuserdata(l, var.ptr_);
-            break;
-        case VarType::kUserData:
-            if (var.obj_.IsValid()) {
-                assert(this == var.obj_.state_);
-#if XLUA_ENABLE_LUD_OPTIMIZE
-                if (var.obj_.index_ == -1)
-                    lua_pushlightuserdata(l, var.ptr_);
-                else
-#endif // XLUA_ENABLE_LUD_OPTIMIZE
+                break;
+            case VarType::kBoolean:
+                lua_pushboolean(l, var.ToBoolean());
+                break;
+            case VarType::kNumber:
+                lua_pushnumber(l, var.ToDobule());
+                break;
+            case VarType::kInteger:
+                lua_pushinteger(l, var.ToInt64());
+                break;
+            case VarType::kString:
+                lua_pushlstring(l, var.str_.c_str(), var.str_.length());
+                break;
+            case VarType::kTable:
+            case VarType::kFunction:
+                if (var.obj_.IsValid()) {
+                    assert(this == var.obj_.state_);
                     state_.LoadRef(var.obj_.index_);
-            } else {
-                state_.PushNil();
-            }
-            break;
+                } else {
+                    state_.PushNil();
+                }
+                break;
+            case VarType::kLightUserData:
+                lua_pushlightuserdata(l, var.ptr_);
+                break;
+            case VarType::kUserData:
+                if (var.obj_.IsValid()) {
+                    assert(this == var.obj_.state_);
+#if XLUA_ENABLE_LUD_OPTIMIZE
+                    if (var.obj_.index_ == -1)
+                        lua_pushlightuserdata(l, var.ptr_);
+                    else
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+                        state_.LoadRef(var.obj_.index_);
+                } else {
+                    state_.PushNil();
+                }
+                break;
         }
     }
 
@@ -613,6 +631,10 @@ public:
     internal::StateData state_;
 };
 
+/* stack guard */
+inline StackGuard::StackGuard(State* s) : l_(s->GetLuaState()) { Init(0); }
+inline StackGuard::StackGuard(State* s, int off) : l_(s->GetLuaState()) { Init(off); }
+
 /* lua object */
 inline void Object::AddRef() {
     if (index_ > 0)
@@ -630,14 +652,14 @@ inline bool UserData::IsType() {
     if (!IsValid())
         return false;
 
-    StackGuard guard(state_->GetLuaState());
+    StackGuard guard(state_);
     state_->PushVar(*this);
     return state_->IsType<Ty>(-1);
 }
 
 template <typename Ty>
 inline Ty UserData::As() {
-    StackGuard guard(state_->GetLuaState());
+    StackGuard guard(state_);
     if (!IsValid())
         state_->PushNil();
     else
@@ -651,9 +673,9 @@ VarType Table::LoadField(const Ky& key) {
     if (!IsValid())
         return VarType::kNil;
 
-    StackGuard guard(state_->GetLuaState());
+    StackGuard guard(state_);
     state_->PushVar(*this);
-    state_->LoadField(key, -1);
+    state_->LoadField(-1, key);
     lua_remove(state_->GetLuaState(), -2);
     return state_->GetType(-1);
 }
@@ -663,7 +685,7 @@ void Table::SetField(const Ky& key) {
     if (!IsValid() || state_->GetTop() == 0)
         return;
 
-    StackGuard guard(state_->GetLuaState());
+    StackGuard guard(state_);
     state_->PushVar(*this);
     state_->Push(key);
     lua_rotate(state_->state_.l_, -3, 1);   //TODO: 这里还不确定参数是否合法
@@ -672,7 +694,7 @@ void Table::SetField(const Ky& key) {
 
 template <typename Ky, typename Ty>
 Ty Table::GetField(const Ky& key) {
-    StackGuard guard(state_->GetLuaState());
+    StackGuard guard(state_);
     if (!IsValid()) {
         state_->PushNil();
     } else {
@@ -688,7 +710,7 @@ void Table::SetField(const Ky& key, Ty& val) {
     if (!IsValid())
         return;
 
-    StackGuard guard(state_->GetLuaState());
+    StackGuard guard(state_);
     state_->PushVar(*this);
     state_->SetField(-1, key, val);
 }

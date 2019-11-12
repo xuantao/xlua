@@ -355,6 +355,28 @@ namespace meta {
     }
 } // namespace meta
 
+namespace utility {
+    /* delcared type cast */
+    static int __cast(lua_State* l) {
+        return 0;
+    }
+
+    /* collection operate, insert element */
+    static int __insert(lua_State* l) {
+        return 0;
+    }
+
+    /* collection operate, remove element */
+    static int __remove(lua_State* l) {
+        return 0;
+    }
+
+    /* collection operate, clear all */
+    static int __clear(lua_State* l) {
+        return 0;
+    }
+}
+
 namespace internal {
     static size_t GetVarNum(const TypeData& td, bool global) {
         size_t n = (global ? td.global_vars : td.member_vars).len;
@@ -444,10 +466,13 @@ namespace internal {
             strcpy_s(buf, 1024, path);
 
         if (s->state_.LoadGlobal(buf) != LUA_TTABLE) {
+            s->PopTop(1);                           // pop load value
             s->state_.NewTable();                   // create table
             lua_pushvalue(s->GetLuaState(), -1);    // copy table
             s->state_.SetGlobal(buf, true, true);   // set global & pop top
         }
+
+        assert(s->GetTop() == 1);
     }
 
     static bool InitState(State* s) {
@@ -515,7 +540,18 @@ namespace internal {
         lua_pop(s->GetLuaState(), 1);                                       // pop nil lightuserdata
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
-        //TODO: setup xlua interface
+        MakeGlobal(s, "xlua");
+        lua_pushcfunction(s->GetLuaState(), &utility::__cast);
+        lua_setfield(s->GetLuaState(), -1, "Cast");
+        lua_pushcfunction(s->GetLuaState(), &utility::__insert);
+        lua_setfield(s->GetLuaState(), -1, "Insert");
+        lua_pushcfunction(s->GetLuaState(), &utility::__remove);
+        lua_setfield(s->GetLuaState(), -1, "Remove");
+        lua_pushcfunction(s->GetLuaState(), &utility::__clear);
+        lua_setfield(s->GetLuaState(), -1, "Clear");
+        lua_pop(s->GetLuaState(), 1);
+
+        assert(s->GetTop() == 0);
         return true;
     }
 
@@ -548,11 +584,13 @@ namespace internal {
         luaL_dostring(s->GetLuaState(), script::kConstMetatable);
         lua_setmetatable(s->GetLuaState(), -2);
         lua_pop(s->GetLuaState(), 1);
+        assert(s->GetTop() == 0);
         return true;
     }
 
     static bool RegScript(State* s, const ScriptNode* node) {
         s->DoString(node->script, node->name);
+        assert(s->GetTop() == 0);
         return true;
     }
 
@@ -591,7 +629,6 @@ namespace internal {
 
     static bool RegDeclared(State* s, const TypeData& td) {
         // create global table
-        StackGuard guard(s->GetLuaState());
         size_t gfn = GetFuncNum(td, true);
         size_t gvn = GetVarNum(td, true);
         if (gfn || gvn) {
@@ -610,6 +647,8 @@ namespace internal {
             lua_pcall(s->GetLuaState(), 6, 1, 0);                   // get metatable
             lua_setmetatable(s->GetLuaState(), -2);                 // set metatable
             s->PopTop(1);                                           // pop global table
+
+            assert(s->GetTop() == 0);
         }
 
         size_t fn = GetFuncNum(td, false);
@@ -651,15 +690,18 @@ namespace internal {
         lua_geti(s->GetLuaState(), LUA_REGISTRYINDEX, s->state_.meta_ref_);
         lua_pushvalue(s->GetLuaState(), -2);
         lua_seti(s->GetLuaState(), -2, td.id);
+        lua_pop(s->GetLuaState(), 4);   // meta_list_table, meta_table, var_table, func_table
+
+        assert(s->GetTop() == 0);
         return true;
     }
 
-    static void Reg(State* l) {
+    static void Reg(State* s) {
         auto* node = g_node_head;
         // reg const value and reg type
         while (node) {
             if (node->type == NodeType::kConst)
-                RegConst(l, static_cast<ConstValueNode*>(node));
+                RegConst(s, static_cast<ConstValueNode*>(node));
             else if (node->type == NodeType::kType)
                 static_cast<TypeNode*>(node)->reg();
             node = node->next;
@@ -669,14 +711,15 @@ namespace internal {
         node = g_node_head;
         while (node) {
             if (node->type == NodeType::kScript)
-                RegScript(l, static_cast<ScriptNode*>(node));
+                RegScript(s, static_cast<ScriptNode*>(node));
             node = node->next;
         }
 
         // reg declared type
         for (size_t i = 1, c = g_env.declared.desc_list.size(); i < c; ++i) {
-            RegDeclared(l, *g_env.declared.desc_list[i]);
+            RegDeclared(s, *g_env.declared.desc_list[i]);
         }
+        assert(s->GetTop() == 0);
     }
 } // namespace internal
 
@@ -692,6 +735,8 @@ State* CreateState(const char* mod) {
     internal::InitState(s);
     internal::Reg(s);
     internal::g_env.state_list.push_back(std::make_pair(l, s));
+
+    assert(s->GetTop() == 0);
     return s;
 }
 
@@ -704,6 +749,8 @@ State* AttachState(lua_State* l, const char* mod) {
     internal::InitState(s);
     internal::Reg(s);
     internal::g_env.state_list.push_back(std::make_pair(l, s));
+
+    assert(s->GetTop() == 0);
     return s;
 }
 

@@ -94,13 +94,13 @@ struct TypeDesc {
 /* collection interface */
 struct ICollection {
     virtual const char* Name() = 0;
-    virtual int Index(void* obj, State* s) = 0;
-    virtual int NewIndex(void* obj, State* s) = 0;
     virtual int Insert(void* obj, State* s) = 0;
     virtual int Remove(void* obj, State* s) = 0;
+    virtual void Clear(void* obj) = 0;
+    virtual int Index(void* obj, State* s) = 0;
+    virtual int NewIndex(void* obj, State* s) = 0;
     virtual int Iter(void* obj, State* s) = 0;
     virtual int Length(void* obj) = 0;
-    virtual void Clear(void* obj) = 0;
 };
 
 /* type desc factory */

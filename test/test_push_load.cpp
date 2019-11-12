@@ -189,9 +189,9 @@ static void sPushLoadDeclare(xlua::State* l) {
     auto base_ptr_4 = l->Get<ShapeBase*>(-1);
 
     /* ptr->value, to super type value */
-    auto triangle_4 = l->Get<Triangle>(-1);
-    auto base_4 = l->Get<ShapeBase>(-1);
-    auto quard_4 = l->Get<Square>(-1);
+    auto triangle_4 = l->Get<Triangle*>(-1);
+    auto base_4 = l->Get<ShapeBase*>(-1);
+    auto quard_4 = l->Get<Square*>(-1);
 
     auto s_q_2 = l->Get<std::shared_ptr<Square>>(-1);
     auto s_q_3 = l->Get<std::shared_ptr<const Square>>(-1);

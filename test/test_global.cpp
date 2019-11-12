@@ -150,9 +150,9 @@ void TestGlobal(xlua::State* l) {
         l->Call("print", std::tie(), triangle, &triangle, quard, &quard);
         LOG_TOP_(l);
         l->NewTable();
-        //l->SetGlobal("Scene.Info.OrignPos", true, false);
+        l->SetGlobal("Scene.Info.OrignPos");
         //l->SetGlobal("Scene.Info.OrignPos", Vec2(), false);
-        //l->SetGlobal("Scene.Info.OrignPos.x", 10.f, false);
+        l->SetGlobal("Scene.Info.OrignPos.x", 10.f/*, false*/);
 
         l->Call("PrintInfo", std::tie());
         LOG_TOP_(l);
