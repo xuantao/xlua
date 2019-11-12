@@ -9,7 +9,7 @@ int main(int argc, char* argvp[]) {
     xlua::State* l = xlua::CreateState(nullptr);
 
     l->LoadGlobal("_G");
-    assert(LUA_TTABLE == l->GetType(-1));
+    assert(xlua::VarType::kTable == l->GetType(-1));
     l->PopTop(1);
 
     TestPushLoad(l);

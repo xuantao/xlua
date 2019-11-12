@@ -377,8 +377,11 @@ public:
         return true;
     }
 
-    template <typename Ky, typename Ty>
+    template <typename Ty, typename Ky>
     Ty GetField(int index, const Ky& key) {
+        using traits = SupportTraits<Ty>;
+        static_assert(traits::is_support, "not support type");
+        static_assert(!traits::is_obj_value, "not support load object value directly");
         StackGuard guard(state_.l_);
         LoadField(index, key);
         return Get<Ty>(-1);
@@ -423,8 +426,18 @@ public:
     }
 
     template <typename... Rys, typename... Args>
+    inline CallGuard Call(const char* global, std::tuple<Rys&...>&& ret, Args&&... args) {
+        if (LoadGlobal(global) != VarType::kFunction) {
+            PopTop(1);
+            return CallGuard();
+        }
+
+        return Call(std::move(ret), std::forward<Args>(args)...);
+    }
+
+    template <typename... Rys, typename... Args>
     inline CallGuard Call(std::tuple<Rys&...>&& ret, Args&&... args) {
-        int top = GetTop();
+        int top = GetTop(); // do call function is on the top stack
         CallGuard guard(state_.l_, -1);
 
         PushMul(std::forward<Args>(args)...);
@@ -432,7 +445,7 @@ public:
             GetMul(top, std::move(ret));
             guard.ok_ = true;
         }
-        return std::move(guard);
+        return guard;
     }
 
     VarType GetType(int index) {

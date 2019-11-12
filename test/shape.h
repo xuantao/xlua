@@ -117,6 +117,8 @@ struct PushVal {
     int b = 0;
 };
 
+struct WeakObjBase {};
+
 struct WeakObj : public WeakObjBase {
     int index_ = 0;
 
@@ -159,7 +161,7 @@ struct TestExportParams {
     void TestNoneExport(NoneExport) {}  // error
     void TestNoneExport(NoneExport*) {} // error
     void TestNoneExport(std::shared_ptr<NoneExport>) {} // error
-    void TestNoneExport(xLuaWeakObjPtr<NoneExport>) {}  // error
+    //void TestNoneExport(xLuaWeakObjPtr<NoneExport>) {}  // error
 };
 
 namespace Global {
@@ -190,6 +192,6 @@ namespace Global {
         static void TestNoneExport(NoneExport) {}  // error
         static void TestNoneExport(NoneExport*) {} // error
         static void TestNoneExport(std::shared_ptr<NoneExport>) {} // error
-        static void TestNoneExport(xLuaWeakObjPtr<NoneExport>) {}  // error
+        //static void TestNoneExport(xLuaWeakObjPtr<NoneExport>) {}  // error
     };
 }

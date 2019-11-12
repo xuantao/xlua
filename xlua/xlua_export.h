@@ -40,6 +40,14 @@ namespace internal {
             return cv;
         }
 
+        static inline ConstValue Make(const char* name, int val) {
+            ConstValue cv;
+            cv.type = Type::kInteger;
+            cv.name = name;
+            cv.float_val = val;
+            return cv;
+        }
+
         static inline ConstValue Make(const char* name, unsigned long long val) {
             ConstValue cv;
             cv.type = Type::kInteger;
@@ -184,18 +192,25 @@ namespace internal {
     template <typename Ty>
     inline void MetaSetArray(State* s, Ty* buf, size_t sz) {
         static_assert(std::is_same<char, Ty>::value, "only support char array");
+
     }
 
-    template <typename Ry>
-    inline void MetaSet_(State* s, Ry* data, std::true_type) {
-        static_assert(std::extent<Ry>::value > 0, "array size must greater than 0");
-        MetaSetArray(s, *data, std::extent<Ry>::value);
-    }
+    //template <typename Ry>
+    //inline void MetaSet_(State* s, Ry* data, std::true_type) {
+    //    static_assert(std::extent<Ry>::value > 0, "array size must greater than 0");
+    //    MetaSetArray(s, *data, std::extent<Ry>::value);
+    //}
 
     template <typename Ry>
     inline void MetaSet_(State* s, const TypeDesc* desc, StringView name, Ry* data, std::false_type) {
         if (CheckMetaVar<Ry>(s, 1, desc, name))
             *data = SupportTraits<Ry>::supporter::Load(s, 1);
+    }
+
+    template <typename Ry>
+    inline void MetaSet_(State* s, const TypeDesc* desc, StringView name, Ry* data, std::true_type) {
+        static_assert(std::extent<Ry>::value > 0, "array size must greater than 0");
+        MetaSetArray(s, *data, std::extent<Ry>::value);
     }
 
     template <typename Ty, typename Ry>
@@ -656,14 +671,14 @@ namespace internal {
 } // namespace internal
 
 /* create global module factory */
-template <typename Ty = void, typename By = void,
+template <typename Ty, typename By = void,
     typename std::enable_if<std::is_void<Ty>::value && std::is_same<Ty, By>::value, int>::type = 0>
 inline ITypeFactory* CreateFactory(const char* name) {
     return internal::CreateFactory(true, name, nullptr);
 }
 
 /* create type module factory */
-template <typename Ty = void, typename By = void,
+template <typename Ty, typename By = void,
     typename std::enable_if<!std::is_void<Ty>::value && !std::is_same<Ty, By>::value, int>::type = 0>
 inline ITypeFactory* CreateFactory(const char* name) {
     auto* factory = internal::CreateFactory(false, name, xLuaGetTypeDesc(Identity<By>()));
@@ -749,14 +764,14 @@ XLUA_NAMESPACE_END
 #define XLUA_EXPORT_GLOBAL_BEGIN(Name)                                                  \
     namespace {                                                                         \
         xlua::internal::TypeNode _XLUA_ANONYMOUS([]() {                                 \
-            static xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {                 \
+            static const xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {           \
                 using meta = xlua::internal::Meta<void>;                                \
-                auto* factory = xlua::CreateFactory<>();                                \
+                auto* factory = xlua::CreateFactory<void>(#Name);                       \
 
 #define XLUA_EXPORT_GLOBAL_END()                                                        \
                 return factory->Finalize();                                             \
             }();                                                                        \
-        }                                                                               \
+        });                                                                             \
     }
 
 /* export function, 支持静态成员函数 */

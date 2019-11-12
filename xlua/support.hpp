@@ -375,7 +375,7 @@ namespace internal {
             int w = snprintf(buff, sz, "[%d] %s(%s), ", (int)(param_idx + 1),
                 supporter::Name(), s->GetTypeName(index));
             if (w > 0 && w < sz)
-                ParamName<Idx - 1>::template GetName(buff + w, sz - w, s, index + 1);
+                ParamName<Idx - 1>::template GetName<Args...>(buff + w, sz - w, s, index + 1);
         }
     };
 
@@ -645,14 +645,14 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true> {
 
     static bool Check(State* s, int index) {
         auto* ud = s->state_.LoadRawUd(index);
-        if (ud == nullptr || ud->minor != internal::UdMinor::SmartPtr)
+        if (ud == nullptr || ud->minor != internal::UdMinor::kSmartPtr)
             return false;
 
         auto* ptr = static_cast<internal::ObjUd*>(ud)->As<internal::SmartPtrData>();
         if (ptr->tag != tag_)
             return false;
 
-        return s->state_.IsUd<Ty>(ud, supporter::TypeInfo());
+        return internal::IsFud(ud, supporter::TypeInfo());
     }
 
     static value_type Load(State* s, int index) {

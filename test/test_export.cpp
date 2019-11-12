@@ -45,28 +45,28 @@ end
 #include <xlua_state.h>
 #include <string.h>
 
-static void TestGetType(xlua::xLuaState* l) {
-    xlua::xLuaGuard guard(l);
+static void TestGetType(xlua::State* l) {
+    xlua::StackGuard guard(l->GetLuaState());
 
     {
         Triangle triangle;
-        l->SetGlobalVar("Test.triangle", &triangle, true);
+        //l->SetGlobal("Test.triangle", &triangle, true);
 
-        auto t_0 = l->GetGlobalVar<Triangle*>("Test.triangle");
+        auto t_0 = l->GetGlobal<Triangle*>("Test.triangle");
         assert(t_0 == &triangle);
 
         l->Call("PrintTriangleType", std::tie());
     }
 
-    auto t_1 = l->GetGlobalVar<Triangle*>("Test.triangle");
+    auto t_1 = l->GetGlobal<Triangle*>("Test.triangle");
     assert(t_1 == nullptr);
     l->Call("PrintTriangleType", std::tie());
 }
 
 
-void TestExport(xlua::xLuaState* l)
+void TestExport(xlua::State* l)
 {
-    xlua::xLuaGuard guard(l);
+    xlua::StackGuard guard(l->GetLuaState());
     l->DoString(s_lua_str, "TestExport");
 
     l->Call("TraverseMeta", std::tie(), "Triangle");

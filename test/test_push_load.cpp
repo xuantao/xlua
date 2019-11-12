@@ -3,9 +3,9 @@
 #include <xlua_state.h>
 #include <string.h>
 
-static int sLuaCall_1(xlua::xLuaState* l) {
-    printf("int sLuaCall_1(xlua::xLuaState* l)\n");
-    auto f = l->GetTableField<lua_CFunction>(1, "Call_1");
+static int sLuaCall_1(xlua::State* l) {
+    printf("int sLuaCall_1(xlua::State* l)\n");
+    auto f = l->GetField<lua_CFunction>(1, "Call_1");
     // 非标准Lua导出函数会通过中转函数转发
     assert((void*)f != &sLuaCall_1);
     return 0;
@@ -20,17 +20,17 @@ static int sLuaCall_2(lua_State* l) {
     return 0;
 }
 
-static int sLuaCall_3(xlua::xLuaState* l) {
-    printf("int sLuaCall_3(xlua::xLuaState* l)\n");
+static int sLuaCall_3(xlua::State* l) {
+    printf("int sLuaCall_3(xlua::State* l)\n");
     return 0;
 }
 
 #define _TEST_PUSH_LOAD_BASIC(Var)  \
     l->Push(Var);   \
-    assert(Var == l->Load<decltype(Var)>(-1))
+    assert(Var == l->Get<decltype(Var)>(-1))
 
-static void sPushLoadBasic(xlua::xLuaState* l) {
-    xlua::xLuaGuard guard(l);
+static void sPushLoadBasic(xlua::State* l) {
+    xlua::StackGuard guard(l->GetLuaState());
     bool b = true;
     char c = 'a';
     unsigned char uc = 'b';
@@ -61,10 +61,10 @@ static void sPushLoadBasic(xlua::xLuaState* l) {
     _TEST_PUSH_LOAD_BASIC(d);
 
     l->Push(p);
-    assert(strcmp(p, l->Load<const char*>(-1)) == 0);
+    assert(strcmp(p, l->Get<const char*>(-1)) == 0);
 
     l->Push((const void*)p);
-    assert(l->Load<const void*>(-1) == p);
+    assert(l->Get<const void*>(-1) == p);
 
     assert(l->GetTop() == 15);
 
@@ -85,7 +85,7 @@ static void sPushLoadBasic(xlua::xLuaState* l) {
         const char* l_p = nullptr;
         void* l_v = nullptr;
 
-        l->LoadMul(1, std::tie(l_b, l_c, l_uc, l_s, l_us, l_i, l_ui,
+        l->GetMul(1, std::tie(l_b, l_c, l_uc, l_s, l_us, l_i, l_ui,
             l_ln, l_ul, l_ll, l_ull, l_f, l_d, l_p, l_v));
         assert(b == l_b);
         assert(c == l_c);
@@ -105,29 +105,29 @@ static void sPushLoadBasic(xlua::xLuaState* l) {
     }
 }
 
-static void sPushLoadExtend(xlua::xLuaState* l) {
-    xlua::xLuaGuard guard(l);
-    Color c{1, 2, 3, 4};
+static void sPushLoadExtend(xlua::State* l) {
+    //xlua::StackGuard guard(l->GetLuaState());
+    //Color c{1, 2, 3, 4};
 
-    l->Push(c);
-    //l->Push(&c);  // can not push extend type pointer
+    //l->Push(c);
+    ////l->Push(&c);  // can not push extend type pointer
 
-    auto d1 = l->Load<Color>(-1);
-    assert(c.a == d1.a && c.r == d1.r && c.g == d1.g && c.b == d1.b);
+    //auto d1 = l->Get<Color>(-1);
+    //assert(c.a == d1.a && c.r == d1.r && c.g == d1.g && c.b == d1.b);
 
-    auto d2 = l->Load<const Color>(-1);
-    assert(c.a == d2.a && c.r == d2.r && c.g == d2.g && c.b == d2.b);
+    //auto d2 = l->Get<const Color>(-1);
+    //assert(c.a == d2.a && c.r == d2.r && c.g == d2.g && c.b == d2.b);
 
-    //auto d3 = l->Load<const Color&>(-1);  // can not load reference value
+    ////auto d3 = l->Get<const Color&>(-1);  // can not load reference value
 
-    PushVal pv;
-    l->Push(pv);
+    //PushVal pv;
+    //l->Push(pv);
 
-    //l->Load<PushVal>(-1); // has not declared load from lua
+    //l->Get<PushVal>(-1); // has not declared load from lua
 }
 
-static void sPushLoadDeclare(xlua::xLuaState* l) {
-    xlua::xLuaGuard guard(l);
+static void sPushLoadDeclare(xlua::State* l) {
+    xlua::StackGuard guard(l->GetLuaState());
     Square quard;
     const ShapeBase* const cbc = &quard;
     const ShapeBase* cb = &quard;
@@ -137,26 +137,26 @@ static void sPushLoadDeclare(xlua::xLuaState* l) {
     //l->Push(cb);  // can not push const value pointer
     //l->Push(cbc); // can not push const value pointer
 
-    const ShapeBase* const cbc2 = l->Load<decltype(cbc)>(-1);
-    ShapeBase* const bc2 = l->Load<decltype(bc)>(-1);
-    cb = l->Load<decltype(cb)>(-1);
+    const ShapeBase* const cbc2 = l->Get<decltype(cbc)>(-1);
+    ShapeBase* const bc2 = l->Get<decltype(bc)>(-1);
+    cb = l->Get<decltype(cb)>(-1);
 
     assert(cbc == cbc2 && bc2 == bc);
 
     // allow pointer to value, if pointer is nullptr, return default value
-    auto base_value1 = l->Load<ShapeBase>(-1);
-    auto base_value2 = l->Load<const ShapeBase>(-1);
-    auto base_value3 = l->Load<ShapeBase>(-2);         // log error, obj is nil
-    auto base_value4 = l->Load<const ShapeBase>(-2);   // log error, obj is nil
+    //auto base_value1 = l->Get<ShapeBase>(-1);
+    //auto base_value2 = l->Get<const ShapeBase>(-1);
+    //auto base_value3 = l->Get<ShapeBase>(-2);         // log error, obj is nil
+    //auto base_value4 = l->Get<const ShapeBase>(-2);   // log error, obj is nil
 
-    Triangle* triangle = l->Load<Triangle*>(-1);        // log error, type error
+    Triangle* triangle = l->Get<Triangle*>(-1);        // log error, type error
     assert(triangle == nullptr);    // type not allow
 
     l->Push(&quard);
 
     /* 子类能够转换为基类 */
-    auto triangle_ptr_2 = l->Load<Triangle*>(-1);
-    auto base_ptr_2 = l->Load<ShapeBase*>(-1);
+    auto triangle_ptr_2 = l->Get<Triangle*>(-1);
+    auto base_ptr_2 = l->Get<ShapeBase*>(-1);
 
     /* 这里开启多继承才能正确转换 */
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
@@ -169,38 +169,38 @@ static void sPushLoadDeclare(xlua::xLuaState* l) {
 
     l->Push(quard);
     /* value -> ptr */
-    auto triangle_ptr_3 = l->Load<Triangle*>(-1);
-    auto base_ptr_3 = l->Load<ShapeBase*>(-1);
-
-    /* to super type value */
-    auto triangle_3 = l->Load<Triangle>(-1);
-    auto base_3 = l->Load<ShapeBase>(-1);
-
-#if XLUA_ENABLE_MULTIPLE_INHERITANCE
-    assert(base_ptr_3 == triangle_ptr_3);
-#else
-    assert(base_ptr_3 != triangle_ptr_3);
-#endif
+//    auto triangle_ptr_3 = l->Get<Triangle*>(-1);
+//    auto base_ptr_3 = l->Get<ShapeBase*>(-1);
+//
+//    /* to super type value */
+//    auto triangle_3 = l->Get<Triangle>(-1);
+//    auto base_3 = l->Get<ShapeBase>(-1);
+//
+//#if XLUA_ENABLE_MULTIPLE_INHERITANCE
+//    assert(base_ptr_3 == triangle_ptr_3);
+//#else
+//    assert(base_ptr_3 != triangle_ptr_3);
+//#endif
 
     auto s_q = std::make_shared<Square>();
     l->Push(s_q);
 
-    auto triangle_ptr_4 = l->Load<Triangle*>(-1);
-    auto base_ptr_4 = l->Load<ShapeBase*>(-1);
+    auto triangle_ptr_4 = l->Get<Triangle*>(-1);
+    auto base_ptr_4 = l->Get<ShapeBase*>(-1);
 
     /* ptr->value, to super type value */
-    auto triangle_4 = l->Load<Triangle>(-1);
-    auto base_4 = l->Load<ShapeBase>(-1);
-    auto quard_4 = l->Load<Square>(-1);
+    auto triangle_4 = l->Get<Triangle>(-1);
+    auto base_4 = l->Get<ShapeBase>(-1);
+    auto quard_4 = l->Get<Square>(-1);
 
-    auto s_q_2 = l->Load<std::shared_ptr<Square>>(-1);
-    auto s_q_3 = l->Load<std::shared_ptr<const Square>>(-1);
+    auto s_q_2 = l->Get<std::shared_ptr<Square>>(-1);
+    auto s_q_3 = l->Get<std::shared_ptr<const Square>>(-1);
     assert(s_q == s_q_2);
     assert(s_q_3 == s_q_2);
 
     /* to super type shared_ptr */
-    auto s_t_1 = l->Load<std::shared_ptr<Triangle>>(-1);
-    auto s_b_1 = l->Load<std::shared_ptr<ShapeBase>>(-1);
+    auto s_t_1 = l->Get<std::shared_ptr<Triangle>>(-1);
+    auto s_b_1 = l->Get<std::shared_ptr<ShapeBase>>(-1);
 
 #if XLUA_ENABLE_MULTIPLE_INHERITANCE
     assert(base_ptr_4 == triangle_ptr_4);
@@ -226,8 +226,8 @@ namespace {
     };
 }
 
-void sPushLoadFunction(xlua::xLuaState* l) {
-    xlua::xLuaGuard guard(l);
+void sPushLoadFunction(xlua::State* l) {
+    xlua::StackGuard guard(l->GetLuaState());
     int(*f_1)() = []()-> int {
         printf("[]()-> int\n");
         return 1;
@@ -256,8 +256,8 @@ void sPushLoadFunction(xlua::xLuaState* l) {
         return 3;
     };
 
-    int(*f_6)(xlua::xLuaState*) = [](xlua::xLuaState* l) -> int {
-        printf("[](xlua::xLuaState* l) -> int\n");
+    int(*f_6)(xlua::State*) = [](xlua::State* l) -> int {
+        printf("[](xlua::State* l) -> int\n");
         l->PushMul(true, "xlua", 1.01f);
         return 3;
     };
@@ -324,22 +324,22 @@ void sPushLoadFunction(xlua::xLuaState* l) {
         }
 
         l->Push(s_q);
-        l->LoadTableField(-1, "TestParam_1");
+        l->LoadField(-1, "TestParam_1");
         if (l->Call(std::tie(int_val), &quard, 101, "xlua", &quard)) {
             assert(int_val == 1);
         }
 
-        l->LoadTableField(-1, "TestParam_2");
+        l->LoadField(-1, "TestParam_2");
         if (l->Call(std::tie(), &quard, 101, "xlua", &quard)) {
             assert(true);
         }
 
-        l->LoadTableField(-1, "TestParam_3");
+        l->LoadField(-1, "TestParam_3");
         if (l->Call(std::tie(int_val), &quard, 101, "xlua", &quard)) {
             assert(int_val == 1);
         }
 
-        l->LoadTableField(-1, "TestParam_4");
+        l->LoadField(-1, "TestParam_4");
         if (l->Call(std::tie(), &quard, 101, "xlua", &quard)) {
             assert(true);
         }
@@ -372,7 +372,7 @@ void sPushLoadFunction(xlua::xLuaState* l) {
     }
 }
 
-static void sPushLoadTable(xlua::xLuaState* l) {
+static void sPushLoadTable(xlua::State* l) {
     bool is_ok = false;
     l->NewTable();
     // set value and pop the value
@@ -392,78 +392,78 @@ static void sPushLoadTable(xlua::xLuaState* l) {
     assert(l->GetTop() == 0);
 
     // remove global tables
-    is_ok = l->SetGlobalVar("Test.Table.Instance", nullptr);
-    assert(is_ok);
-    is_ok = l->SetGlobalVar("Test.Table", nullptr);
-    assert(is_ok);
-    is_ok = l->SetGlobalVar("Test", nullptr);
-    assert(is_ok);
-    assert(l->GetTop() == 0);
+    //is_ok = l->SetGlobal("Test.Table.Instance", nullptr, false);
+    //assert(is_ok);
+    //is_ok = l->SetGlobal("Test.Table", nullptr, false);
+    //assert(is_ok);
+    //is_ok = l->SetGlobal("Test", nullptr, false);
+    //assert(is_ok);
+    //assert(l->GetTop() == 0);
 
-    int ty = 0;
+    xlua::VarType ty = xlua::VarType::kNil;
     // load value on the stack, is failed push nil on the stack
     ty = l->LoadGlobal("");
-    assert(ty == LUA_TNIL);
-    assert(l->GetType(-1) == LUA_TNIL);
+    assert(ty == xlua::VarType::kNil);
+    assert(l->GetType(-1) == xlua::VarType::kNil);
     assert(l->GetTop() == 1);
     l->PopTop(1);
 
     ty = l->LoadGlobal("Test");
-    assert(ty == LUA_TNIL);
-    assert(l->GetType(-1) == LUA_TNIL);
+    assert(ty == xlua::VarType::kNil);
+    assert(l->GetType(-1) == xlua::VarType::kNil);
     assert(l->GetTop() == 1);
     l->PopTop(1);
 
     ty = l->LoadGlobal("Test.Table");
-    assert(ty == LUA_TNIL);
-    assert(l->GetType(-1) == LUA_TNIL);
+    assert(ty == xlua::VarType::kNil);
+    assert(l->GetType(-1) == xlua::VarType::kNil);
     assert(l->GetTop() == 1);
     l->PopTop(1);
 
     // set global var failed
-    is_ok = l->SetGlobalVar("Test.Table.Instance", 1, false);
+    //is_ok = l->SetGlobal("Test.Table.Instance", 1, false);
     assert(is_ok == false);
     assert(l->GetTop() == 0);
 
     // create table & set global table
-    l->SetGlobalVar("Test.Table.Instance", l->CreateTable(), true);
-    xlua::xLuaTable table = l->GetGlobalVar<xlua::xLuaTable>("Test.Table.Instance");
-    assert(table);
+    //l->SetGlobal("Test.Table.Instance", l->CreateTable(), true);
+    //xlua::Table table = l->GetGlobal<xlua::Table>("Test.Table.Instance");
+    //assert(table);
     assert(l->GetTop() == 0);
 
-    is_ok = l->SetTableField(table, "Call_1", &sLuaCall_1);
-    assert(is_ok);
-    assert(l->GetTop() == 0);
+    //is_ok = l->SetField(table, "Call_1", &sLuaCall_1);
+    //assert(is_ok);
+    //assert(l->GetTop() == 0);
 
-    is_ok = l->SetTableField(table, "Call_2", &sLuaCall_2);
-    assert(is_ok);
-    assert(l->GetTop() == 0);
+    //is_ok = l->SetField(table, "Call_2", &sLuaCall_2);
+    //assert(is_ok);
+    //assert(l->GetTop() == 0);
 
-    is_ok = l->SetTableField(table, "Call_3", &sLuaCall_3);
-    assert(is_ok);
-    assert(l->GetTop() == 0);
+    //is_ok = l->SetField(table, "Call_3", &sLuaCall_3);
+    //assert(is_ok);
+    //assert(l->GetTop() == 0);
 
-    if (!l->Call(table, "Call_1", std::tie()))
-        assert(false);
-    assert(l->GetTop() == 0);
+    //if (!l->Call(table, "Call_1", std::tie()))
+    //    assert(false);
+    //assert(l->GetTop() == 0);
 
-    if (!l->Call(table, "Call_2", std::tie()))
-        assert(false);
-    assert(l->GetTop() == 0);
+    //if (!l->Call(table, "Call_2", std::tie()))
+    //    assert(false);
+    //assert(l->GetTop() == 0);
 
-    if (!l->Call(table, "Call_3", std::tie()))
-        assert(false);
-    assert(l->GetTop() == 0);
+    //if (!l->Call(table, "Call_3", std::tie()))
+    //    assert(false);
+    //assert(l->GetTop() == 0);
 
-    xlua::xLuaFunction f = l->GetTableField<xlua::xLuaFunction>(table, "Call_2");
-    assert(f);
-    assert(l->GetTop() == 0);
+    //xlua::Function f = l->GetField<xlua::Function>(table, "Call_2");
+    //assert(f);
+    //assert(l->GetTop() == 0);
 
-    if (!l->Call(f, std::tie(), table))
-        assert(false);
+    //if (!l->Call(f, std::tie(), table))
+    //    assert(false);
 }
 
-void TestPushLoad(xlua::xLuaState* l)
+void TestPushLoad(xlua::State* l)
 {
     int top = l->GetTop();
 

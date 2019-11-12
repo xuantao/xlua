@@ -138,10 +138,10 @@ struct ObjTest {
     }
 };
 
-void TestGlobal(xlua::xLuaState* l) {
+void TestGlobal(xlua::State* l) {
     l->DoString(sLuaBuf, "test_global");
     {
-        xlua::xLuaGuard guard(l);
+        xlua::StackGuard guard(l->GetLuaState());
         Triangle triangle;
         Square quard;
 
@@ -150,55 +150,56 @@ void TestGlobal(xlua::xLuaState* l) {
         l->Call("print", std::tie(), triangle, &triangle, quard, &quard);
         LOG_TOP_(l);
         l->NewTable();
-        l->SetGlobal("Scene.Info.OrignPos", true);
-        l->SetGlobalVar("Scene.Info.OrignPos", Vec2());
-        l->SetGlobalVar("Scene.Info.OrignPos.x", 10.f);
+        //l->SetGlobal("Scene.Info.OrignPos", true, false);
+        //l->SetGlobal("Scene.Info.OrignPos", Vec2(), false);
+        //l->SetGlobal("Scene.Info.OrignPos.x", 10.f, false);
 
         l->Call("PrintInfo", std::tie());
         LOG_TOP_(l);
         Vec2 v1;
-        v1.x = l->GetGlobalVar<float>("Scene.Info.OrignPos.x");
+        v1.x = l->GetGlobal<float>("Scene.Info.OrignPos.x");
 
-        Vec2 v2 = l->GetGlobalVar<Vec2>("Scene.Info.OrignPos");
+        //Vec2 v2 = l->GetGlobal<Vec2>("Scene.Info.OrignPos");
 
-        printf("v1.x=%f, v2.x=%f, v2.y=%f\n", v1.x, v2.x, v2.y);
+        //printf("v1.x=%f, v2.x=%f, v2.y=%f\n", v1.x, v2.x, v2.y);
     }
 
     {
         Triangle triangle;
         Square quard;
         LOG_TOP_(l);
-        auto print = l->GetGlobalVar<xlua::xLuaFunction>("print");
-        auto table = l->GetGlobalVar<xlua::xLuaTable>("GlobalVar");
+        auto print = l->GetGlobal<xlua::Function>("print");
+        auto table = l->GetGlobal<xlua::Table>("GlobalVar");
         LOG_TOP_(l);
-        l->Call(print, std::tie(), triangle, &triangle, quard, &quard);
+        print(std::tie(), triangle, &triangle, quard, &quard);
+        //l->Call(print, std::tie(), triangle, &triangle, quard, &quard);
         LOG_TOP_(l);
-        l->Call(table, "DoTest", std::tie());
+        table.Call("DoTest", std::tie());
         LOG_TOP_(l);
     }
 
     {
         Triangle triangle;
         Square quard;
-        l->Call("CastToTriangle", std::tie(), static_cast<ShapeBase*>(&triangle));
-        l->Call("CastToSquare", std::tie(), static_cast<ShapeBase*>(&quard));
-        l->Call("TestMultyInherit", std::tie(), &quard);
+        //l->Call("CastToTriangle", std::tie(), static_cast<ShapeBase*>(&triangle));
+        //l->Call("CastToSquare", std::tie(), static_cast<ShapeBase*>(&quard));
+        //l->Call("TestMultyInherit", std::tie(), &quard);
 
         l->Push(&quard);
-        ShapeBase* base1 = l->Load<ShapeBase*>(-1);
+        ShapeBase* base1 = l->Get<ShapeBase*>(-1);
         ShapeBase* base2 = &quard;
         assert(base1 == base2); // 关闭多继承时这里的断言会失败
     }
 
     {
-        xlua::xLuaGuard guard(l);
+        xlua::StackGuard guard(l->GetLuaState());
         WeakObj weak_obj;
-        l->Push(weak_obj);
-        l->Push(&weak_obj);
-        l->Push(xLuaWeakObjPtr<WeakObj>(nullptr));
-        l->Load<xLuaWeakObjPtr<WeakObj>>(-2);
-        l->Load<WeakObj*>(-2);
-        l->Load<WeakObj>(-2);
+        //l->Push(weak_obj);
+        //l->Push(&weak_obj);
+        //l->Push(xLuaWeakObjPtr<WeakObj>(nullptr));
+        //l->Load<xLuaWeakObjPtr<WeakObj>>(-2);
+        //l->Load<WeakObj*>(-2);
+        //l->Load<WeakObj>(-2);
     }
 
     {
@@ -206,20 +207,20 @@ void TestGlobal(xlua::xLuaState* l) {
         Square quard_1;
         auto triangle_2 = std::make_shared<Triangle>();
 
-        printf("test triangle nullptr\n");
-        l->Call("TestTriangleNullptr", std::tie(), &quard_1, nullptr);
+        //printf("test triangle nullptr\n");
+        //l->Call("TestTriangleNullptr", std::tie(), &quard_1, nullptr);
 
-        printf("test triangle ptr\n");
-        l->Call("TestTriangle", std::tie(), &quard_1, &triangle_1);
+        //printf("test triangle ptr\n");
+        //l->Call("TestTriangle", std::tie(), &quard_1, &triangle_1);
 
-        printf("test triangle value\n");
-        l->Call("TestTriangle", std::tie(), &quard_1, triangle_1);
+        //printf("test triangle value\n");
+        //l->Call("TestTriangle", std::tie(), &quard_1, triangle_1);
 
-        printf("test std::shared_ptr<triangle>\n");
-        l->Call("TestTriangle", std::tie(), &quard_1, triangle_2);
+        //printf("test std::shared_ptr<triangle>\n");
+        //l->Call("TestTriangle", std::tie(), &quard_1, triangle_2);
 
-        printf("test export global\n");
-        l->Call("TestExportGlobal", std::tie());
+        //printf("test export global\n");
+        //l->Call("TestExportGlobal", std::tie());
     }
 
     {
@@ -238,15 +239,15 @@ void TestGlobal(xlua::xLuaState* l) {
         l->Push(f2);
         l->Call(std::tie());
 
-        lua_gc(l->GetState(), LUA_GCCOLLECT, 0);
+        lua_gc(l->GetLuaState(), LUA_GCCOLLECT, 0);
     }
     {
         ShapeBase o;
         Square q;
 
-        l->Call("TestExtend", std::tie(), &o);
-        l->Call("TestExtend", std::tie(), &q);
-        l->Call("TestPrintEnum", std::tie());
+        //l->Call("TestExtend", std::tie(), &o);
+        //l->Call("TestExtend", std::tie(), &q);
+        //l->Call("TestPrintEnum", std::tie());
     }
 
     LOG_TOP_(l);
