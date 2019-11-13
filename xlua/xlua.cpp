@@ -162,6 +162,14 @@ namespace internal {
         return it == g_env.state_list.end() ? nullptr : it->second;
     }
 
+    const TypeDesc* GetTypeDesc(const char* name) {
+        for (auto* data : g_env.declared.desc_list) {
+            if (strcmp(data->name, name) == 0)
+                return data;
+        }
+        return nullptr;
+    }
+
 #if XLUA_ENABLE_LUD_OPTIMIZE
     static const TypeDesc* GetWeakObjDesc(int weak_index, int obj_index) {
         auto& caches = g_env.declared.weak_data_list[weak_index];
@@ -241,7 +249,7 @@ namespace meta {
     using namespace internal;
     static int __gc(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
-        ASSERT_FUD(ud);
+        assert(ud && ud->IsValid());
         GetState(l)->state_.OnGc(ud);
         return 0;
     }
@@ -322,32 +330,32 @@ namespace meta {
 
     static int __index_collection(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
-        ASSERT_FUD(ud);
+        assert(ud && ud->IsValid() && ud->major == internal::UdMajor::kCollection);
         return ud->collection->Index(ud->ptr, GetState(l));
     }
 
     static int __newindex_collection(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
-        ASSERT_FUD(ud);
+        assert(ud && ud->IsValid() && ud->major == internal::UdMajor::kCollection);
         return ud->collection->NewIndex(ud->ptr, GetState(l));
     }
 
     static int __len_collection(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
-        ASSERT_FUD(ud);
+        assert(ud && ud->IsValid() && ud->major == internal::UdMajor::kCollection);
         lua_pushnumber(l, ud->collection->Length(ud->ptr));
         return 1;
     }
 
     static int __pairs_collection(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
-        ASSERT_FUD(ud);
+        assert(ud && ud->IsValid() && ud->major == internal::UdMajor::kCollection);
         return ud->collection->Iter(ud->ptr, GetState(l));
     }
 
     static int __tostring_collection(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
-        ASSERT_FUD(ud);
+        assert(ud && ud->IsValid() && ud->major == internal::UdMajor::kCollection);
         char buf[256];
         snprintf(buf, 256, "%s(%p)", ud->collection->Name(), ud->ptr);
         lua_pushstring(l, buf);
@@ -356,31 +364,174 @@ namespace meta {
 } // namespace meta
 
 namespace utility {
+    struct UdInfo {
+        internal::UdMajor major = internal::UdMajor::kNone;
+        internal::UdMinor minor = internal::UdMinor::kNone;
+        void* ud = nullptr;
+
+        union {
+            const TypeDesc* desc;
+            ICollection* collection;
+        };
+        union {
+            void* obj;
+            WeakObjRef ref;
+        };
+
+        explicit inline operator bool() const {
+            return major != internal::UdMajor::kNone &&
+                minor != internal::UdMinor::kNone &&
+                ud != nullptr;
+        }
+    };
+
+    static UdInfo GetUdInfo(lua_State* l, int index) {
+        UdInfo info;
+        int l_ty = lua_type(l, index);
+        if (l_ty == LUA_TLIGHTUSERDATA) {
+#if XLUA_ENABLE_LUD_OPTIMIZE
+            auto ud = internal::LightUd::Make(lua_touserdata(l, index));
+            const TypeDesc* desc = ud ? GetLightUdDesc(ud) : nullptr;
+            if (desc) {
+                info.major = internal::UdMajor::kDeclaredType;
+                info.minor = internal::UdMinor::kPtr;
+                info.desc = desc;
+                info.ud = ud.value;
+                if (desc->weak_index)
+                    info.ref = ud.ToWeakRef();
+                else
+                    info.obj = ud.ToObj();
+            }
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+        } else if (l_ty == LUA_TUSERDATA) {
+            auto* ud = static_cast<internal::FullUd*>(lua_touserdata(l, index));
+            if (ud && ud->IsValid()) {
+                info.major = ud->major;
+                info.minor = ud->minor;
+                info.ud = ud;
+                info.desc = ud->desc;
+                info.ref = ud->ref;
+            }
+        }
+        return info;
+    }
+
     static int __type(lua_State* l) {
-        return 0;
+        int l_ty = lua_type(l, 1);
+        if (l_ty == LUA_TLIGHTUSERDATA || l_ty == LUA_TUSERDATA) {
+            auto info = GetUdInfo(l, 1);
+            if (info) {
+                if (info.major == internal::UdMajor::kDeclaredType)
+                    lua_pushstring(l, info.desc->name);
+                else
+                    lua_pushstring(l, info.collection->Name());
+            } else {
+                lua_pushstring(l, "unknown");
+            }
+        } else {
+            lua_pushstring(l, lua_typename(l, 1));
+        }
+        return 1;
     }
 
     static int __is_valid(lua_State* l) {
-        return 0;
+        auto info = GetUdInfo(l, 1);
+        if (!info) {
+            lua_pushboolean(l, false);
+        } else if (info.major == internal::UdMajor::kCollection) {
+            lua_pushboolean(l, true);
+        } else if (info.minor == internal::UdMinor::kPtr) {
+            if (info.desc->weak_index)
+                lua_pushboolean(l, info.desc->weak_proc.getter(info.ref) != nullptr);
+            else
+                lua_pushboolean(l, true);
+        } else {
+            lua_pushboolean(l, true);
+        }
+        return 1;
     }
 
     /* delcared type cast */
     static int __cast(lua_State* l) {
-        return 0;
+        auto info = GetUdInfo(l, 1);
+        auto* name = lua_tostring(l, 2);
+        if (!info || name == nullptr || *name == 0)
+            return 0;   // invalid parameters
+        if (info.major != internal::UdMajor::kDeclaredType || info.minor == internal::UdMinor::kValue)
+            return 0;   // collection or value data not support cast
+
+        const auto* desc = internal::GetTypeDesc(name);
+        if (desc == nullptr)
+            return 0;
+
+        if (internal::IsBaseOf(desc, info.desc)) {
+            lua_pushvalue(l, 1);
+            return 1;
+        }
+
+        void* derived = nullptr;
+        if (info.desc->weak_index)
+            derived = ToDerived(info.desc->weak_proc.getter(info.ref), info.desc, desc);
+        else
+            derived = ToDerived(info.obj, info.desc, desc);
+        if (derived == nullptr)
+            return 0;   // dynamic_cast failed
+
+#if XLUA_ENABLE_LUD_OPTIMIZE
+        if (info.minor == internal::UdMinor::kPtr && info.desc->lud_index) {
+            internal::LightUd lud;
+            if (info.desc->weak_index) {
+                auto ref = desc->weak_proc.maker(derived);
+                lud = internal::LightUd::Make(desc->weak_index, ref.index, ref.serial);
+            } else {
+                lud = internal::LightUd::Make(desc->lud_index, derived);
+            }
+
+            lua_pushlightuserdata(l, lud.value);
+            return 1;
+        }
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+
+        auto* ud = static_cast<internal::FullUd*>(info.ud);
+        ud->desc = desc;
+        if (info.desc->weak_index)
+            ud->ref = desc->weak_proc.maker(derived);
+        else
+            ud->ptr = derived;
+
+        lua_pushvalue(l, 1);
+        return 1;
     }
 
     /* collection operate, insert element */
     static int __insert(lua_State* l) {
-        return 0;
+        auto info = GetUdInfo(l, 1);
+        if (!info || info.major != internal::UdMajor::kCollection) {
+            luaL_error(l, "insert only could process collection object");
+            return 0;
+        }
+
+        return info.collection->Index(info.obj, internal::GetState(l));
     }
 
     /* collection operate, remove element */
     static int __remove(lua_State* l) {
-        return 0;
+        auto info = GetUdInfo(l, 1);
+        if (!info || info.major != internal::UdMajor::kCollection) {
+            luaL_error(l, "remove only could process collection object");
+            return 0;
+        }
+
+        return info.collection->Remove(info.obj, internal::GetState(l));
     }
 
     /* collection operate, clear all */
     static int __clear(lua_State* l) {
+        auto info = GetUdInfo(l, 1);
+        if (!info || info.major != internal::UdMajor::kCollection)
+            luaL_error(l, "clear only could process collection object");
+        else
+            info.collection->Clear(info.obj);
         return 0;
     }
 }
@@ -549,6 +700,10 @@ namespace internal {
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
         MakeGlobal(s, "xlua");
+        lua_pushcfunction(s->GetLuaState(), &utility::__type);
+        lua_setfield(s->GetLuaState(), -1, "Type");
+        lua_pushcfunction(s->GetLuaState(), &utility::__is_valid);
+        lua_setfield(s->GetLuaState(), -1, "IsValid");
         lua_pushcfunction(s->GetLuaState(), &utility::__cast);
         lua_setfield(s->GetLuaState(), -1, "Cast");
         lua_pushcfunction(s->GetLuaState(), &utility::__insert);
@@ -919,8 +1074,7 @@ namespace internal {
             if (weak_proc.tag) {
                 for (int i = 1; i <= kMaxLudIndex; ++i) {
                     auto& info = g_env.declared.lud_list[i];
-                    if (info.type == LudType::Type::kNone)
-                    {
+                    if (info.type == LudType::Type::kNone) {
                         info.type = LudType::Type::kWeakObj;
                         info.tag = weak_proc.tag;
                         return (uint8_t)i;

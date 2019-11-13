@@ -158,29 +158,31 @@ private:
 };
 
 namespace internal {
-    template <typename Ty, bool>
-    struct PurifyPtrType {
+    template <typename Ty>
+    struct PurifyType_ {
         typedef typename std::remove_cv<Ty>::type type;
     };
 
     template <typename Ty>
-    struct PurifyPtrType<Ty, true> {
-        typedef typename std::add_pointer<
-            typename std::remove_cv<typename std::remove_pointer<Ty>::type>::type>::type type;
+    struct PurifyType_<Ty*> {
+        typedef typename std::add_pointer<typename std::remove_cv<Ty>::type>::type type;
+    };
+
+    template <typename Ry, typename... Args>
+    struct PurifyType_<Ry(*)(Args...)> {
+        typedef Ry(type)(Args...);
     };
 } // namepace internal
 
-  /* purify type, supporter use raw type or pointer type */
+/* purify type, supporter use raw type or pointer type
+ * const Ty& -> Ty
+ * const Ty* -> Ty*
+ * const Ty* const -> Ty*
+*/
 template <typename Ty>
 struct PurifyType {
-    typedef typename internal::PurifyPtrType<
-        typename std::remove_cv<Ty>::type, std::is_pointer<Ty>::value>::type type;
-};
-
-template <typename Ty>
-struct PurifyType<Ty&> {
-    typedef typename internal::PurifyPtrType<
-        typename std::remove_cv<Ty>::type, std::is_pointer<Ty>::value>::type type;
+    typedef typename internal::PurifyType_<
+        typename std::remove_cv<typename std::remove_reference<Ty>::type>::type>::type type;
 };
 
 /* check the type is declared to export to lua */

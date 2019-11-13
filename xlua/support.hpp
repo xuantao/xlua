@@ -500,7 +500,7 @@ namespace internal {
 
 /* function support */
 template <>
-struct Support<int(*)(lua_State*)> : ValueCategory<int(lua_State*), true> {
+struct Support<int(lua_State*)> : ValueCategory<int(lua_State*), true> {
     typedef int (*value_type)(lua_State*);
 
     static inline const char* Name() { return "lua_cfunction"; }
@@ -517,7 +517,7 @@ struct Support<int(*)(lua_State*)> : ValueCategory<int(lua_State*), true> {
 };
 
 template <>
-struct Support<int(*)(State*)> : ValueCategory<int(State*), true>{
+struct Support<int(State*)> : ValueCategory<int(State*), true>{
     typedef int (*value_type)(State*);
 
     static inline const char* Name() { return "xlua_cfunction"; }
@@ -553,7 +553,7 @@ private:
 };
 
 template <typename Ry, typename... Args>
-struct Support<Ry(*)(Args...)> : ValueCategory<Ry(Args...), true> {
+struct Support<Ry(Args...)> : ValueCategory<Ry(Args...), true> {
     typedef Ry (*value_type)(Args...);
     typedef value_category_tag category;
 

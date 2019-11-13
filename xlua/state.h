@@ -50,6 +50,8 @@ namespace internal {
         };
 
     public:
+        FullUd() = default;
+
         FullUd(void* _ptr, ICollection* _col) {
             major = UdMajor::kCollection;
             minor = UdMinor::kPtr;
@@ -105,11 +107,6 @@ namespace internal {
         return dest;
     }
 
-    inline bool IsValid(const FullUd* ud) {
-        return ud->tag_1_ == _XLUA_TAG_1 && ud->tag_2_ == _XLUA_TAG_2 &&
-            ud->major != UdMajor::kNone && ud->minor != UdMinor::kNone;
-    }
-
     inline bool IsFud(FullUd* ud, const TypeDesc* desc) {
         if (ud->major != UdMajor::kDeclaredType)
             return false;
@@ -139,8 +136,6 @@ namespace internal {
             return nullptr;
         return ud->ptr;
     }
-
-#define ASSERT_FUD(ud) assert(ud && ud->IsValid())
 
     /* object userdata, this ud will destruction on gc */
     struct IObjData {
@@ -860,7 +855,7 @@ namespace internal {
         inline UdCache CacheUd() {
             int ref = 0;
             auto* ud = static_cast<FullUd*>(lua_touserdata(l_, -1));
-            ASSERT_FUD(ud);
+            assert(ud && ud->IsValid());
 
             lua_rawgeti(l_, LUA_REGISTRYINDEX, cache_ref_); // load cache table
             lua_pushvalue(l_, -2);                          // copy user data to top

@@ -73,9 +73,10 @@ private:
     bool ok_ = false;
 };
 
-inline bool operator == (const CallGuard& g, bool ok) {
-    return (bool)g == ok;
-}
+inline bool operator == (const CallGuard& g, bool ok) { return (bool)g == ok; }
+inline bool operator == (bool ok, const CallGuard& g) { return ok == (bool)g; }
+inline bool operator != (const CallGuard& g, bool ok) { return (bool)g != ok; }
+inline bool operator != (bool ok, const CallGuard& g) { return ok != (bool)g; }
 
 /* lua object */
 class Object {
@@ -345,7 +346,7 @@ public:
 
     template <typename Ty>
     inline Ty GetGlobal(const char* path) {
-        StackGuard guard(state_.l_);
+        StackGuard guard(this);
         LoadGlobal(path);
         return Get<Ty>(-1);
     }
@@ -357,7 +358,7 @@ public:
 
     template <typename Ty>
     inline bool SetGlobal(const char* path, Ty&& val) {
-        StackGuard guard(state_.l_);
+        StackGuard guard(this);
         Push(std::forward<Ty>(val));
         return SetGlobal(path);
     }
@@ -369,7 +370,7 @@ public:
 
     template <typename Ty>
     inline bool MakeGlobal(const char* path, Ty&& val) {
-        StackGuard guard(state_.l_);
+        StackGuard guard(this);
         Push(std::forward<Ty>(val));
         return MakeGlobal(path);
     }
@@ -404,7 +405,7 @@ public:
         //using traits = SupportTraits<Ty>;
         //static_assert(traits::is_support, "not support type");
         //static_assert(!traits::is_obj_value, "not support load object value directly");
-        StackGuard guard(state_.l_);
+        StackGuard guard(this);
         LoadField(index, key);
         return Get<Ty>(-1);
     }
