@@ -395,7 +395,7 @@ public:
 
         index = lua_absindex(state_.l_, index);
         Push(key);
-        PushVar(val);
+        Push(val);
         lua_settable(state_.l_, index);
         return true;
     }

@@ -262,6 +262,11 @@ namespace internal {
     }
 
     template <typename Obj, typename Ty, typename Ry>
+    inline void MetaGet(State* s, Obj* obj, Ry(Ty::*func)()const) {
+        s->Push((obj->*func)());
+    }
+
+    template <typename Obj, typename Ty, typename Ry>
     inline void MetaSet(State* s, Obj* obj, const TypeDesc* desc, StringView name, void(Ty::*func)(Ry)) {
         if (CheckMetaVar<Ry>(s, 1, desc, name))
             (obj->*func)(SupportTraits<Ry>::supporter::Load(s, 1));
@@ -478,12 +483,12 @@ namespace internal {
             return 0;
         }
 
-        static inline void Get(State* s, void* obj, const TypeDesc* src, const TypeDesc* dest, std::nullptr_t) {
+        static inline int Get(State* s, void* obj, const TypeDesc* src, const TypeDesc* dest, std::nullptr_t) {
             assert(false);
             return 0;
         }
 
-        static inline void Set(State* s, void* obj, const TypeDesc* src, const TypeDesc* dest, StringView name, std::nullptr_t) {
+        static inline int Set(State* s, void* obj, const TypeDesc* src, const TypeDesc* dest, StringView name, std::nullptr_t) {
             assert(false);
             return 0;
         }
@@ -775,13 +780,16 @@ XLUA_NAMESPACE_END
     }
 
 /* export function, 支持静态成员函数 */
-#define XLUA_FUNCTION(Func)                  _XLUA_EXPORT_FUNC(Func, _XLUA_EXTRACT_METHOD(Func))
-#define XLUA_FUNCTION_AS(Name, Func, ...)    _XLUA_EXPORT_FUNC(Name, _XLUA_EXTRACT_METHOD(Func, __VA_ARGS__))
+#define XLUA_FUNCTION(Func)                 _XLUA_EXPORT_FUNC(Func, _XLUA_EXTRACT_METHOD(&Func))
+#define XLUA_FUNCTION_AS(Name, Func, ...)   _XLUA_EXPORT_FUNC(Name, _XLUA_EXTRACT_METHOD(&Func, __VA_ARGS__))
 
 /* export variate, 支持静态成员变量 */
-#define XLUA_VARIATE(Var)                    _XLUA_EXPORT_VAR(Var, Var, Var)
-#define XLUA_VARIATE_AS(Name, Var)           _XLUA_EXPORT_VAR(Name, Var, Var)
-#define XLUA_VARIATE_WRAP(Name, Get, Set)    _XLUA_EXPORT_VAR(Name, Get, Set)
+#define XLUA_VARIATE(Var)                   _XLUA_EXPORT_VAR(Var, &Var, &Var)
+#define XLUA_VARIATE_R(Var)                 _XLUA_EXPORT_VAR(Var, &Var, nullptr)
+#define XLUA_VARIATE_AS(Name, Var)          _XLUA_EXPORT_VAR(Name, &Var, &Var)
+#define XLUA_VARIATE_AS_R(Name, Var)        _XLUA_EXPORT_VAR(Name, &Var, nullptr)
+#define XLUA_VARIATE_WRAP(Name, Get, Set)   _XLUA_EXPORT_VAR(Name, &Get, &Set)
+#define XLUA_VARIATE_WRAP_R(Name, Get)      _XLUA_EXPORT_VAR(Name, &Get, nullptr)
 
 /* 导出常量表 */
 #define XLUA_EXPORT_CONSTANT_BEGIN(Name)                                                \
