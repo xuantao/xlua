@@ -8,9 +8,6 @@
     <Filter Include="src\lua">
       <UniqueIdentifier>{468d8559-fd9a-4d05-b41c-b641e6c073e0}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\class">
-      <UniqueIdentifier>{7ca4f568-2fbe-4989-827e-278d73e7c2be}</UniqueIdentifier>
-    </Filter>
     <Filter Include="src\test">
       <UniqueIdentifier>{31caa129-005e-413c-9cd4-ad2a5dc2c24f}</UniqueIdentifier>
     </Filter>
@@ -22,10 +19,7 @@
     <ClInclude Include="..\..\test\test.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\test\shape.h">
-      <Filter>src\class</Filter>
-    </ClInclude>
-    <ClInclude Include="weak_obj.h">
+    <ClInclude Include="..\..\test\case.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

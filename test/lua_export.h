@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include "shape.h"
+#include "case.h"
 #include <vector>
 #include <xlua_state.h>
 
