@@ -347,6 +347,10 @@ struct Button : Widget {
 struct Object {
     XLUA_DECLARE_OBJ_INDEX;
 
+    ~Object() {
+        strcpy_s(name, 64, "destructed");
+    }
+
     char name[64]{0};
 };
 

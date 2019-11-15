@@ -188,6 +188,59 @@ TEST(xlua, LifeTime) {
     s->Release();
 }
 
+TEST(xlua, LuaCallGuard) {
+    xlua::State* s = xlua::CreateState(nullptr);
+    const char* check_func = "function Check(...) return ... end";
+    ASSERT_TRUE(s->DoString(check_func, "Check"));
+
+    /* need guard */
+    Object* ptr = nullptr;
+    Object obj;
+    strcpy_s(obj.name, 64, "hello world");
+
+    ASSERT_TRUE(s->Call("Check", std::tie(ptr), obj));
+    ASSERT_NE(ptr, &obj);                       // the ptr is refer the lua object
+    ASSERT_EQ(s->GetTop(), 0);                  // call guard will clear lua stack
+    EXPECT_STREQ(ptr->name, "hello world");     // gc may not immediately
+    s->Gc();                                    // gc will release the pushed object
+    EXPECT_STRNE(ptr->name, "hello world");
+    EXPECT_STREQ(ptr->name, "destructed");      // gc will release the push object
+
+    bool boolean_val;
+    const char* str_val;
+
+    XLUA_IF_CALL_SUCC(s->Call("Check", std::tie(boolean_val, str_val), true, "hello world")) {
+        ASSERT_EQ(s->GetTop(), 2);
+    }
+
+    XLUA_IF_CALL_SUCC(s->Call("Check_not_exist", std::tie(boolean_val, str_val), true, "hello world")) {
+    } else {
+        ASSERT_EQ(s->GetTop(), 1);
+    }
+
+    XLUA_IF_CALL_FAIL(s->Call("Check_not_exist", std::tie(boolean_val, str_val), true, "hello world")) {
+        ASSERT_EQ(s->GetTop(), 1);
+    }
+
+    XLUA_IF_CALL_FAIL(s->Call("Check", std::tie(boolean_val, str_val), true, "hello world")) {
+    } else {
+        ASSERT_EQ(s->GetTop(), 2);
+    }
+
+    if (auto guard = s->DoString("return ...", "guard", true, "hello world")) {
+        ASSERT_EQ(s->GetTop(), 2);
+    }
+
+    /* if add '== false' experise, the guard will destrction immediately */
+    if (auto guard = s->DoString("return ...", "guard", true, "hello world") == false) {
+    } else {
+        EXPECT_EQ(s->GetTop(), 0);
+    }
+
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
+}
+
 TEST(xlua, PushLoadObject) {
 
 }

@@ -78,6 +78,21 @@ inline bool operator == (bool ok, const CallGuard& g) { return ok == (bool)g; }
 inline bool operator != (const CallGuard& g, bool ok) { return (bool)g != ok; }
 inline bool operator != (bool ok, const CallGuard& g) { return ok != (bool)g; }
 
+/* process call failed boolean check */
+class FailedCall : private CallGuard {
+public:
+    FailedCall(CallGuard&& guard) : CallGuard(std::move(guard)) {}
+
+public:
+    explicit inline operator bool() const{
+        return false == (bool)(*static_cast<const CallGuard*>(this));
+    }
+};
+
+/* easy check lua call resut and guard the lua stack */
+#define XLUA_IF_CALL_SUCC(Call) if (xlua::CallGuard guard = Call)
+#define XLUA_IF_CALL_FAIL(Call) if (xlua::FailedCall guard = Call)
+
 /* lua object */
 class Object {
     friend class State;
@@ -301,7 +316,7 @@ class State {
     friend class Object;
 public:
     State() = default;
-    State(State&) = delete;
+    State(const State&) = delete;
     void operator = (const State&) = delete;
 
 public:
@@ -462,11 +477,11 @@ public:
 
     template <typename... Rys, typename... Args>
     inline CallGuard Call(const char* global, std::tuple<Rys&...>&& ret, Args&&... args) {
-        if (LoadGlobal(global) != VarType::kFunction) {
-            PopTop(1);
-            return CallGuard();
-        }
-
+        //if (LoadGlobal(global) != VarType::kFunction) {
+        //    PopTop(1);
+        //    return CallGuard();
+        //}
+        LoadGlobal(global);
         return Call(std::move(ret), std::forward<Args>(args)...);
     }
 
