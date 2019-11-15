@@ -262,6 +262,7 @@ struct ObjectWrapper<void> {
 
 namespace internal {
     State* GetState(lua_State* l);
+    void Destory(State* l);
 }
 
 /* traits supporter information */

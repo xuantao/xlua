@@ -162,6 +162,13 @@ namespace internal {
         return it == g_env.state_list.end() ? nullptr : it->second;
     }
 
+    void Destory(State* s) {
+        //TODO: how to detach state
+        if (!s->state_.is_attach_)
+            lua_close(s->state_.l_);
+        delete s;
+    }
+
     const TypeDesc* GetTypeDesc(const char* name) {
         for (auto* data : g_env.declared.desc_list) {
             if (strcmp(data->name, name) == 0)
@@ -619,10 +626,15 @@ namespace internal {
 
     static void MakeGlobal(State* s, const char* path) {
         char buf[1024];
-        if (s->state_.module_ && *s->state_.module_)
-            snprintf(buf, 1024, "%s.%s", s->state_.module_, path);
-        else
+        /* process export to _G table case */
+        if (s->state_.module_ && *s->state_.module_) {
+            if (Is_G(path))
+                snprintf(buf, 1024, "%s", s->state_.module_);
+            else
+                snprintf(buf, 1024, "%s.%s", s->state_.module_, path);
+        } else {
             strcpy_s(buf, 1024, path);
+        }
 
         if (s->state_.LoadGlobal(buf) != LUA_TTABLE) {
             s->PopTop(1);                           // pop load value
@@ -701,17 +713,17 @@ namespace internal {
 
         MakeGlobal(s, "xlua");
         lua_pushcfunction(s->GetLuaState(), &utility::__type);
-        lua_setfield(s->GetLuaState(), -1, "Type");
+        lua_setfield(s->GetLuaState(), -2, "Type");
         lua_pushcfunction(s->GetLuaState(), &utility::__is_valid);
-        lua_setfield(s->GetLuaState(), -1, "IsValid");
+        lua_setfield(s->GetLuaState(), -2, "IsValid");
         lua_pushcfunction(s->GetLuaState(), &utility::__cast);
-        lua_setfield(s->GetLuaState(), -1, "Cast");
+        lua_setfield(s->GetLuaState(), -2, "Cast");
         lua_pushcfunction(s->GetLuaState(), &utility::__insert);
-        lua_setfield(s->GetLuaState(), -1, "Insert");
+        lua_setfield(s->GetLuaState(), -2, "Insert");
         lua_pushcfunction(s->GetLuaState(), &utility::__remove);
-        lua_setfield(s->GetLuaState(), -1, "Remove");
+        lua_setfield(s->GetLuaState(), -2, "Remove");
         lua_pushcfunction(s->GetLuaState(), &utility::__clear);
-        lua_setfield(s->GetLuaState(), -1, "Clear");
+        lua_setfield(s->GetLuaState(), -2, "Clear");
         lua_pop(s->GetLuaState(), 1);
 
         assert(s->GetTop() == 0);
@@ -744,8 +756,12 @@ namespace internal {
             ++val;
         }
 
-        luaL_dostring(s->GetLuaState(), script::kConstMetatable);
-        lua_setmetatable(s->GetLuaState(), -2);
+        // not set golbal table metatble
+        if (!buf[0] || strcmp(buf, "_G") != 0) {
+            //luaL_dostring(s->GetLuaState(), script::kConstMetatable);
+            //lua_setmetatable(s->GetLuaState(), -2);
+        }
+
         lua_pop(s->GetLuaState(), 1);
         assert(s->GetTop() == 0);
         return true;
@@ -796,21 +812,26 @@ namespace internal {
         size_t gvn = GetVarNum(td, true);
         if (gfn || gvn) {
             MakeGlobal(s, td.name);                                 // create global table
-            luaL_loadbuffer(s->state_.l_, script::kGlobalMetatable,
-                ::strlen(script::kGlobalMetatable),
-                "global_metatable");                                // load meta function
-            lua_pushlightuserdata(s->state_.l_, s);                 // push State*
-            lua_pushlightuserdata(s->state_.l_, (TypeDesc*)&td);    // push TypeDesc*
-            lua_pushcfunction(s->state_.l_, &meta::__index_global); // push indexer
-            lua_pushstring(s->state_.l_, td.name);                  // push md_name
-            lua_createtable(s->state_.l_, 0, (int)gfn);             // create function table
-            PushFuncs(s->GetLuaState(), td, true);
-            lua_createtable(s->state_.l_, 0, (int)gvn);             // create var table
-            PushVars(s->GetLuaState(), td, true);
-            lua_pcall(s->GetLuaState(), 6, 1, 0);                   // get metatable
-            lua_setmetatable(s->GetLuaState(), -2);                 // set metatable
-            s->PopTop(1);                                           // pop global table
 
+            if (Is_G(td.name)) {
+                PushFuncs(s->GetLuaState(), td, true);              // _G only accept function
+            } else {
+                luaL_loadbuffer(s->state_.l_, script::kGlobalMetatable,
+                    ::strlen(script::kGlobalMetatable),
+                    "global_metatable");                                // load meta function
+                lua_pushlightuserdata(s->state_.l_, s);                 // push State*
+                lua_pushlightuserdata(s->state_.l_, (TypeDesc*)&td);    // push TypeDesc*
+                lua_pushcfunction(s->state_.l_, &meta::__index_global); // push indexer
+                lua_pushstring(s->state_.l_, td.name);                  // push md_name
+                lua_createtable(s->state_.l_, 0, (int)gfn);             // create function table
+                PushFuncs(s->GetLuaState(), td, true);
+                lua_createtable(s->state_.l_, 0, (int)gvn);             // create var table
+                PushVars(s->GetLuaState(), td, true);
+                lua_pcall(s->GetLuaState(), 6, 1, 0);                   // get metatable
+                lua_setmetatable(s->GetLuaState(), -2);                 // set metatable
+            }
+
+            s->PopTop(1);                                               // pop global table
             assert(s->GetTop() == 0);
         }
 
@@ -917,12 +938,6 @@ State* AttachState(lua_State* l, const char* mod) {
     return s;
 }
 
-void DestoryState(State* s) {
-    //TODO:
-    if (!s->state_.is_attach_)
-        lua_close(s->state_.l_);
-}
-
 void FreeObjectIndex(ObjectIndex& index) {
     if (index.index_ <= 0)
         return;
@@ -964,7 +979,8 @@ namespace internal {
 
         void AddMember(bool global, const char* name, LuaIndexer getter, LuaIndexer setter) override {
             name = AllocMemberName(name);
-            assert(CheckRename(name, is_global || global));
+            assert(!Is_G(type_name));                       // _G table not allow variate
+            assert(CheckRename(name, is_global || global)); // rename check
             ((is_global || global) ? global_vars : member_vars).push_back(ExportVar{name, getter, setter});
         }
 

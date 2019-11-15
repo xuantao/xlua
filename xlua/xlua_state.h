@@ -300,6 +300,14 @@ private:
 class State {
     friend class Object;
 public:
+    State() = default;
+    State(State&) = delete;
+    void operator = (const State&) = delete;
+
+public:
+    inline void Release() { internal::Destory(this); }
+
+public:
     const char* GetTypeName(int index) const { return state_.GetTypeName(index); }
     inline lua_State* GetLuaState() const { return state_.l_; }
     inline int GetTop() const { return lua_gettop(state_.l_); }
@@ -308,6 +316,7 @@ public:
     inline bool IsNil(int index) { return state_.IsNil(index); }
     inline void PushNil() { state_.PushNil(); }
     inline void NewTable() { state_.NewTable(); }
+    inline void Gc() { lua_gc(state_.l_, LUA_GCCOLLECT, 0); }
 
     template <typename... Tys>
     bool IsType(int index) const {
@@ -326,7 +335,7 @@ public:
             return guard;
 
         PushMul(std::forward<Args>(args)...);
-        ret = lua_pcall(state_.l_, (int)sizeof...(Args), 1, 0);
+        ret = lua_pcall(state_.l_, (int)sizeof...(Args), LUA_MULTRET, 0);
         if (LUA_OK != ret)
             return guard;
 
@@ -402,9 +411,6 @@ public:
 
     template <typename Ty, typename Ky>
     Ty GetField(int index, const Ky& key) {
-        //using traits = SupportTraits<Ty>;
-        //static_assert(traits::is_support, "not support type");
-        //static_assert(!traits::is_obj_value, "not support load object value directly");
         StackGuard guard(this);
         LoadField(index, key);
         return Get<Ty>(-1);
@@ -425,6 +431,12 @@ public:
         using supporter = typename traits::supporter;
         static_assert(traits::is_support, "not support type");
         supporter::Push(this, std::forward<Ty>(val));
+    }
+
+    template <typename Fy>
+    void PushLambda(Fy&& f) {
+        using type = typename PurifyType<Fy>::type;
+        Support<internal::Lambda<type>>::Push(this, internal::Lambda<type>(std::forward<Fy>(f)));
     }
 
     template <typename... Ty>
@@ -558,46 +570,46 @@ public:
     void PushVar(const Variant& var) {
         auto* l = state_.l_;
         switch (var.GetType()) {
-            case VarType::kNil:
+        case VarType::kNil:
+            state_.PushNil();
+            break;
+        case VarType::kBoolean:
+            lua_pushboolean(l, var.ToBoolean());
+            break;
+        case VarType::kNumber:
+            lua_pushnumber(l, var.ToDobule());
+            break;
+        case VarType::kInteger:
+            lua_pushinteger(l, var.ToInt64());
+            break;
+        case VarType::kString:
+            lua_pushlstring(l, var.str_.c_str(), var.str_.length());
+            break;
+        case VarType::kTable:
+        case VarType::kFunction:
+            if (var.obj_.IsValid()) {
+                assert(this == var.obj_.state_);
+                state_.LoadRef(var.obj_.index_);
+            } else {
                 state_.PushNil();
-                break;
-            case VarType::kBoolean:
-                lua_pushboolean(l, var.ToBoolean());
-                break;
-            case VarType::kNumber:
-                lua_pushnumber(l, var.ToDobule());
-                break;
-            case VarType::kInteger:
-                lua_pushinteger(l, var.ToInt64());
-                break;
-            case VarType::kString:
-                lua_pushlstring(l, var.str_.c_str(), var.str_.length());
-                break;
-            case VarType::kTable:
-            case VarType::kFunction:
-                if (var.obj_.IsValid()) {
-                    assert(this == var.obj_.state_);
-                    state_.LoadRef(var.obj_.index_);
-                } else {
-                    state_.PushNil();
-                }
-                break;
-            case VarType::kLightUserData:
-                lua_pushlightuserdata(l, var.ptr_);
-                break;
-            case VarType::kUserData:
-                if (var.obj_.IsValid()) {
-                    assert(this == var.obj_.state_);
+            }
+            break;
+        case VarType::kLightUserData:
+            lua_pushlightuserdata(l, var.ptr_);
+            break;
+        case VarType::kUserData:
+            if (var.obj_.IsValid()) {
+                assert(this == var.obj_.state_);
 #if XLUA_ENABLE_LUD_OPTIMIZE
-                    if (var.obj_.index_ == -1)
-                        lua_pushlightuserdata(l, var.ptr_);
-                    else
+                if (var.obj_.index_ == -1)
+                    lua_pushlightuserdata(l, var.ptr_);
+                else
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-                        state_.LoadRef(var.obj_.index_);
-                } else {
-                    state_.PushNil();
-                }
-                break;
+                    state_.LoadRef(var.obj_.index_);
+            } else {
+                state_.PushNil();
+            }
+            break;
         }
     }
 

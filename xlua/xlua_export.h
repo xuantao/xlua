@@ -717,6 +717,7 @@ XLUA_NAMESPACE_END
     _XLUA_EXPORT_FUNC_(Name, Func, !std::is_member_function_pointer<decltype(Func)>::value)
 
 #define _XLUA_EXPORT_VAR_(Name, GetOp, SetOp, IsGlobal)                                         \
+    static_assert(is_g_table == false, "_G table not support export variate");                  \
     static_assert(xlua::internal::IndexerTrait<decltype(GetOp), decltype(SetOp)>::is_allow,     \
         "can not export var:"#Name" to lua" );                                                  \
     struct _XLUA_ANONYMOUS {                                                                    \
@@ -755,6 +756,7 @@ XLUA_NAMESPACE_END
             "base type is not declare to export to lua");                               \
         static const xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {               \
             using meta = xlua::internal::Meta<ClassName>;                               \
+            constexpr bool is_g_table = false;                                          \
             auto* factory = xlua::CreateFactory<                                        \
                 ClassName, _XLUA_SUPER_CLASS(__VA_ARGS__)>(#ClassName);
 
@@ -771,6 +773,7 @@ XLUA_NAMESPACE_END
         xlua::internal::TypeNode _XLUA_ANONYMOUS([]() {                                 \
             static const xlua::TypeDesc* desc = []()->const xlua::TypeDesc* {           \
                 using meta = xlua::internal::Meta<void>;                                \
+                constexpr bool is_g_table = xlua::internal::Is_G(#Name);                \
                 auto* factory = xlua::CreateFactory<void>(#Name);                       \
 
 #define XLUA_EXPORT_GLOBAL_END()                                                        \

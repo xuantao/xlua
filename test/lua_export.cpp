@@ -11,7 +11,7 @@ XLUA_CONSTANT(ShapeType::kTriangle)
 XLUA_CONSTANT(ShapeType::kQuard)
 XLUA_EXPORT_CONSTANT_END()
 
-XLUA_EXPORT_CONSTANT_BEGIN(_G)
+XLUA_EXPORT_CONSTANT_BEGIN(_G1)
 XLUA_CONSTANT(ShapeType::kUnknown)
 XLUA_CONSTANT(ShapeType::kTriangle)
 XLUA_CONSTANT(ShapeType::kQuard)
@@ -60,9 +60,9 @@ XLUA_VARIATE_AS(height, Square::height_)
 XLUA_EXPORT_CLASS_END()
 
 XLUA_EXPORT_CLASS_BEGIN(WeakObj)
-XLUA_VARIATE_AS(index, WeakObj::index_)
-XLUA_FUNCTION(WeakObj::SetArea)
-XLUA_FUNCTION(WeakObj::SetArea2)
+//XLUA_VARIATE_AS(index, WeakObj::index_)
+//XLUA_FUNCTION(WeakObj::SetArea)
+//XLUA_FUNCTION(WeakObj::SetArea2)
 XLUA_EXPORT_CLASS_END();
 
 XLUA_EXPORT_CLASS_BEGIN(TestExportParams)
@@ -170,7 +170,7 @@ static char global_name[64] ={0};
 
 XLUA_EXPORT_GLOBAL_BEGIN(_G)
 XLUA_FUNCTION(TestGlobal)
-//XLUA_GLOBAL_VAR(global_name); // can not add var to global table
+//XLUA_VARIATE(global_name); // can not add var to global table
 XLUA_EXPORT_GLOBAL_END()
 
 XLUA_EXPORT_GLOBAL_BEGIN(Global)
@@ -228,4 +228,7 @@ XLUA_EXPORT_CLASS_END()
 XLUA_EXPORT_CLASS_BEGIN(Button, Widget)
 XLUA_VARIATE(Button::label)
 XLUA_VARIATE(Button::onclick)
+XLUA_EXPORT_CLASS_END()
+
+XLUA_EXPORT_CLASS_BEGIN(LifeTime)
 XLUA_EXPORT_CLASS_END()

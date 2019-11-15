@@ -5,7 +5,6 @@ XLUA_NAMESPACE_BEGIN
 
 State* CreateState(const char* mod);
 State* AttachState(lua_State* l, const char* mod);
-void DestoryState(State* s);
 
 void FreeObjectIndex(ObjectIndex& index);
 

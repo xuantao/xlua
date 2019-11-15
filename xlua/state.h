@@ -17,6 +17,15 @@ XLUA_NAMESPACE_BEGIN
 #endif
 
 namespace internal {
+    /* wrapper a lambda function object */
+    template <typename Ty>
+    struct Lambda {
+        Lambda(const Ty& v) : lambda(v) {}
+        Lambda(Ty&& v) : lambda(std::move(v)) {}
+
+        Ty lambda;
+    };
+
     enum class UdMajor : int8_t {
         kNone = 0,
         kDeclaredType,
@@ -423,6 +432,12 @@ namespace internal {
         std::vector<ObjRef> objs{ ObjRef() };   // first element is not used
     };
 
+    /* check the path whether is G table */
+    inline constexpr bool Is_G(const char* path) {
+        return path == nullptr || path[0] == 0 ||
+            (path[0] == '_' && path[1] == 'G' && path[2] == 0);
+    }
+
     /* internal state
      * manage all lua data
     */
@@ -507,7 +522,7 @@ namespace internal {
         }
 
         int LoadGlobal(const char* path) {
-            if (path == nullptr || path[0] == 0) {
+            if (Is_G(path)) {
                 lua_pushglobaltable(l_);
                 return LUA_TTABLE;
             }

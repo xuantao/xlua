@@ -2,6 +2,8 @@
 #include <xlua_def.h>
 #include <memory>
 #include <string>
+#include <vector>
+#include <map>
 #include <functional>
 
 enum class ShapeType {
@@ -249,30 +251,30 @@ struct OverloadMember {
 };
 
 namespace OverloadGlobal {
-    _TEST_PARAM(bool)
-    _TEST_PARAM(char)
-    _TEST_PARAM(unsigned char)
-    _TEST_PARAM(short)
-    _TEST_PARAM(unsigned short)
-    _TEST_PARAM(int)
-    _TEST_PARAM(unsigned int)
-    _TEST_PARAM(long long)
-    _TEST_PARAM(unsigned long long)
-    _TEST_PARAM(float)
-    _TEST_PARAM(double)
-    _TEST_PARAM(char*)  // error
-    _TEST_PARAM(const char*)
-    _TEST_PARAM(void*)
-    _TEST_PARAM(const void*)
-    _TEST_PARAM(ExportObj*)
-    _TEST_PARAM(const ExportObj*)
-    _TEST_PARAM(ExportObj&)
-    _TEST_PARAM(const ExportObj&)
-    _TEST_PARAM(std::shared_ptr<ExportObj>)
-    void TestValue(ExportObj) {}
-    _TEST_PARAM(NoneExportObj)
-    _TEST_PARAM(NoneExportObj*)
-    _TEST_PARAM(std::shared_ptr<NoneExportObj>)
+    inline _TEST_PARAM(bool)
+    inline _TEST_PARAM(char)
+    inline _TEST_PARAM(unsigned char)
+    inline _TEST_PARAM(short)
+    inline _TEST_PARAM(unsigned short)
+    inline _TEST_PARAM(int)
+    inline _TEST_PARAM(unsigned int)
+    inline _TEST_PARAM(long long)
+    inline _TEST_PARAM(unsigned long long)
+    inline _TEST_PARAM(float)
+    inline _TEST_PARAM(double)
+    inline _TEST_PARAM(char*)  // error
+    inline _TEST_PARAM(const char*)
+    inline _TEST_PARAM(void*)
+    inline _TEST_PARAM(const void*)
+    inline _TEST_PARAM(ExportObj*)
+    inline _TEST_PARAM(const ExportObj*)
+    inline _TEST_PARAM(ExportObj&)
+    inline _TEST_PARAM(const ExportObj&)
+    inline _TEST_PARAM(std::shared_ptr<ExportObj>)
+    inline void TestValue(ExportObj) {}
+    inline _TEST_PARAM(NoneExportObj)
+    inline _TEST_PARAM(NoneExportObj*)
+    inline _TEST_PARAM(std::shared_ptr<NoneExportObj>)
 };
 
 /* simple object inherit */
@@ -359,8 +361,8 @@ struct WeakObj {
     ~WeakObj();
 
 private:
-    friend struct WeakObjPtrBase;
-    friend struct WeakObjArray;
+//    friend struct WeakObjPtrBase;
+    friend class WeakObjArray;
 
     int index_;
 };
@@ -425,7 +427,7 @@ class WeakObjArray {
         int serial;
     };
 private:
-    WeakObjArray();
+    WeakObjArray() {}
     ~WeakObjArray() {}
 
     WeakObjArray(const WeakObjArray&) = delete;
@@ -457,7 +459,7 @@ public:
         int serial = ++serial_gener_;
         ptr->index_ = index;
         objs_[index] = AryObj{ptr, serial};
-        return serial;
+        return index;
     }
 
     void FreeIndex(WeakObj* ptr) {
@@ -502,13 +504,13 @@ inline WeakObj* WeakObjPtrBase::GetPtr() const {
     return nullptr;
 }
 
-void WeakObjPtrBase::Set(WeakObj* ptr) {
+inline void WeakObjPtrBase::Set(WeakObj* ptr) {
     if (ptr == nullptr) {
         index_ = 0;
         serial_ = 0;
     } else {
-        serial_ = WeakObjArray::Instance().AllocIndex(ptr);
-        index_ = ptr->index_;
+        index_= WeakObjArray::Instance().AllocIndex(ptr);
+        serial_ = WeakObjArray::Instance().GetSerialNumber(index_);
     }
 }
 

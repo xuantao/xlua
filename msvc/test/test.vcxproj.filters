@@ -25,6 +25,9 @@
     <ClInclude Include="..\..\test\shape.h">
       <Filter>src\class</Filter>
     </ClInclude>
+    <ClInclude Include="weak_obj.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\test\main.cpp">
@@ -41,6 +44,12 @@
     </ClCompile>
     <ClCompile Include="..\..\test\test_push_load.cpp">
       <Filter>src\test</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\test\test.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\test\case.cpp">
+      <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

@@ -22,10 +22,13 @@
     <ClInclude Include="..\..\test\lua_export.h" />
     <ClInclude Include="..\..\test\shape.h" />
     <ClInclude Include="..\..\test\test.h" />
+    <ClInclude Include="weak_obj.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\test\case.cpp" />
     <ClCompile Include="..\..\test\lua_export.cpp" />
     <ClCompile Include="..\..\test\main.cpp" />
+    <ClCompile Include="..\..\test\test.cpp" />
     <ClCompile Include="..\..\test\test_export.cpp" />
     <ClCompile Include="..\..\test\test_global.cpp" />
     <ClCompile Include="..\..\test\test_push_load.cpp" />

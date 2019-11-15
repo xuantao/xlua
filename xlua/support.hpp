@@ -632,6 +632,42 @@ private:
     }
 };
 
+template <typename Ty>
+struct Support<internal::Lambda<Ty>> : ValueCategory<Ty, false> {
+    typedef internal::ObjData<Ty> ObjData;
+    typedef internal::Lambda<Ty> Lambda;
+
+    static inline const char* Name() { return "lambda"; }
+    static inline bool Check(State* s, int index) { return false; }
+    static Lambda Load(State* s, int index) = delete;
+
+    static void Push(State* s, const Lambda& l) {
+        PushDispatch(s, l, &Ty::operator());
+    }
+
+private:
+    template <typename R, typename... Args>
+    static inline void PushImpl(State* s, const Lambda& l) {
+        static lua_CFunction lf = [](lua_State* l) {
+            auto* d = static_cast<ObjData*>(lua_touserdata(l, lua_upvalueindex(1)));
+            return internal::DoLuaCall<Ty&, R, Args...>(internal::GetState(l), d->obj);
+        };
+
+        s->state_.NewAloneObj<Ty>(std::move(l.lambda));
+        lua_pushcclosure(s->GetLuaState(), lf, 1);
+    }
+
+    template <typename R, typename... Args>
+    static inline void PushDispatch(State* s, const Lambda& l, R(Ty::*)(Args...) const) {
+        PushImpl<R, Args...>(s, l);
+    }
+
+    template <typename R, typename... Args>
+    static inline void PushDispatch(State* s, const Lambda& l, R(Ty::*)(Args...)) {
+        PushImpl<R, Args...>(s, l);
+    }
+};
+
 struct std_shared_ptr_tag {};
 
 /* smart ptr support */
