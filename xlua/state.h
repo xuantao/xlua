@@ -796,7 +796,7 @@ namespace internal {
             lua_setmetatable(l_, -2);                               // set metatable
         }
 
-        /* */
+        /* reference a lua object by c++, invoid lua gc the object */
         int RefObj(int index) {
             int lty = lua_type(l_, index);
             //TODO: lua thread?
@@ -822,7 +822,8 @@ namespace internal {
                     o.next = (int)i;
                     o.count = 0;
                 }
-                obj_ary_.objs[ns].next = 0;
+                obj_ary_.objs[ns-1].next = 0;
+                obj_ary_.empty = (int)sz;
             }
 
             int obj_idx = obj_ary_.empty;
@@ -861,6 +862,10 @@ namespace internal {
             --obj.count;
 
             if (obj.count == 0) {
+                lua_rawgeti(l_, LUA_REGISTRYINDEX, obj_ref_);   // load cache table
+                luaL_unref(l_, -1, obj.ref);                    // unref
+                lua_pop(l_, 1);                                 // pop cache table
+
                 obj.next = obj_ary_.empty;
                 obj_ary_.empty = obj_idx;
             }

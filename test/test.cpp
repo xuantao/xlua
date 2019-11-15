@@ -19,7 +19,7 @@
     }
 
 TEST(xlua, PushLoadNormal) {
-    const char* check_func = "print('load') function Check(...) return ... end";
+    const char* check_func = "function Check(...) return ... end";
     auto* s = xlua::CreateState(nullptr);
 
     ASSERT_TRUE(s->DoString(check_func, "Check"));
@@ -113,6 +113,7 @@ TEST(xlua, PushLoadNormal) {
     _TEST_CHECK_VAL(std::string, "1234567890");
     _TEST_CHECK_VAL(std::string, "abcdefghijklmnopqrstuvwxyz");
 
+    ASSERT_EQ(s->GetTop(), 0);
     s->Release();
 }
 
@@ -159,16 +160,32 @@ TEST(xlua, LifeTime) {
     ASSERT_EQ(LifeTime::s_counter, 0);
 
     {
+        int ret = 0;
+        int idx = 0;
         LifeTime l;
-        s->PushLambda([l]() {
+        s->PushLambda([l, idx]() mutable->int {
             printf("lambda life time:%d==2, %p\n", LifeTime::s_counter, &l);
+            return ++idx;
         });
         ASSERT_EQ(LifeTime::s_counter, 2);
 
-        s->Call(std::tie());
+        auto f = s->Get<std::function<int()>>(-1);
+        ASSERT_EQ(LifeTime::s_counter, 2);  // will obatain a xlua::Function object
+                                            // would not copy the lambda object
+        s->Call(std::tie(ret));
+        ASSERT_EQ(ret, 1);
         s->Gc();
-        ASSERT_EQ(LifeTime::s_counter, 1);
+        ASSERT_EQ(LifeTime::s_counter, 2);  // obj is hold by function, will not gc
+
+        ASSERT_EQ(f(), 2);                  // call the lua hold lambda object
+
+        f = nullptr;
+        s->Gc();
+        ASSERT_EQ(LifeTime::s_counter, 1);  // will release the lambda object
     }
+
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
 }
 
 TEST(xlua, PushLoadObject) {
