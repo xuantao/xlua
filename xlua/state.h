@@ -157,6 +157,21 @@ namespace internal {
         ObjData(Ty&& o) : obj(std::move(o)) {}
 
         virtual ~ObjData() {}
+        Ty obj;
+    };
+
+    struct ValueObjData : IObjData {
+        ValueObjData() : index(0) {}
+
+        int index;
+    };
+
+    template <typename Ty>
+    struct ValueObjDataImpl : IObjData {
+        ValueObjDataImpl(const Ty& o) : obj(o) {}
+        ValueObjDataImpl(Ty&& o) : obj(std::move(o)) {}
+
+        virtual ~ValueObjDataImpl() {}
 
         Ty obj;
     };
@@ -193,10 +208,19 @@ namespace internal {
         ObjUd() = delete;
         ObjUd(const ObjUd&) = delete;
 
-        //ObjUd() :FullUd(storage_, UdMinor::kValue, desc)
-
-        //IObjData* obj;
         char storage_[1];
+    };
+
+    template <typename Ty>
+    struct ValueObjUd : FullUd {
+        typedef ValueObjDataImpl<typename std::decay<Ty>::type> ObjData;
+        template <typename Dy, typename... Args>
+        ValueObjUd(Dy desc, Args&&... args) : FullUd(nullptr, UdMinor::kValue, desc) {
+            auto* p = new (storage_) ObjData(std::forward<Args>(args)...);
+            ptr = &p->obj;
+        }
+
+        char storage_[sizeof(ObjData)];
     };
 
     template <typename Ty>
@@ -430,6 +454,58 @@ namespace internal {
 
         int empty = 0;
         std::vector<ObjRef> objs{ ObjRef() };   // first element is not used
+    };
+
+    template <typename Ty>
+    struct LuaObjRefArray {
+        struct ObjRef {
+            union {
+                int ref;    // lua reference index
+                int next;   // next empty slot
+            };
+            Ty value;       // obj value
+        };
+
+        inline size_t Size() const {
+            return objs.size();
+        }
+
+        inline ObjRef& operator [] (int idx) {
+            return objs[idx];
+        }
+
+        int Alloc(int ref, Ty val) {
+            if (next == 0) {
+                size_t sz = objs.size();
+                size_t ns = sz + 4096;
+                ObjRef tmp;
+                tmp.next = 0;
+                tmp.value = Ty();
+                objs.resize(ns, tmp);
+                for (size_t i = ns - 1; i > sz; --i)
+                    objs[i-1] = (int)i;
+                next = (int)sz;
+            }
+
+            int idx = next;
+            next = objs[next].next;
+
+            auto& obj = objs[idx];
+            obj.ref = ref;
+            obj.value = val;
+            return idx;
+        }
+
+        void Free(int index) {
+            auto* obj = objs[index];
+            obj.next = next;
+            obj.value = Ty();
+            next = index;
+        }
+
+    private:
+        int next = 0;
+        std::vector<ObjRef> objs{ObjRef()};
     };
 
     /* check the path whether is G table */
@@ -761,11 +837,29 @@ namespace internal {
             return new (d) FullUd(args...);
         }
 
-        template <typename Ty, typename Dy>
-        inline FullUd* NewObjUd(Ty&& v, Dy desc) {
-            typedef ObjUdImpl<Ty> value_type;
-            void* d = (void*)lua_newuserdata(l_, sizeof(value_type));
-            return new (d) value_type(desc, std::forward<Ty>(v));
+        template <typename Ty>
+        inline FullUd* NewObjUd(Ty&& v, const TypeDesc* desc) {
+            typedef ValueObjUd<Ty> value_type;
+            void* m = (void*)lua_newuserdata(l_, sizeof(value_type));
+            auto* ud = (ObjUd*) new (m) value_type(desc, std::forward<Ty>(v));
+            auto* data = ud->As<ValueObjData>();
+
+            if (desc->caster.is_multi_inherit)
+                value_ref_.insert(std::make_pair(ToSuper(ud->obj, desc, nullptr), DoCacheUd()));
+            else
+                data->index = value_ary_.Alloc(DoCacheUd(), data);
+            return ud;
+        }
+
+        template <typename Ty>
+        inline FullUd* NewObjUd(Ty&& v, ICollection* collection) {
+            typedef ValueObjUd<Ty> value_type;
+            void* m = (void*)lua_newuserdata(l_, sizeof(value_type));
+            auto* ud = (ObjUd*) new (m) value_type(collection, std::forward<Ty>(v));
+            auto* data = ud->As<ValueObjData>();
+
+            data->index = value_ary_.Alloc(DoCacheUd(), data);
+            return ud;
         }
 
         template <typename Ty, typename Dy, typename Sy>
@@ -885,6 +979,15 @@ namespace internal {
             return UdCache{ref, ud};
         }
 
+        inline int DoCacheUd() {
+            int ref = 0;
+            lua_rawgeti(l_, LUA_REGISTRYINDEX, cache_ref_); // load cache table
+            lua_pushvalue(l_, -2);                          // copy user data to top
+            ref = luaL_ref(l_, -2);                         // ref top stack user data
+            lua_pop(l_, 1);                                 // pop cache table
+            return ref;
+        }
+
         inline void LoadCache(int ref) {
             lua_rawgeti(l_, LUA_REGISTRYINDEX, cache_ref_); // load cache table
             lua_geti(l_, -1, ref);                          // load cache data
@@ -943,7 +1046,19 @@ namespace internal {
                     smart_ptrs_.erase(it);
                 }
                 static_cast<ObjUd*>(ud)->As<IObjData>()->~IObjData();
+            } else if (ud->minor == UdMinor::kSmartPtr) {
+                auto* data = static_cast<ObjUd*>(ud)->As<ValueObjData>();
+                if (ud->major == UdMajor::kDeclaredType && ud->desc->caster.is_multi_inherit) {
+                    auto it = value_ref_.find(ToSuper(ud->ptr, ud->desc, nullptr));
+                    cache.ref = it->second;
+                    value_ref_.erase(it);
+                } else {
+                    cache.ref = value_ary_[data->index].ref;
+                    value_ary_.Free(data->index);
+                }
+                data->~ValueObjData();
             } else {
+                assert(false);
                 static_cast<ObjUd*>(ud)->As<IObjData>()->~IObjData();
             }
 
@@ -966,11 +1081,21 @@ namespace internal {
 
         /* ref lua objects, such as table, function, user data*/
         LuaObjArray obj_ary_;
+
+        LuaObjRefArray<ValueObjData*> value_ary_;
+        std::unordered_map<void*, int> value_ref_;  /* multi inherit type */
         /* */
         std::unordered_map<void*, UdCache> collection_ptrs_;
         std::unordered_map<void*, UdCache> declared_ptrs_;
         std::unordered_map<void*, UdCache> smart_ptrs_;
         std::vector<std::vector<UdCache>> weak_objs_;
+
+        //struct ValueObjRef {
+        //    int ref;
+        //    ValueObjData* data;
+        //};
+        //int empty_slot_ = 0;
+        //std::vector<ValueObjRef> value_refs_{ValueObjRef{0, nullptr}};
     }; // calss state_data
 } // namespace internal
 

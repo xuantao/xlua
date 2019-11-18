@@ -961,10 +961,11 @@ namespace internal {
             : is_global(global), super(super) {
             type_name = AllocTypeName(name);
         }
-        virtual ~TypeCreator() { }
+        virtual ~TypeCreator() {}
 
-        void SetCaster(TypeCaster cast) override {
-            caster = cast;
+        void SetCaster(short ptr_offset, void*(*to_derived)(void*)) override {
+            caster.offset_2_base = ptr_offset;
+            caster.to_derived = to_derived;
         }
 
         void SetWeakProc(WeakObjProc proc) override {
@@ -1013,13 +1014,26 @@ namespace internal {
             data->caster = caster;
             data->super = super;
             data->child = nullptr;
+            data->brother = nullptr;
 
             // inheritance tree
             if (super) {
-                data->brother = super->child;
-                const_cast<TypeDesc*>(super)->child = data;
-            } else {
-                data->brother = nullptr;
+                if (super->child) {
+                    auto* node = super->child;
+                    while (node->brother == nullptr)
+                        node = node->brother;
+                    const_cast<TypeDesc*>(node)->brother = data;
+                } else {
+                    const_cast<TypeDesc*>(super)->child = data;
+                }
+
+                data->caster.offset_2_top = data->caster.offset_2_base + super->caster.offset_2_top;
+                if (data->caster.offset_2_top) {
+                    const TypeDesc* desc = data;
+                    while (!desc->caster.is_multi_inherit)
+                        desc = desc->super;
+                    SetMultiInherit(const_cast<TypeDesc*>(desc));
+                }
             }
 
             data->member_vars = Alloc(member_vars);
@@ -1111,12 +1125,21 @@ namespace internal {
             return 0;
         }
 
+        void SetMultiInherit(TypeDesc* desc) {
+            if (desc == nullptr)
+                return;
+
+            desc->caster.is_multi_inherit = true;
+            SetMultiInherit(const_cast<TypeDesc*>(desc->brother));
+            SetMultiInherit(const_cast<TypeDesc*>(desc->child));
+        }
+
         static void* DummyCaster(void* ptr) { return ptr; }
 
         const char* type_name;
         bool is_global;
         const TypeDesc* super = nullptr;
-        TypeCaster caster{&DummyCaster, &DummyCaster};
+        TypeCaster caster{false, 0, 0, &DummyCaster};
         WeakObjProc weak_proc{0, nullptr, nullptr};
         std::vector<ExportVar> member_vars;
         std::vector<ExportVar> global_vars;

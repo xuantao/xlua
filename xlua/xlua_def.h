@@ -48,8 +48,10 @@ typedef int(*LuaIndexer)(State* s, void* obj, const TypeDesc* desc);
 struct TypeCaster {
     typedef void* (*Caster)(void* obj);
 
-    Caster to_super;
-    Caster to_derived;
+    bool is_multi_inherit;  // multi inherit
+    short offset_2_base;    // offset to base type pointer
+    short offset_2_top;     // offset to top base type pointer
+    Caster to_derived;      // dynamic cast to derived type pointer
 };
 
 /* weak obj reference */
@@ -106,7 +108,7 @@ struct ICollection {
 /* type desc factory */
 struct ITypeFactory {
     virtual ~ITypeFactory() { }
-    virtual void SetCaster(TypeCaster caster) = 0;
+    virtual void SetCaster(short ptr_offset, void*(*to_derived)(void*)) = 0;
     virtual void SetWeakProc(WeakObjProc proc) = 0;
     virtual void AddMember(bool global, const char* name, LuaFunction func) = 0;
     virtual void AddMember(bool global, const char* name, LuaIndexer getter, LuaIndexer setter) = 0;
@@ -115,11 +117,12 @@ struct ITypeFactory {
 
 /* cast obj type to super type */
 inline void* ToSuper(void* obj, const TypeDesc* src, const TypeDesc* dest) {
-    while (src != dest) {
-        obj = src->caster.to_super(obj);
-        src = src->super;
-    }
-    return obj;
+    short offset = 0;
+    if (dest == nullptr)
+        offset = src->caster.offset_2_top;
+    else
+        offset = src->caster.offset_2_top - dest->caster.offset_2_top;
+    return (void*)(reinterpret_cast<int8_t*>(obj) + offset);
 }
 
 /* cast obj type to derived type */

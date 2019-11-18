@@ -118,43 +118,33 @@ namespace internal {
         Reg reg;
     };
 
-    template <typename Dy, typename By>
-    struct CasterTraits {
-    private:
-        static void* ToSuper(void* obj) {
-            return static_cast<By*>((Dy*)obj);
-        }
 
-        template <typename U, typename std::enable_if<std::is_polymorphic<U>::value, int>::type = 0>
+    template <typename Dty, typename Bty, bool>
+    struct CasterDerived {
         static void* ToDerived(void* obj) {
-            return dynamic_cast<Dy*>(static_cast<By*>(obj));
-        }
-
-        template <typename U, typename std::enable_if<!std::is_polymorphic<U>::value, int>::type = 0>
-        static void* ToDerived(void* obj) {
-            return nullptr;
-        }
-
-    public:
-        static inline TypeCaster Make() {
-            return TypeCaster{&ToSuper, &ToDerived<By>};
+            return dynamic_cast<Dty*>(static_cast<Bty*>(obj));
         }
     };
 
-    template <typename Dy>
-    struct CasterTraits<Dy, void> {
-        static void* ToSuper(void* obj) {
-            return obj;
-        }
+    /* not polymorphic type */
+    template <typename Dty, typename Bty>
+    struct CasterDerived<Dty, Bty, false> {
+        static void* ToDerived(void* obj) { return nullptr; }
+    };
 
-        static void* ToDerived(void* obj) {
-            return obj;
+    template <typename Dty, typename Bty>
+    struct CasterTraits : CasterDerived<Dty, Bty, std::is_polymorphic<Bty>::value> {
+        static short GetPtrOffset() {
+            Dty* d = (Dty*)reinterpret_cast<void*>(-1);
+            Bty* b = d;
+            return (short)(reinterpret_cast<int64_t>(b) - reinterpret_cast<int64_t>(d));
         }
+    };
 
-    public:
-        static inline TypeCaster Make() {
-            return TypeCaster{&ToSuper, &ToDerived};
-        }
+    template <typename Dty>
+    struct CasterTraits<Dty, void> {
+        static short GetPtrOffset() { return 0; }
+        static void* ToDerived(void* obj) { return obj; }
     };
 
     template <typename Ty>
@@ -192,7 +182,7 @@ namespace internal {
     template <typename Ty>
     inline void MetaSetArray(State* s, Ty* buf, size_t sz) {
         static_assert(std::is_same<char, Ty>::value, "only support char array");
-
+        // not support
     }
 
     //template <typename Ry>
@@ -686,9 +676,10 @@ inline ITypeFactory* CreateFactory(const char* name) {
 template <typename Ty, typename By = void,
     typename std::enable_if<!std::is_void<Ty>::value && !std::is_same<Ty, By>::value, int>::type = 0>
 inline ITypeFactory* CreateFactory(const char* name) {
+    using CasterTraits = internal::CasterTraits<Ty, By>;
     auto* factory = internal::CreateFactory(false, name, xLuaGetTypeDesc(Identity<By>()));
     factory->SetWeakProc(xLuaQueryWeakObjProc(Identity<Ty>()));
-    factory->SetCaster(internal::CasterTraits<Ty, By>::Make());
+    factory->SetCaster(CasterTraits::GetPtrOffset(), &CasterTraits::ToDerived);
     return factory;
 }
 
