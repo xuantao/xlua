@@ -20,7 +20,7 @@
 
 TEST(xlua, PushLoadNormal) {
     const char* check_func = "function Check(...) return ... end";
-    auto* s = xlua::CreateState(nullptr);
+    auto* s = xlua::Create(nullptr);
 
     ASSERT_TRUE(s->DoString(check_func, "Check"));
 
@@ -119,7 +119,7 @@ TEST(xlua, PushLoadNormal) {
 
 
 TEST(xlua, LifeTime) {
-    xlua::State* s = xlua::CreateState(nullptr);
+    xlua::State* s = xlua::Create(nullptr);
 
     ASSERT_EQ(LifeTime::s_counter, 0);
     {
@@ -189,7 +189,7 @@ TEST(xlua, LifeTime) {
 }
 
 TEST(xlua, LuaCallGuard) {
-    xlua::State* s = xlua::CreateState(nullptr);
+    xlua::State* s = xlua::Create(nullptr);
     const char* check_func = "function Check(...) return ... end";
     ASSERT_TRUE(s->DoString(check_func, "Check"));
 

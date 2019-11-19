@@ -1,26 +1,23 @@
 ﻿#pragma once
 #include <stdint.h>
 
-/* 容器容量增量 */
-#define XLUA_CONTAINER_INCREMENTAL  1024
-/* 类型名称最大字节数 */
-#define XLUA_MAX_TYPE_NAME_LENGTH   256
-/* 输出日志最大缓存字节数 */
-#define XLUA_MAX_BUFFER_CACHE       1024
+/* when contain is full, will incremental size */
+#define XLUA_CONTAINER_INCREMENTAL  4096
 
-/* 支持多继承
- * 当存在多继承时, 子类指针转向基类指针时指针可能会发生偏移，每次访问对象时指针需要做对应转换。
- * 如果明确约定不存在多继承情况可以关闭此功能以优化效率。
+/* switch the multiple inheritance optimize
+ * if enable this optimize then
+ * 1. will directily cast the derived pointer to base pointer
+ * 2. not support multiple inheritance, if has multiple inheritance will cause unknown error
 */
-#ifndef XLUA_ENABLE_MULTIPLE_INHERITANCE
-    #define XLUA_ENABLE_MULTIPLE_INHERITANCE    1
+#ifndef XLUA_ENABLE_MULTIPLE_INHERITANCE_OPTIMIZE
+    #define XLUA_ENABLE_MULTIPLE_INHERITANCE_OPTIMIZE   0
 #endif
 
-#if XLUA_ENABLE_MULTIPLE_INHERITANCE
-    #define _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, DstInfo)   xlua::ToSuper(Ptr, SrcInfo, DstInfo)
-#else // XLUA_ENABLE_MULTIPLE_INHERITANCE
+#if XLUA_ENABLE_MULTIPLE_INHERITANCE_OPTIMIZE
     #define _XLUA_TO_SUPER_PTR(DstInfo, Ptr, Info)      Ptr
-#endif // XLUA_ENABLE_MULTIPLE_INHERITANCE
+#else
+    #define _XLUA_TO_SUPER_PTR(Ptr, SrcInfo, DstInfo)   xlua::ToSuper(Ptr, SrcInfo, DstInfo)
+#endif
 
 /* 64位系统开启light user data优化
  * 导出对象指针使用LightUserData代替FullUserData, 避免Lua的GC以提升效率

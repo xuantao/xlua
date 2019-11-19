@@ -19,7 +19,7 @@
     <ClInclude Include="..\..\test\test.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\test\case.h">
+    <ClInclude Include="..\..\test\example.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
@@ -42,7 +42,7 @@
     <ClCompile Include="..\..\test\test.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\test\case.cpp">
+    <ClCompile Include="..\..\test\example.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

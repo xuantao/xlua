@@ -592,7 +592,7 @@ private:
 template <typename Ry, typename... Args>
 struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args...)>, true> {
     typedef std::function<Ry(Args...)> value_type;
-    typedef internal::ObjData<value_type> ObjData;
+    typedef internal::AloneData<value_type> AloneData;
     static inline const char* Name() { return "std::function"; }
 
     static inline bool Check(State* s, int index) {
@@ -607,7 +607,7 @@ struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args
         // same type
         if (lua_tocfunction(s->GetLuaState(), index) == &Call) {
             lua_getupvalue(s->GetLuaState(), index, 1);
-            auto* d = static_cast<ObjData*>(lua_touserdata(s->GetLuaState(), -1));
+            auto* d = static_cast<AloneData*>(lua_touserdata(s->GetLuaState(), -1));
             lua_pop(s->GetLuaState(), 1);
             return d->obj;
         }
@@ -620,21 +620,21 @@ struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args
         if (!val) {
             lua_pushnil(s->GetLuaState());
         } else {
-            s->state_.NewAloneObj<value_type>(val);
+            s->state_.NewAloneUd<value_type>(val);
             lua_pushcclosure(s->GetLuaState(), &Call, 1);
         }
     }
 
 private:
     static int Call(lua_State* l) {
-        auto* d = static_cast<ObjData*>(lua_touserdata(l, lua_upvalueindex(1)));
+        auto* d = static_cast<AloneData*>(lua_touserdata(l, lua_upvalueindex(1)));
         return internal::DoLuaCall<value_type&, Ry, Args...>(internal::GetState(l), d->obj);
     }
 };
 
 template <typename Ty>
 struct Support<internal::Lambda<Ty>> : ValueCategory<Ty, false> {
-    typedef internal::ObjData<Ty> ObjData;
+    typedef internal::AloneData<Ty> AloneData;
     typedef internal::Lambda<Ty> Lambda;
 
     static inline const char* Name() { return "lambda"; }
@@ -649,11 +649,11 @@ private:
     template <typename R, typename... Args>
     static inline void PushImpl(State* s, const Lambda& l) {
         static lua_CFunction lf = [](lua_State* l) {
-            auto* d = static_cast<ObjData*>(lua_touserdata(l, lua_upvalueindex(1)));
+            auto* d = static_cast<AloneData*>(lua_touserdata(l, lua_upvalueindex(1)));
             return internal::DoLuaCall<Ty&, R, Args...>(internal::GetState(l), d->obj);
         };
 
-        s->state_.NewAloneObj<Ty>(std::move(l.lambda));
+        s->state_.NewAloneUd<Ty>(std::move(l.lambda));
         lua_pushcclosure(s->GetLuaState(), lf, 1);
     }
 
@@ -684,7 +684,7 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true> {
         if (ud == nullptr || ud->minor != internal::UdMinor::kSmartPtr)
             return false;
 
-        auto* ptr = static_cast<internal::ObjUd*>(ud)->As<internal::SmartPtrData>();
+        auto* ptr = static_cast<internal::AliasUd*>(ud)->As<internal::SmartPtrData>();
         if (ptr->tag != tag_)
             return false;
 
@@ -696,7 +696,7 @@ struct Support<std::shared_ptr<Ty>> : ValueCategory<std::shared_ptr<Ty>, true> {
         if (ud == nullptr || ud->minor != internal::UdMinor::kSmartPtr)
             return value_type();
 
-        auto* ptr = static_cast<internal::ObjUd*>(ud)->As<internal::SmartPtrData>();
+        auto* ptr = static_cast<internal::AliasUd*>(ud)->As<internal::SmartPtrData>();
         if (ptr->tag != tag_)
             return value_type();
 
@@ -918,7 +918,7 @@ namespace internal {
         int Iter(void* obj, State* s) override {
             lua_pushcfunction(s->GetLuaState(), &sIter);
             lua_pushlightuserdata(s->GetLuaState(), obj);
-            s->state_.NewAloneObj<iterator>(As(obj)->begin());
+            s->state_.NewAloneUd<iterator>(As(obj)->begin());
             return 0;
         }
 
@@ -949,7 +949,7 @@ namespace internal {
 
         static int sIter(lua_State* l) {
             auto* obj = As(lua_touserdata(l, 1));
-            auto* data = static_cast<internal::ObjData<iterator>*>(lua_touserdata(l, 2));
+            auto* data = static_cast<internal::AloneData<iterator>*>(lua_touserdata(l, 2));
             if (data->obj != obj->end()) {
                 lua_pushvalue(l, 1);
                 value_supporter::Push(internal::GetState(l), data->obj->second);

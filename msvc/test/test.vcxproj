@@ -19,12 +19,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\test\case.h" />
+    <ClInclude Include="..\..\test\example.h" />
     <ClInclude Include="..\..\test\lua_export.h" />
     <ClInclude Include="..\..\test\test.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\test\case.cpp" />
+    <ClCompile Include="..\..\test\example.cpp" />
     <ClCompile Include="..\..\test\lua_export.cpp" />
     <ClCompile Include="..\..\test\main.cpp" />
     <ClCompile Include="..\..\test\test.cpp" />

@@ -19,13 +19,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\xlua\xlua.cpp" />
+    <ClCompile Include="..\..\xlua\core.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\xlua\scripts.hpp" />
-    <ClInclude Include="..\..\xlua\state.h" />
+    <ClInclude Include="..\..\xlua\core.h" />
     <ClInclude Include="..\..\xlua\support.hpp" />
-    <ClInclude Include="..\..\xlua\xlua.h" />
     <ClInclude Include="..\..\xlua\xlua_config.h" />
     <ClInclude Include="..\..\xlua\xlua_def.h" />
     <ClInclude Include="..\..\xlua\xlua_export.h" />

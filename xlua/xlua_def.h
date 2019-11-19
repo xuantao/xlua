@@ -14,6 +14,20 @@ struct lua_State;
 
 XLUA_NAMESPACE_BEGIN
 
+/* xlua state */
+class State;
+/* object index (xlua weak object reference) */
+class ObjectIndex;
+
+/* create a state
+ * mod: module name, all global export element will set under the module name
+*/
+State* Create(const char* mod);
+State* Attach(lua_State* l, const char* mod);
+
+/* manul release object */
+void FreeObjectIndex(ObjectIndex& index);
+
 /* type identify */
 template <typename Ty>
 struct Identity { typedef Ty type; };
@@ -23,8 +37,6 @@ struct Support;
 
 /* type describtion */
 struct TypeDesc;
-/* lua state */
-class State;
 
 /* market type is not support */
 struct not_support_tag {};
