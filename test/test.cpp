@@ -117,7 +117,6 @@ TEST(xlua, PushLoadNormal) {
     s->Release();
 }
 
-
 TEST(xlua, LifeTime) {
     xlua::State* s = xlua::Create(nullptr);
 
@@ -209,20 +208,20 @@ TEST(xlua, LuaCallGuard) {
     bool boolean_val;
     const char* str_val;
 
-    XLUA_IF_CALL_SUCC(s->Call("Check", std::tie(boolean_val, str_val), true, "hello world")) {
+    XCALL_SUCC(s->Call("Check", std::tie(boolean_val, str_val), true, "hello world")) {
         ASSERT_EQ(s->GetTop(), 2);
     }
 
-    XLUA_IF_CALL_SUCC(s->Call("Check_not_exist", std::tie(boolean_val, str_val), true, "hello world")) {
+    XCALL_SUCC(s->Call("Check_not_exist", std::tie(boolean_val, str_val), true, "hello world")) {
     } else {
         ASSERT_EQ(s->GetTop(), 1);
     }
 
-    XLUA_IF_CALL_FAIL(s->Call("Check_not_exist", std::tie(boolean_val, str_val), true, "hello world")) {
+    XCALL_FAIL(s->Call("Check_not_exist", std::tie(boolean_val, str_val), true, "hello world")) {
         ASSERT_EQ(s->GetTop(), 1);
     }
 
-    XLUA_IF_CALL_FAIL(s->Call("Check", std::tie(boolean_val, str_val), true, "hello world")) {
+    XCALL_FAIL(s->Call("Check", std::tie(boolean_val, str_val), true, "hello world")) {
     } else {
         ASSERT_EQ(s->GetTop(), 2);
     }
@@ -231,7 +230,7 @@ TEST(xlua, LuaCallGuard) {
         ASSERT_EQ(s->GetTop(), 2);
     }
 
-    /* if add '== false' experise, the guard will destrction immediately */
+    /* if add '== false' experise, the guard will destrct immediately */
     if (auto guard = s->DoString("return ...", "guard", true, "hello world") == false) {
     } else {
         EXPECT_EQ(s->GetTop(), 0);

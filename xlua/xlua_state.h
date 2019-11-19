@@ -90,8 +90,8 @@ public:
 };
 
 /* easy check lua call resut and guard the lua stack */
-#define XLUA_IF_CALL_SUCC(Call) if (xlua::CallGuard guard = Call)
-#define XLUA_IF_CALL_FAIL(Call) if (xlua::FailedCall guard = Call)
+#define XCALL_SUCC(Call) if (xlua::CallGuard guard = Call)
+#define XCALL_FAIL(Call) if (xlua::FailedCall guard = Call)
 
 /* lua object */
 class Object {
@@ -100,32 +100,40 @@ class Object {
 
 public:
     Object() : index_(0), state_(nullptr) {}
-    Object(Object&& obj) { Move(obj); }
-    Object(const Object& obj) : index_(obj.index_), state_(obj.state_) { AddRef(); }
+    Object(Object&& other) { Move(other); }
+    Object(const Object& other) : index_(other.index_), state_(other.state_) { AddRef(); }
     ~Object() { DecRef(); }
 
-    void operator = (Object&& obj) {
+public:
+    inline void operator = (Object&& other) {
         DecRef();
-        Move(obj);
+        Move(other);
     }
 
-    void operator = (const Object& obj) {
+    inline void operator = (const Object& other) {
         DecRef();
-        index_ = obj.index_;
-        state_ = obj.state_;
+        index_ = other.index_;
+        state_ = other.state_;
         AddRef();
     }
 
-public:
+    inline bool operator == (const Object& other) const {
+        return state_ == other.state_ && index_ == other.index_;
+    }
+
+    inline bool operator != (const Object& other) const {
+        return !(*this == other);
+    }
+
     inline State* GetState() const { return state_; }
     inline bool IsValid() const { return index_ > 0 && state_ != nullptr; }
 
 private:
-    void Move(Object& obj) {
-        index_ = obj.index_;
-        state_ = obj.state_;
-        obj.index_ = 0;
-        obj.state_ = nullptr;
+    void Move(Object& other) {
+        index_ = other.index_;
+        state_ = other.state_;
+        other.index_ = 0;
+        other.state_ = nullptr;
     }
 
     void AddRef();
@@ -166,9 +174,40 @@ public:
     template <typename Ky, typename... Rys, typename... Args>
     CallGuard DotCall(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args);
 
-    //TODO: iterator
+public:
+    // iterator
+    //struct iterator : std::iterator<std::input_iterator_tag, std::pair<Variant, Variant>> {
+    //public:
+    //    typedef std::iterator<std::input_iterator_tag, std::pair<Variant, Variant>> base_type;
+    //    typedef typename base_type::reference reference;
+    //    typedef typename base_type::pointer pointer;
+
+    //    iterator() = default;
+    //    iterator(const iterator&) = default;
+    //    explicit iterator(const Table& table, Variant key, Variant val)
+    //        : obj_(table), value_(key, val) {}
+
+    //public:
+    //    reference operator* () const { return value_; }
+    //    pointer operator-> () const { return &value_; }
+
+    //    iterator& operator++() { MoveNext(); return *this; }
+    //    iterator operator++(int) { iterator retval = *this; ++(*this); return retval; }
+    //    bool operator==(iterator other) const { return obj_ == other->obj_ && value_.key == other.value_.key; }
+    //    bool operator!=(iterator other) const { return !(*this == other); }
+
+    //private:
+    //    void MoveNext() {
+    //        //TODO:
+    //    }
+
+    //private:
+    //    Object obj_;
+    //    std::pair<Variant, Variant> value_;
+    //};
 };
 
+/* lua function */
 class Function : public Object {
     friend class Variant;
     friend class State;
@@ -189,6 +228,7 @@ public:
     CallGuard Call(std::tuple<Rys&...>&& ret, Args&&... args) const;
 };
 
+/* lua user data */
 class UserData : public Object {
     friend class Variant;
     friend class State;
@@ -219,10 +259,14 @@ private:
     void* ptr_;
 };
 
+/* Variant
+ * any var load from lua
+*/
 class Variant {
     friend class State;
 public:
-    Variant() : type_(VarType::kNil) {}
+    Variant() : type_(VarType::kNil), integer_(0) {}
+    Variant(const Variant& other) = default;
     Variant(bool val) : type_(VarType::kBoolean), boolean_(val) {}
     Variant(int64_t val) : type_(VarType::kInteger), integer_(val) {}
     Variant(double val) : type_(VarType::kNumber), number_(val) {}
@@ -235,6 +279,17 @@ public:
     Variant(const UserData& ud) : type_(VarType::kUserData), ptr_(ud.ptr_), obj_(ud) {}
 
 public:
+    inline bool operator == (const Variant& other) const {
+        return type_ == other.type_ &&
+            integer_ == other.integer_ &&
+            str_ == other.str_ &&
+            obj_ == other.obj_;
+    }
+
+    inline bool operator != (const Variant& other) const {
+        return !(*this == other);
+    }
+
     inline VarType GetType() const { return type_; }
 
     inline bool ToBoolean() const {
@@ -312,6 +367,9 @@ private:
     static std::string sEmptyString;
 };
 
+/* xlua state
+ * the main interface of xlua
+*/
 class State {
     friend class Object;
 public:
@@ -323,7 +381,7 @@ public:
     inline void Release() { internal::Destory(this); }
 
 public:
-    const char* GetTypeName(int index) const { return state_.GetTypeName(index); }
+    inline const char* GetModuleName() const { return state_.module_; }
     inline lua_State* GetLuaState() const { return state_.l_; }
     inline int GetTop() const { return lua_gettop(state_.l_); }
     inline void SetTop(int top) { lua_settop(state_.l_, top); }
@@ -332,6 +390,7 @@ public:
     inline void PushNil() { lua_pushnil(state_.l_); }
     inline void NewTable() { lua_newtable(state_.l_); }
     inline void Gc() { lua_gc(state_.l_, LUA_GCCOLLECT, 0); }
+    const char* GetTypeName(int index) const { return state_.GetTypeName(index); }
 
     template <typename... Tys>
     bool IsType(int index) const {
@@ -477,10 +536,6 @@ public:
 
     template <typename... Rys, typename... Args>
     inline CallGuard Call(const char* global, std::tuple<Rys&...>&& ret, Args&&... args) {
-        //if (LoadGlobal(global) != VarType::kFunction) {
-        //    PopTop(1);
-        //    return CallGuard();
-        //}
         LoadGlobal(global);
         return Call(std::move(ret), std::forward<Args>(args)...);
     }
