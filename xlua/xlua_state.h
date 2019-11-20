@@ -72,11 +72,6 @@ private:
     bool ok_ = false;
 };
 
-inline bool operator == (const CallGuard& g, bool ok) { return (bool)g == ok; }
-inline bool operator == (bool ok, const CallGuard& g) { return ok == (bool)g; }
-inline bool operator != (const CallGuard& g, bool ok) { return (bool)g != ok; }
-inline bool operator != (bool ok, const CallGuard& g) { return ok != (bool)g; }
-
 /* process call failed boolean check */
 class FailedCall : private CallGuard {
 public:
@@ -123,10 +118,7 @@ public:
     }
 
     bool operator == (const Object& other) const;
-
-    inline bool operator != (const Object& other) const {
-        return !(*this == other);
-    }
+    inline bool operator != (const Object& other) const { return !(*this == other); }
 
     inline State* GetState() const { return state_; }
     inline bool IsValid() const { return index_ > 0 && state_ != nullptr; }
@@ -202,16 +194,12 @@ public:
         }
     }
 
-    inline bool operator != (const Variant& other) const {
-        return !(*this == other);
-    }
+    inline bool operator != (const Variant& other) const { return !(*this == other); }
 
     inline VarType GetType() const { return type_; }
 
     inline bool ToBoolean() const {
-        if (type_ == VarType::kBoolean)
-            return boolean_;
-        return false;
+        return (type_ == VarType::kBoolean) ? boolean_ : false;
     }
 
     inline int64_t ToInt64() const {
@@ -223,9 +211,7 @@ public:
             return static_cast<int64_t>(number_);
     }
 
-    inline int ToInt() const {
-        return static_cast<int>(ToInt64());
-    }
+    inline int ToInt() const { return static_cast<int>(ToInt64()); }
 
     inline double ToDobule() const {
         if (type_ != VarType::kNumber)
@@ -236,20 +222,12 @@ public:
             return number_;
     }
 
-    inline float ToFloat() const {
-        return static_cast<float>(ToDobule());
-    }
-
+    inline float ToFloat() const { return static_cast<float>(ToDobule()); }
     inline const std::string& ToString() const {
-        if (type_ == VarType::kString)
-            return str_;
-        return "";
+        return (type_ == VarType::kString) ? str_ : std::string();
     }
-
     inline void* ToPtr() const {
-        if (type_ == VarType::kLightUserData || type_ == VarType::kUserData)
-            return ptr_;
-        return nullptr;
+        return (type_ == VarType::kLightUserData) ? ptr_ : nullptr;
     }
 
     Table ToTable() const;
@@ -306,7 +284,7 @@ namespace internal {
 } // internal
 
 /* lua table */
-class Table : public Object {
+class Table : private Object {
     friend class Variant;
     friend class State;
 
@@ -320,40 +298,21 @@ public:
     Table(Table&& table) : Object(std::move(table)) {}
     Table(const Table& table) : Object(table) {}
 
-    inline void operator = (Table&& table) {
-        Object::operator=(std::move(table));
-    }
-
-    inline void operator = (const Table& table) {
-        Object::operator=(table);
-    }
-
-    inline void operator = (std::nullptr_t) {
-        Object::operator= (nullptr);
-    }
+    inline void operator = (Table&& table) { Object::operator=(std::move(table)); }
+    inline void operator = (const Table& table) { Object::operator=(table); }
+    inline void operator = (std::nullptr_t) { Object::operator= (nullptr); }
 
 public:
     inline State* GetState() const { return Object::GetState(); }
     inline bool IsValid() const { return Object::IsValid(); }
-    inline bool operator == (const Table& table) const {
-        return Object::operator== (table);
-    }
-    inline bool operator != (const Table& table) const {
-        return Object::operator== (table);
-    }
+    inline bool operator == (const Table& table) const { return Object::operator== (table); }
+    inline bool operator != (const Table& table) const { return Object::operator!= (table); }
 
 public:
-    template <typename Ky>
-    VarType LoadField(const Ky& key);
-
-    template <typename Ky>
-    bool SetField(const Ky& key);
-
-    template <typename Ty, typename Ky>
-    Ty GetField(const Ky& key);
-
-    template <typename Ky, typename Ty>
-    bool SetField(const Ky& key, Ty&& val);
+    template <typename Ky> VarType LoadField(const Ky& key);
+    template <typename Ky> bool SetField(const Ky& key);
+    template <typename Ty, typename Ky> Ty GetField(const Ky& key);
+    template <typename Ky, typename Ty> bool SetField(const Ky& key, Ty&& val);
 
     template <typename Ky, typename... Rys, typename... Args>
     CallGuard Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args);
@@ -386,27 +345,15 @@ public:
     Function(Function&& func) : Object(std::move(func)) {}
     Function(const Function& func) : Object(func) {}
 
-    inline void operator = (Function&& func) {
-        Object::operator=(std::move(func));
-    }
-
-    inline void operator = (const Function& func) {
-        Object::operator=(func);
-    }
-
-    inline void operator = (std::nullptr_t) {
-        Object::operator= (nullptr);
-    }
+    inline void operator = (Function&& func) { Object::operator=(std::move(func)); }
+    inline void operator = (const Function& func) { Object::operator=(func); }
+    inline void operator = (std::nullptr_t) { Object::operator= (nullptr); }
 
 public:
     inline State* GetState() const { return Object::GetState(); }
     inline bool IsValid() const { return Object::IsValid(); }
-    inline bool operator == (const Function& func) const {
-        return Object::operator== (func);
-    }
-    inline bool operator != (const Function& func) const {
-        return Object::operator!= (func);
-    }
+    inline bool operator == (const Function& func) const { return Object::operator== (func); }
+    inline bool operator != (const Function& func) const { return Object::operator!= (func); }
 
 public:
     template <typename... Rys, typename... Args>
@@ -459,8 +406,8 @@ public:
         return !(*this == ud);
     }
 
-    template <typename Ty> bool IsType();
-    template <typename Ty> Ty As();
+    template <typename Ty> bool IsType() const;
+    template <typename Ty> Ty As() const;
 
 public:
     inline iterator begin() const {
@@ -863,26 +810,6 @@ namespace internal {
     }
 } // namesapce internal
 
-/* lua user data */
-template <typename Ty>
-inline bool UserData::IsType() {
-    if (!IsValid())
-        return false;
-
-    StackGuard guard(state_);
-    state_->PushVar(*this);
-    return state_->IsType<Ty>(-1);
-}
-
-template <typename Ty>
-inline Ty UserData::As() {
-    assert(IsValid());
-
-    StackGuard guard(state_);
-    state_->PushVar(*this);
-    return state_->Get<Ty>(-1);
-}
-
 /* lua table */
 template <typename Ky>
 VarType Table::LoadField(const Ky& key) {
@@ -958,6 +885,26 @@ inline CallGuard Function::Call(std::tuple<Rys&...>&& ret, Args&&... args) const
 
     state_->PushVar(*this);
     return state_->Call(std::move(ret), std::forward<Args>(args)...);
+}
+
+/* lua user data */
+template <typename Ty>
+inline bool UserData::IsType() const {
+    if (!IsValid())
+        return false;
+
+    StackGuard guard(state_);
+    state_->PushVar(*this);
+    return state_->IsType<Ty>(-1);
+}
+
+template <typename Ty>
+inline Ty UserData::As() const {
+    assert(IsValid());
+
+    StackGuard guard(state_);
+    state_->PushVar(*this);
+    return state_->Get<Ty>(-1);
 }
 
 XLUA_NAMESPACE_END
