@@ -501,7 +501,7 @@ namespace internal {
         void Free(int index) {
             auto& obj = objs_[index];
             obj.next = Next();
-            obj.value = Ty();
+            obj.value = invalid_;
             Next() = index;
         }
 
@@ -902,7 +902,7 @@ namespace internal {
         int RefObj(int index) {
             int lty = lua_type(l_, index);
             //TODO: lua thread?
-            if (lty != LUA_TFUNCTION && lty != LUA_TUSERDATA && lty != LUA_TFUNCTION)
+            if (lty != LUA_TTABLE && lty != LUA_TUSERDATA && lty != LUA_TFUNCTION)
                 return 0;
 
             // reference lua object

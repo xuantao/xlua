@@ -190,7 +190,12 @@ struct Support<Table> : ValueCategory<Table, true> {
         return lua_type(s->GetLuaState(), index) == LUA_TTABLE;
     }
     static inline Table Load(State* s, int index) { return s->GetVar(index).ToTable(); }
-    static inline void Push(State* s, const Table& var) { s->PushVar(var); }
+    static inline void Push(State* s, const Table& var) {
+        if (!var.IsValid())
+            s->PushNil();
+        else
+            ((const Object*)&var)->Push();
+    }
 };
 
 template <>
@@ -200,7 +205,12 @@ struct Support<Function> : ValueCategory<Function, true> {
         return lua_type(s->GetLuaState(), index) == LUA_TFUNCTION;
     }
     static inline Function Load(State* s, int index) { return s->GetVar(index).ToFunction(); }
-    static inline void Push(State* s, const Function& var) { s->PushVar(var); }
+    static inline void Push(State* s, const Function& var) {
+        if (!var.IsValid())
+            s->PushNil();
+        else
+            ((const Object*)&var)->Push();
+    }
 };
 
 template <>
@@ -211,7 +221,16 @@ struct Support<UserData> : ValueCategory<UserData, true> {
         return lty == LUA_TUSERDATA || lty == LUA_TLIGHTUSERDATA;
     }
     static inline UserData Load(State* s, int index) { return s->GetVar(index).ToUserData(); }
-    static inline void Push(State* s, const UserData& var) { s->PushVar(var); }
+    static inline void Push(State* s, const UserData& var) {
+        if (!var.IsValid())
+            s->PushNil();
+#if XLUA_ENABLE_LUD_OPTIMIZE
+        else if (var.IsLud())
+            lua_pushlightuserdata(s->GetLuaState(), var.Ptr());
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+        else
+            ((const Object*)&var)->Push();
+    }
 };
 
 /* nil support */

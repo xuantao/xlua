@@ -2,6 +2,8 @@
 #include "xlua.h"
 #include "gtest/gtest.h"
 
+static constexpr const char* kCheckFunc = "function Check(...) return ... end";
+
 #define _TEST_CHECK_VAL(Type, Val)                          \
     {                                                       \
         Type v;                                             \
@@ -240,6 +242,62 @@ TEST(xlua, LuaCallGuard) {
     s->Release();
 }
 
-TEST(xlua, PushLoadObject) {
+TEST(xlua, TestTable) {
+    xlua::State* s = xlua::Create(nullptr);
+    {
+        xlua::Table table;
+        ASSERT_EQ(table.begin(), table.end());
 
+        s->NewTable();
+        table = s->GetVar(-1).ToTable();
+        ASSERT_EQ(table.begin(), table.end());
+
+        // assign table field
+        for (int i = 0; i < 10; ++i) {
+            s->SetField(-1, i + 1, i + 1);
+        }
+        ASSERT_EQ(s->GetTop(), 1);
+        ASSERT_NE(table.begin(), table.end());
+        s->PopTop(1);
+
+        // check table value
+        int idx = 1;
+        for (auto beg = table.begin(), end = table.end(); beg != end; ++beg, ++idx) {
+            ASSERT_EQ(beg->first.ToInt(), idx);
+            ASSERT_EQ(beg->second.ToInt(), idx);
+        }
+        idx = 1;
+        for (auto pair : table) {
+            ASSERT_EQ(pair.first.ToInt(), idx);
+            ASSERT_EQ(pair.second.ToInt(), idx);
+            ++idx;
+        }
+
+        // clear table
+        for (int i = 0; i < 10; ++i) {
+            table.SetField(i+1, nullptr);
+        }
+        ASSERT_EQ(s->GetTop(), 0);
+        ASSERT_EQ(table.begin(), table.end());
+
+        XCALL_SUCC(s->DoString("return function (...) return ... end", "")) {
+            ASSERT_EQ(s->GetTop(), 1);
+            table.SetField("Check");
+            ASSERT_EQ(s->GetTop(), 0);  // will set the top value as table field and remove ths stack value
+        }
+
+        auto func = table.GetField<xlua::Function>("Check");
+        ASSERT_TRUE(func.IsValid());
+
+        int i = 0;
+        table.DotCall("Check", std::tie(i), 1);
+        ASSERT_EQ(i, 1);
+
+        xlua::Table ret;
+        table.Call("Check", std::tie(ret));
+        ASSERT_EQ(table, ret);
+        //ASSERT_NE(table, ret);  // here is a new table ref to the same table
+    }
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
 }
