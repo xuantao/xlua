@@ -288,7 +288,7 @@ struct SupportTraits {
     typedef typename supporter::value_type value_type;
 
     static constexpr bool is_support = !std::is_same<not_support_tag, category>::value;
-    static constexpr bool is_obj_type = std::is_same<object_category_tag_, category>::value;
+    static constexpr bool is_obj_type = std::is_base_of<object_category_tag_, category>::value;
     static constexpr bool is_obj_value = !std::is_pointer<value_type>::value && is_obj_type;
     static constexpr bool is_allow_nil = supporter::allow_nil;
 };

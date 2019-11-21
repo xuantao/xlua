@@ -511,9 +511,9 @@ namespace internal {
         inline bool operator==(const iterator& other) const { return obj_ == other.obj_ && value_.first == other.value_.first; }
         inline bool operator!=(const iterator& other) const { return !(*this == other); }
 
-        void MoveNext() {
+        bool MoveNext() {
             if (!obj_.IsValid())
-                return;
+                return false;
 
             auto* s = obj_.GetState();
             StackGuard guard(s);
@@ -526,6 +526,7 @@ namespace internal {
             } else {
                 value_.first = Variant();
             }
+            return value_.first.GetType() != VarType::kNil;
         }
 
     private:
@@ -555,10 +556,10 @@ public:
 public:
     inline State* GetState() const { return Object::GetState(); }
     inline bool IsValid() const { return Object::IsValid(); }
+
     inline bool operator == (const Table& table) const { return Object::operator== (table); }
     inline bool operator != (const Table& table) const { return Object::operator!= (table); }
 
-public:
     template <typename Ky>
     inline VarType LoadField(const Ky& key) {
         assert(IsValid());
@@ -638,6 +639,142 @@ public:
     }
 }; // class Table
 
+/* lua user data */
+class UserData : private Object {
+    friend class Variant;
+    friend class State;
+
+    UserData(void* ptr, Object&& obj) : Object(std::move(obj)), ptr_(ptr) {}
+    UserData(void* ptr, const Object& obj) : Object(obj), ptr_(ptr) {}
+public:
+    using iterator = internal::iterator<UserData>;
+
+public:
+    UserData() : ptr_(nullptr) {}
+    UserData(UserData&& ud) : Object(std::move(ud)) {}
+    UserData(const UserData& ud) : Object(ud) {}
+
+    inline void operator = (UserData&& ud) {
+        Object::operator=(std::move(ud));
+        ptr_ = ud.ptr_;
+        ud.ptr_ = nullptr;
+    }
+
+    inline void operator = (const UserData& ud) {
+        Object::operator=(ud);
+        ptr_ = ud.ptr_;
+    }
+
+    inline void operator = (std::nullptr_t) {
+        Object::operator= (nullptr);
+        ptr_ = nullptr;
+    }
+
+public:
+    inline State* GetState() const { return Object::GetState(); }
+    inline bool IsValid() const { return state_ != nullptr && ptr_ != nullptr; }
+
+    inline bool operator == (const UserData& ud) const {
+        return state_ == ud.state_ && ptr_ == ud.ptr_;
+    }
+    inline bool operator != (const UserData& ud) const {
+        return !(*this == ud);
+    }
+
+    template <typename Ty>
+    inline bool IsType() const {
+        if (!IsValid())
+            return false;
+
+        StackGuard guard(state_);
+        state_->Push(*this);
+        return state_->IsType<Ty>(-1);
+    }
+
+    template <typename Ty>
+    inline Ty As() const {
+        assert(IsValid());
+
+        StackGuard guard(state_);
+        state_->Push(*this);
+        return state_->Get<Ty>(-1);
+    }
+
+    template <typename Ky>
+    inline VarType LoadField(const Ky& key) {
+        assert(IsValid());
+
+        state_->Push(*this);
+        state_->LoadField(-1, key);
+        lua_remove(state_->GetLuaState(), -2);
+        return state_->GetType(-1);
+    }
+
+    template <typename Ky>
+    inline bool SetField(const Ky& key) {
+        assert(IsValid() && state_->GetTop());
+
+        StackGuard guard(state_, -1);
+        state_->Push(*this);
+        state_->Push(key);
+        lua_rotate(state_->state_.l_, -3, -1);  //from:value, table, key
+                                                //  to:table, key, value
+        lua_settable(state_->state_.l_, -3);
+        return true;
+    }
+
+    template <typename Ty, typename Ky>
+    inline Ty GetField(const Ky& key) {
+        assert(IsValid());
+
+        StackGuard guard(state_);
+        state_->Push(*this);
+        state_->LoadField(-1, key);
+        return state_->Get<Ty>(-1);
+    }
+
+    template <typename Ky, typename Ty>
+    inline bool SetField(const Ky& key, Ty&& val) {
+        assert(IsValid());
+
+        StackGuard guard(state_);
+        state_->Push(*this);
+        state_->SetField(-1, key, std::forward<Ty>(val));
+        return true;
+    }
+
+    template <typename Ky, typename... Rys, typename... Args>
+    inline CallGuard Call(const Ky& key, std::tuple<Rys&...>&& ret, Args&&... args) {
+        assert(IsValid());
+
+        LoadField(key);
+        if (state_->GetType(-1) == VarType::kFunction)
+            return state_->Call(std::move(ret), *this, std::forward<Args>(args)...);
+
+        state_->PopTop(1);
+        return CallGuard();
+    }
+
+public:
+    inline iterator begin() const {
+        iterator it(*this);
+        it.MoveNext();
+        return it;
+    }
+
+    inline iterator end() const {
+        return iterator(*this);
+    }
+
+#if XLUA_ENABLE_LUD_OPTIMIZE
+    inline bool IsLud() const { return IsValid() && index_ == 0; }
+    inline void* Ptr() const { return ptr_; }
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+
+private:
+    void* ptr_;
+}; // class UserData
+
 /* lua function */
 class Function : private Object {
     friend class Variant;
@@ -675,86 +812,6 @@ public:
         return state_->Call(std::move(ret), std::forward<Args>(args)...);
     }
 }; // class Function
-
-/* lua user data */
-class UserData : private Object {
-    friend class Variant;
-    friend class State;
-
-    UserData(void* ptr, Object&& obj) : Object(std::move(obj)), ptr_(ptr) {}
-    UserData(void* ptr, const Object& obj) : Object(obj), ptr_(ptr) {}
-public:
-    using iterator = internal::iterator<UserData>;
-
-public:
-    UserData() : ptr_(nullptr) {}
-    UserData(UserData&& ud) : Object(std::move(ud)) {}
-    UserData(const UserData& ud) : Object(ud) {}
-
-    inline void operator = (UserData&& ud) {
-        Object::operator=(std::move(ud));
-        ptr_ = ud.ptr_;
-        ud.ptr_ = nullptr;
-    }
-
-    inline void operator = (const UserData& ud) {
-        Object::operator=(ud);
-        ptr_ = ud.ptr_;
-    }
-
-    inline void operator = (std::nullptr_t) {
-        Object::operator= (nullptr);
-        ptr_ = nullptr;
-    }
-
-public:
-    inline State* GetState() const { return Object::GetState(); }
-    inline bool IsValid() const { return state_ != nullptr && ptr_ != nullptr; }
-    inline bool operator == (const UserData& ud) const {
-        return state_ == ud.state_ && ptr_ == ud.ptr_;
-    }
-    inline bool operator != (const UserData& ud) const {
-        return !(*this == ud);
-    }
-
-    template <typename Ty>
-    inline bool IsType() const {
-        if (!IsValid())
-            return false;
-
-        StackGuard guard(state_);
-        state_->Push(*this);
-        return state_->IsType<Ty>(-1);
-    }
-
-    template <typename Ty>
-    inline Ty As() const {
-        assert(IsValid());
-
-        StackGuard guard(state_);
-        state_->Push(*this);
-        return state_->Get<Ty>(-1);
-    }
-
-public:
-    inline iterator begin() const {
-        iterator it(*this);
-        it.MoveNext();
-        return it;
-    }
-
-    inline iterator end() const {
-        return iterator(*this);
-    }
-
-#if XLUA_ENABLE_LUD_OPTIMIZE
-    inline bool IsLud() const { return IsValid() && index_ == 0; }
-    inline void* Ptr() const { return ptr_; }
-#endif // XLUA_ENABLE_LUD_OPTIMIZE
-
-private:
-    void* ptr_;
-}; // class UserData
 
 /* variant detail */
 inline Variant::Variant(const Table& table)

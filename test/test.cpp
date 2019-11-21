@@ -301,3 +301,7 @@ TEST(xlua, TestTable) {
     ASSERT_EQ(s->GetTop(), 0);
     s->Release();
 }
+
+TEST(xlua, TestUserData) {
+
+}

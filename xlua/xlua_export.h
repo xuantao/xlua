@@ -169,6 +169,18 @@ namespace internal {
         return false;
     }
 
+    // get member as reference
+    template <typename Ty>
+    inline void MetaGet_(State* s, Ty& val, std::true_type) {
+        s->Push(&val);
+    }
+
+    // get member as value
+    template <typename Ty>
+    inline void MetaGet_(State* s, Ty&& val, std::false_type) {
+        s->Push(std::forward<Ty>(val));
+    }
+
     /* set array value, only support string */
     inline void MetaSetArray(State* s, char* buf, size_t sz) {
         const char* str = s->Get<const char*>(1);
@@ -217,7 +229,10 @@ namespace internal {
 
     template <typename Ry>
     inline void MetaGet(State* s, Ry* data) {
-        s->Push(*data);
+        using tag = typename std::conditional<SupportTraits<Ry>::is_obj_value,
+            std::true_type, std::false_type
+        >::type;
+        MetaGet_(s, *data, tag());
     }
 
     template <typename Ry>
@@ -227,7 +242,13 @@ namespace internal {
 
     template <typename Ry>
     inline void MetaGet(State* s, Ry(*func)()) {
-        s->Push(func());
+        using tag = typename std::conditional<
+            std::is_lvalue_reference<Ry>::value &&
+            !std::is_const<Ry>::value &&
+            SupportTraits<Ry>::is_obj_value,
+            std::true_type, std::false_type
+        >::type;
+        MetaGet_(s, func(), tag());
     }
 
     template <typename Ry>
@@ -238,7 +259,10 @@ namespace internal {
 
     template <typename Obj, typename Ty, typename Ry>
     inline void MetaGet(State* s, Obj* obj, Ry Ty::* data) {
-        s->Push(obj->*data);
+        using tag = typename std::conditional<SupportTraits<Ry>::is_obj_value,
+            std::true_type, std::false_type
+        >::type;
+        MetaGet_(s, obj->*data, tag());
     }
 
     template <typename Obj, typename Ty, typename Ry>
@@ -248,12 +272,24 @@ namespace internal {
 
     template <typename Obj, typename Ty, typename Ry>
     inline void MetaGet(State* s, Obj* obj, Ry(Ty::*func)()) {
-        s->Push((obj->*func)());
+        using tag = typename std::conditional<
+            std::is_lvalue_reference<Ry>::value &&
+            !std::is_const<Ry>::value &&
+            SupportTraits<Ry>::is_obj_value,
+            std::true_type, std::false_type
+        >::type;
+        MetaGet_(s, (obj->*func)(), tag());
     }
 
     template <typename Obj, typename Ty, typename Ry>
     inline void MetaGet(State* s, Obj* obj, Ry(Ty::*func)()const) {
-        s->Push((obj->*func)());
+        using tag = typename std::conditional<
+            std::is_lvalue_reference<Ry>::value &&
+            !std::is_const<Ry>::value &&
+            SupportTraits<Ry>::is_obj_value,
+            std::true_type, std::false_type
+        >::type;
+        MetaGet_(s, (obj->*func)(), tag());
     }
 
     template <typename Obj, typename Ty, typename Ry>

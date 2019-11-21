@@ -238,18 +238,25 @@ struct Support<Variant> : ValueCategory<Variant, true> {
             break;
         case VarType::kTable:
         case VarType::kFunction:
-            var.obj_.Push();
+            if (var.obj_.IsValid())
+                var.obj_.Push();
+            else
+                s->PushNil();
             break;
         case VarType::kLightUserData:
             lua_pushlightuserdata(l, var.ptr_);
             break;
         case VarType::kUserData:
 #if XLUA_ENABLE_LUD_OPTIMIZE
-            if (!var.obj_.IsValid())
+            if (var.obj_.GetState() && var.ptr_ != nullptr) {
                 lua_pushlightuserdata(l, var.ptr_);
-            else
+                break;
+            }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
+            if (var.obj_.IsValid())
                 var.obj_.Push();
+            else
+                s->PushNil();
             break;
         default:
             s->PushNil();
