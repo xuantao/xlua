@@ -214,7 +214,7 @@ struct Support<Variant> : ValueCategory<Variant, true> {
         case LUA_TUSERDATA:
             ptr = lua_touserdata(l, index);
             if (static_cast<internal::FullUd*>(ptr)->IsValid())
-                return Variant(VarType::kUserData, s->state_.RefObj(index), s);
+                return Variant(ptr, s->state_.RefObj(index), s);
             break;
         }
         return Variant();
@@ -308,7 +308,7 @@ struct Support<UserData> : ValueCategory<UserData, true> {
             s->PushNil();
 #if XLUA_ENABLE_LUD_OPTIMIZE
         else if (var.IsLud())
-            lua_pushlightuserdata(s->GetLuaState(), var.Ptr());
+            lua_pushlightuserdata(s->GetLuaState(), var.ToLud().value);
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
         else
             ((const Object*)&var)->Push();
@@ -552,10 +552,31 @@ namespace internal {
         return ParamChecker<sizeof...(Args)>::template Do<Args...>(s, index);
     }
 
+    template <typename Ty>
+    inline void PushRetVal_(State* s, Ty& val, std::true_type) {
+        s->Push(&val);
+    }
+
+    template <typename Ty>
+    inline void PushRetVal_(State* s, Ty&& val, std::false_type) {
+        s->Push(val);
+    }
+
+    template <typename Ry, typename Ty>
+    inline void PushRetVal(State* s, Ty&& val) {
+        using tag = typename std::conditional<
+            std::is_lvalue_reference<Ry>::value &&
+            !std::is_const<Ry>::value &&
+            SupportTraits<Ry>::is_obj_value,
+            std::true_type, std::false_type
+        >::type;
+        PushRetVal_(s, std::forward<Ty>(val), tag());
+    }
+
     template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
     inline auto DoLuaCall(State* s, Fy f, index_sequence<Idxs...>) -> typename std::enable_if<!std::is_void<Ry>::value, int>::type {
         if (CheckParameters<Args...>(s, 1)) {
-            s->Push(f(SupportTraits<Args>::supporter::Load(s, Idxs + 1)...));
+            PushRetVal<Ry>(s, f(SupportTraits<Args>::supporter::Load(s, Idxs + 1)...));
             return 1;
         } else {
             char buff[1024];
@@ -844,33 +865,33 @@ namespace internal {
         int Index(void* obj, State* s) override {
             auto* vec = As(obj);
             int idx = LoadIndex(s);
-            if (idx == 0 || !CheckRange(s, idx, vec->size()))
+            if (idx < 0 || !CheckRange(s, idx, vec->size()))
                 return 0;
 
-            s->Push(vec->at(idx - 1));
+            s->Push(vec->at(idx));
             return 1;
         }
 
         int NewIndex(void* obj, State* s) override {
             auto* vec = As(obj);
             int idx = LoadIndex(s);
-            if (idx == 0 || !CheckRange(s, idx, vec->size() + 1) || !CheckValue(s))
+            if (idx < 0 || !CheckRange(s, idx, vec->size() + 1) || !CheckValue(s))
                 return 0;
 
-            if (idx == (int)vec->size() + 1)
+            if (idx == (int)vec->size())
                 vec->push_back(supporter::Load(s, 3));
             else
-                (*vec)[idx - 1] = supporter::Load(s, 3);
+                (*vec)[idx] = supporter::Load(s, 3);
             return 0;
         }
 
         int Insert(void* obj, State* s) override {
             auto* vec = As(obj);
             int idx = LoadIndex(s);
-            if (idx == 0 || !CheckRange(s, idx, vec->size()) || !CheckValue(s))
+            if (idx < 0 || !CheckRange(s, idx, vec->size()) || !CheckValue(s))
                 return 0;
 
-            vec->insert(vec->begin() + (idx - 1), supporter::Load(s, 3));
+            vec->insert(vec->begin() + idx, supporter::Load(s, 3));
             s->Push(true);
             return 1;
         }
@@ -878,17 +899,18 @@ namespace internal {
         int Remove(void* obj, State* s) override {
             auto* vec = As(obj);
             int idx = LoadIndex(s);
-            if (idx == 0 || !CheckRange(s, idx, vec->size()))
+            if (idx < 0 || !CheckRange(s, idx, vec->size()))
                 return 0;
 
-            vec->erase(vec->begin() + (idx - 1));
+            vec->erase(vec->begin() + idx);
             return 0;
         }
 
         int Iter(void* obj, State* s) override {
             lua_pushcfunction(s->GetLuaState(), &sIter);
             lua_pushlightuserdata(s->GetLuaState(), obj);
-            lua_pushnumber(s->GetLuaState(), 0);
+            lua_pushnil(s->GetLuaState());
+            //lua_pushnumber(s->GetLuaState(), 0);
             return 3;
         }
 
@@ -906,19 +928,19 @@ namespace internal {
         inline int LoadIndex(State* s) {
             if (!lua_isnumber(s->GetLuaState(), 2)) {
                 luaL_error(s->GetLuaState(), "vector only accept number index key");
-                return 0;
+                return -1;
             }
 
             int idx = s->Get<int>(2);
-            if (idx <= 0) {
+            if (idx < 0) {
                 luaL_error(s->GetLuaState(), "vector index must greater than '0'");
-                return 0;
+                return -1;
             }
             return idx;
         }
 
         inline bool CheckRange(State* s, int idx, size_t sz) {
-            if (idx > 0 && idx <= (int)sz)
+            if (idx >= 0 && idx < (int)sz)
                 return true;
 
             luaL_error(s->GetLuaState(), "vector index is out of range");

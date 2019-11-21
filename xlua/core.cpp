@@ -162,6 +162,10 @@ namespace internal {
     }
 
     void Destory(State* s) {
+        //TODO: how to detach state
+        if (!s->state_.is_attach_)
+            lua_close(s->state_.l_);
+
         // remove from state list
         auto it = std::find_if(g_env.state_list.begin(), g_env.state_list.end(),
             [s](const std::pair<lua_State*, State*>& pair) {
@@ -169,9 +173,6 @@ namespace internal {
         });
         g_env.state_list.erase(it);
 
-        //TODO: how to detach state
-        if (!s->state_.is_attach_)
-            lua_close(s->state_.l_);
         delete s;
     }
 

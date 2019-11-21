@@ -196,6 +196,28 @@ function TestExportScript()
 end
 )V0G0N");
 
+XLUA_EXPORT_CLASS_BEGIN(ExportObj)
+XLUA_EXPORT_CLASS_END()
+
+XLUA_EXPORT_CLASS_BEGIN(TestMember)
+XLUA_VARIATE(TestMember::boolean_val)
+XLUA_VARIATE(TestMember::int_val)
+XLUA_VARIATE(TestMember::long_val)
+XLUA_VARIATE(TestMember::name_val)
+XLUA_VARIATE(TestMember::export_val)
+//XLUA_VARIATE(TestMember::none_export_va)  // error, not export
+XLUA_VARIATE(TestMember::vector_val)
+XLUA_VARIATE(TestMember::map_val)
+XLUA_VARIATE(TestMember::s_boolean_val)
+XLUA_VARIATE(TestMember::s_int_val)
+XLUA_VARIATE(TestMember::s_long_val)
+XLUA_VARIATE(TestMember::s_name_val)
+XLUA_VARIATE(TestMember::s_export_val)
+//XLUA_VARIATE(TestMember::s_none_export_va)  // error, not export
+XLUA_VARIATE(TestMember::s_vector_val)
+XLUA_VARIATE(TestMember::s_map_val)
+XLUA_EXPORT_CLASS_END()
+
 XLUA_EXPORT_CONSTANT_BEGIN(WidgetType)
 XLUA_CONSTANT(WidgetType::kImage)
 XLUA_CONSTANT(WidgetType::kLabel)

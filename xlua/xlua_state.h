@@ -195,7 +195,8 @@ public:
 
     template <typename Ky>
     VarType LoadField(int index, const Ky& key) {
-        if (!lua_istable(state_.l_, index)) {
+        int ty = lua_type(state_.l_, index);
+        if (!_IS_TABLE_TYPE(ty)) {
             PushNil();
             return VarType::kNil;
         }
@@ -208,7 +209,8 @@ public:
 
     template <typename Ky, typename Ty>
     bool SetField(int index, const Ky& key, Ty&& val) {
-        if (!lua_istable(state_.l_, index))
+        int ty = lua_type(state_.l_, index);
+        if (!_IS_TABLE_TYPE(ty))
             return false;
 
         index = lua_absindex(state_.l_, index);
@@ -489,7 +491,7 @@ private:
 
 namespace internal {
     /* iterator
-     * lua table or user data iterator
+     * lua table iterator
     */
     template <class Oty>
     class iterator : std::iterator<std::input_iterator_tag, const std::pair<Variant, Variant>> {
@@ -646,13 +648,11 @@ class UserData : private Object {
 
     UserData(void* ptr, Object&& obj) : Object(std::move(obj)), ptr_(ptr) {}
     UserData(void* ptr, const Object& obj) : Object(obj), ptr_(ptr) {}
-public:
-    using iterator = internal::iterator<UserData>;
 
 public:
     UserData() : ptr_(nullptr) {}
-    UserData(UserData&& ud) : Object(std::move(ud)) {}
-    UserData(const UserData& ud) : Object(ud) {}
+    UserData(UserData&& ud) : Object(std::move(ud)), ptr_(ud.ptr_) { ud.ptr_ = nullptr; }
+    UserData(const UserData& ud) : Object(ud), ptr_(ud.ptr_) {}
 
     inline void operator = (UserData&& ud) {
         Object::operator=(std::move(ud));
@@ -755,20 +755,9 @@ public:
         return CallGuard();
     }
 
-public:
-    inline iterator begin() const {
-        iterator it(*this);
-        it.MoveNext();
-        return it;
-    }
-
-    inline iterator end() const {
-        return iterator(*this);
-    }
-
 #if XLUA_ENABLE_LUD_OPTIMIZE
     inline bool IsLud() const { return IsValid() && index_ == 0; }
-    inline void* Ptr() const { return ptr_; }
+    inline internal::LightUd ToLud() const { return internal::LightUd::Make(ptr_); }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
 private:

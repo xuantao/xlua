@@ -13,7 +13,7 @@ XLUA_NAMESPACE_BEGIN
 #if XLUA_ENABLE_LUD_OPTIMIZE
     #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TLIGHTUSERDATA || type == LUA_TUSERDATA)
 #else
-    #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TFullData)
+    #define _IS_TABLE_TYPE(type)    (type == LUA_TTABLE || type == LUA_TUSERDATA)
 #endif
 
 namespace internal {

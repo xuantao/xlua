@@ -303,5 +303,41 @@ TEST(xlua, TestTable) {
 }
 
 TEST(xlua, TestUserData) {
+    xlua::State* s = xlua::Create(nullptr);
 
+    {
+        // load static value
+        auto* vec = s->GetGlobal<std::vector<int>*>("TestMember.s_vector_val");
+        ASSERT_NE(vec, nullptr);
+        vec->push_back(2);
+        vec->push_back(3);
+        s->Push(vec);
+
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+
+        ASSERT_EQ(s->GetTop(), 0);
+        ASSERT_TRUE(ud.IsValid());
+
+        ud.SetField(0, 100);
+        ASSERT_EQ(ud.GetField<int>(0), 100);
+
+        s->Push(101);
+        ud.SetField(1); // will pop the top value
+        ASSERT_EQ(s->GetTop(), 0);
+        ASSERT_EQ(ud.GetField<int>(1), 101);
+
+        auto* vec2 = ud.As<std::vector<int>*>();
+        ASSERT_EQ(vec, vec2);
+
+        s->Push(ud);
+        auto* vec3 = s->Get<std::vector<int>*>(-1);
+        s->PopTop(1);
+        ASSERT_EQ(vec, vec3);
+    }
+
+
+
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
 }

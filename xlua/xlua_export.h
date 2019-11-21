@@ -169,18 +169,6 @@ namespace internal {
         return false;
     }
 
-    // get member as reference
-    template <typename Ty>
-    inline void MetaGet_(State* s, Ty& val, std::true_type) {
-        s->Push(&val);
-    }
-
-    // get member as value
-    template <typename Ty>
-    inline void MetaGet_(State* s, Ty&& val, std::false_type) {
-        s->Push(std::forward<Ty>(val));
-    }
-
     /* set array value, only support string */
     inline void MetaSetArray(State* s, char* buf, size_t sz) {
         const char* str = s->Get<const char*>(1);
@@ -229,10 +217,7 @@ namespace internal {
 
     template <typename Ry>
     inline void MetaGet(State* s, Ry* data) {
-        using tag = typename std::conditional<SupportTraits<Ry>::is_obj_value,
-            std::true_type, std::false_type
-        >::type;
-        MetaGet_(s, *data, tag());
+        PushRetVal<Ry>(s, *data);
     }
 
     template <typename Ry>
@@ -242,13 +227,7 @@ namespace internal {
 
     template <typename Ry>
     inline void MetaGet(State* s, Ry(*func)()) {
-        using tag = typename std::conditional<
-            std::is_lvalue_reference<Ry>::value &&
-            !std::is_const<Ry>::value &&
-            SupportTraits<Ry>::is_obj_value,
-            std::true_type, std::false_type
-        >::type;
-        MetaGet_(s, func(), tag());
+        PushRetVal<Ry>(s, func());
     }
 
     template <typename Ry>
@@ -259,10 +238,7 @@ namespace internal {
 
     template <typename Obj, typename Ty, typename Ry>
     inline void MetaGet(State* s, Obj* obj, Ry Ty::* data) {
-        using tag = typename std::conditional<SupportTraits<Ry>::is_obj_value,
-            std::true_type, std::false_type
-        >::type;
-        MetaGet_(s, obj->*data, tag());
+        PushRetVal<Ry>(s, obj->*data);
     }
 
     template <typename Obj, typename Ty, typename Ry>
@@ -272,24 +248,12 @@ namespace internal {
 
     template <typename Obj, typename Ty, typename Ry>
     inline void MetaGet(State* s, Obj* obj, Ry(Ty::*func)()) {
-        using tag = typename std::conditional<
-            std::is_lvalue_reference<Ry>::value &&
-            !std::is_const<Ry>::value &&
-            SupportTraits<Ry>::is_obj_value,
-            std::true_type, std::false_type
-        >::type;
-        MetaGet_(s, (obj->*func)(), tag());
+        PushRetVal<Ry>(s, (obj->*func)());
     }
 
     template <typename Obj, typename Ty, typename Ry>
     inline void MetaGet(State* s, Obj* obj, Ry(Ty::*func)()const) {
-        using tag = typename std::conditional<
-            std::is_lvalue_reference<Ry>::value &&
-            !std::is_const<Ry>::value &&
-            SupportTraits<Ry>::is_obj_value,
-            std::true_type, std::false_type
-        >::type;
-        MetaGet_(s, (obj->*func)(), tag());
+        PushRetVal<Ry>(s, (obj->*func)());
     }
 
     template <typename Obj, typename Ty, typename Ry>
@@ -341,7 +305,7 @@ namespace internal {
     template <typename Ty, class Cy, typename Ry, typename... Args, size_t... Idxs>
     inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, Ry(Cy::*func)(Args...), index_sequence<Idxs...>) {
         if (CheckMetaParameters<Args...>(s, 2, desc, name)) {
-            s->Push((obj->*func)(SupportTraits<Args>::supporter::Load(s, 2 + Idxs)...));
+            PushRetVal<Ry>(s, (obj->*func)(SupportTraits<Args>::supporter::Load(s, 2 + Idxs)...));
             return 1;
         }
         return 0;
@@ -355,7 +319,7 @@ namespace internal {
     template <typename Ty, class Cy, typename Ry, typename... Args, size_t... Idxs>
     inline int MetaCall(State* s, Ty* obj, const TypeDesc* desc, StringView name, Ry(Cy::*func)(Args...)const, index_sequence<Idxs...>) {
         if (CheckMetaParameters<Args...>(s, 2, desc, name)) {
-            s->Push((obj->*func)(SupportTraits<Args>::supporter::Load(s, 2 + Idxs)...));
+            PushRetVal<Ry>(s, (obj->*func)(SupportTraits<Args>::supporter::Load(s, 2 + Idxs)...));
             return 1;
         }
         return 0;
@@ -437,7 +401,7 @@ namespace internal {
     template <typename Ry, typename... Args, size_t... Idxs>
     inline int MetaCall(State* s, const TypeDesc* desc, StringView name, Ry(*func)(Args...), index_sequence<Idxs...>) {
         if (CheckMetaParameters<Args...>(s, 1, desc, name)) {
-            s->Push(func(SupportTraits<Args>::supporter::Load(s, 1 + Idxs)...));
+            PushRetVal<Ry>(s, func(SupportTraits<Args>::supporter::Load(s, 1 + Idxs)...));
             return 1;
         }
         return 0;

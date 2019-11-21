@@ -4,9 +4,9 @@
 #include <stdio.h>
 #include <xlua.h>
 
-TEST(first_test, test_1) {
-
-}
+//std::string& GetRefVal() {
+//    return std::string("");
+//}
 
 int main(int argc, char* argv[]) {
 //    xlua::Startup(nullptr);
