@@ -249,7 +249,7 @@ TEST(xlua, TestTable) {
         ASSERT_EQ(table.begin(), table.end());
 
         s->NewTable();
-        table = s->GetVar(-1).ToTable();
+        table = s->Get<xlua::Variant>(-1).ToTable();
         ASSERT_EQ(table.begin(), table.end());
 
         // assign table field

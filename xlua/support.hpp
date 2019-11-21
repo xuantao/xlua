@@ -179,8 +179,83 @@ template <>
 struct Support<Variant> : ValueCategory<Variant, true> {
     static inline const char* Name() { return "xlua::Variant"; }
     static inline bool Check(State* s, int index) { return true; }
-    static inline Variant Load(State* s, int index) { return s->GetVar(index); }
-    static inline void Push(State* s, const Variant& var) { s->PushVar(var); }
+
+    static inline Variant Load(State* s, int index) {
+        auto* l = s->GetLuaState();
+        int lty = lua_type(l, index);
+        size_t len = 0;
+        const char* str = nullptr;
+        void* ptr = nullptr;
+
+        switch (lty) {
+        case LUA_TNIL:
+            return Variant();
+        case LUA_TBOOLEAN:
+            return Variant((bool)lua_toboolean(l, index));
+        case LUA_TLIGHTUSERDATA:
+            ptr = lua_touserdata(l, index);
+#if XLUA_ENABLE_LUD_OPTIMIZE
+            if (internal::LightUd::IsValid(ptr))
+                return Variant(ptr, 0, s);
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+            return Variant(ptr);
+        case LUA_TNUMBER:
+            if (lua_isinteger(l, index))
+                return Variant(lua_tointeger(l, index));
+            else
+                return Variant(lua_tonumber(l, index));
+        case LUA_TSTRING:
+            str = lua_tolstring(l, index, &len);
+            return Variant(str, len);
+        case LUA_TTABLE:
+            return Variant(VarType::kTable, s->state_.RefObj(index), s);
+        case LUA_TFUNCTION:
+            return Variant(VarType::kFunction, s->state_.RefObj(index), s);
+        case LUA_TUSERDATA:
+            ptr = lua_touserdata(l, index);
+            if (static_cast<internal::FullUd*>(ptr)->IsValid())
+                return Variant(VarType::kUserData, s->state_.RefObj(index), s);
+            break;
+        }
+        return Variant();
+    }
+
+    static inline void Push(State* s, const Variant& var) {
+        auto* l = s->GetLuaState();
+        switch (var.GetType()) {
+        case VarType::kNil:
+            s->PushNil();
+            break;
+        case VarType::kBoolean:
+            lua_pushboolean(l, var.boolean_);
+            break;
+        case VarType::kNumber:
+            if (var.is_int_) lua_pushinteger(l, var.integer_);
+            else lua_pushnumber(l, var.number_);
+            break;
+        case VarType::kString:
+            lua_pushlstring(l, var.str_.c_str(), var.str_.length());
+            break;
+        case VarType::kTable:
+        case VarType::kFunction:
+            var.obj_.Push();
+            break;
+        case VarType::kLightUserData:
+            lua_pushlightuserdata(l, var.ptr_);
+            break;
+        case VarType::kUserData:
+#if XLUA_ENABLE_LUD_OPTIMIZE
+            if (!var.obj_.IsValid())
+                lua_pushlightuserdata(l, var.ptr_);
+            else
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+                var.obj_.Push();
+            break;
+        default:
+            s->PushNil();
+            break;
+        }
+    }
 };
 
 template <>
@@ -189,7 +264,7 @@ struct Support<Table> : ValueCategory<Table, true> {
     static inline bool Check(State* s, int index) {
         return lua_type(s->GetLuaState(), index) == LUA_TTABLE;
     }
-    static inline Table Load(State* s, int index) { return s->GetVar(index).ToTable(); }
+    static inline Table Load(State* s, int index) { return s->Get<Variant>(index).ToTable(); }
     static inline void Push(State* s, const Table& var) {
         if (!var.IsValid())
             s->PushNil();
@@ -204,7 +279,7 @@ struct Support<Function> : ValueCategory<Function, true> {
     static inline bool Check(State* s, int index) {
         return lua_type(s->GetLuaState(), index) == LUA_TFUNCTION;
     }
-    static inline Function Load(State* s, int index) { return s->GetVar(index).ToFunction(); }
+    static inline Function Load(State* s, int index) { return s->Get<Variant>(index).ToFunction(); }
     static inline void Push(State* s, const Function& var) {
         if (!var.IsValid())
             s->PushNil();
@@ -220,7 +295,7 @@ struct Support<UserData> : ValueCategory<UserData, true> {
         int lty = lua_type(s->GetLuaState(), index);
         return lty == LUA_TUSERDATA || lty == LUA_TLIGHTUSERDATA;
     }
-    static inline UserData Load(State* s, int index) { return s->GetVar(index).ToUserData(); }
+    static inline UserData Load(State* s, int index) { return s->Get<Variant>(index).ToUserData(); }
     static inline void Push(State* s, const UserData& var) {
         if (!var.IsValid())
             s->PushNil();
