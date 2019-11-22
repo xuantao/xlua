@@ -211,6 +211,7 @@ struct TestMember {
     NoneExportObj none_export_va;
     std::vector<int> vector_val;
     std::map<std::string, TestMember*> map_val;
+    int m_lua_name__;
 
     static bool s_boolean_val;
     static int s_int_val;

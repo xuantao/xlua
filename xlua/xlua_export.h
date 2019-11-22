@@ -217,7 +217,11 @@ namespace internal {
 
     template <typename Ry>
     inline void MetaGet(State* s, Ry* data) {
-        PushRetVal<Ry>(s, *data);
+        using tag = typename std::conditional<
+            SupportTraits<Ry>::is_obj_value,
+            std::true_type, std::false_type
+        >::type;
+        PushRetVal(s, *data, tag());
     }
 
     template <typename Ry>
@@ -238,7 +242,11 @@ namespace internal {
 
     template <typename Obj, typename Ty, typename Ry>
     inline void MetaGet(State* s, Obj* obj, Ry Ty::* data) {
-        PushRetVal<Ry>(s, obj->*data);
+        using tag = typename std::conditional<
+            SupportTraits<Ry>::is_obj_value,
+            std::true_type, std::false_type
+        >::type;
+        PushRetVal(s, obj->*data, tag());
     }
 
     template <typename Obj, typename Ty, typename Ry>

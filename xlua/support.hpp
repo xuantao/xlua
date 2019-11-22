@@ -434,6 +434,27 @@ struct Support<std::basic_string<char, Trait, Alloc>> : ValueCategory<std::basic
     }
 };
 
+template <>
+struct Support<internal::StringView> : ValueCategory<internal::StringView, true> {
+    static inline const char* Name() { return "StringView"; }
+    static inline bool Check(State* s, int index) {
+        return Support<char*>::Check(s, index);
+    }
+    static inline internal::StringView Load(State* s, int index) {
+        size_t len = 0;
+        const char* str = lua_tolstring(s->GetLuaState(), index, &len);
+        if (str && len)
+            return internal::StringView(str, len);
+        return internal::StringView("", 0);
+    }
+    static inline void Push(State* s, internal::StringView str) {
+        if (str.len == 0)
+            lua_pushstring(s->GetLuaState(), "");
+        else
+            lua_pushlstring(s->GetLuaState(), str.str, str.len);
+    }
+};
+
 /* only used for check is nil */
 template <>
 struct Support<void> : ValueCategory<void, false> {
@@ -553,12 +574,12 @@ namespace internal {
     }
 
     template <typename Ty>
-    inline void PushRetVal_(State* s, Ty& val, std::true_type) {
+    inline void PushRetVal(State* s, Ty& val, std::true_type) {
         s->Push(&val);
     }
 
     template <typename Ty>
-    inline void PushRetVal_(State* s, Ty&& val, std::false_type) {
+    inline void PushRetVal(State* s, Ty&& val, std::false_type) {
         s->Push(val);
     }
 
@@ -570,7 +591,7 @@ namespace internal {
             SupportTraits<Ry>::is_obj_value,
             std::true_type, std::false_type
         >::type;
-        PushRetVal_(s, std::forward<Ty>(val), tag());
+        PushRetVal(s, std::forward<Ty>(val), tag());
     }
 
     template <typename Fy, typename Ry, typename... Args, size_t... Idxs>
@@ -846,11 +867,10 @@ private:
 template <typename Ty>
 size_t Support<std::shared_ptr<Ty>>::tag_ = typeid(std_shared_ptr_tag).hash_code();
 
-/* std array support */
-template <typename Ty, size_t N>
-struct Support<std::array<Ty, N>> : ValueCategory<std::array<Ty, N>, true> {
-    //TODO:
-};
+///* std::array support */
+//template <typename Ty, size_t N>
+//struct Support<std::array<Ty, N>> : ValueCategory<std::array<Ty, N>, true> {
+//};
 
 namespace internal {
     /* vector collection processor */
@@ -865,7 +885,7 @@ namespace internal {
         int Index(void* obj, State* s) override {
             auto* vec = As(obj);
             int idx = LoadIndex(s);
-            if (idx < 0 || !CheckRange(s, idx, vec->size()))
+            if (idx < 0 || idx >= (int)vec->size())
                 return 0;
 
             s->Push(vec->at(idx));
@@ -875,7 +895,7 @@ namespace internal {
         int NewIndex(void* obj, State* s) override {
             auto* vec = As(obj);
             int idx = LoadIndex(s);
-            if (idx < 0 || !CheckRange(s, idx, vec->size() + 1) || !CheckValue(s))
+            if (!CheckRange(s, idx, vec->size() + 1) || !CheckValue(s))
                 return 0;
 
             if (idx == (int)vec->size())
@@ -888,7 +908,7 @@ namespace internal {
         int Insert(void* obj, State* s) override {
             auto* vec = As(obj);
             int idx = LoadIndex(s);
-            if (idx < 0 || !CheckRange(s, idx, vec->size()) || !CheckValue(s))
+            if (!CheckRange(s, idx, vec->size()) || !CheckValue(s))
                 return 0;
 
             vec->insert(vec->begin() + idx, supporter::Load(s, 3));
@@ -899,7 +919,7 @@ namespace internal {
         int Remove(void* obj, State* s) override {
             auto* vec = As(obj);
             int idx = LoadIndex(s);
-            if (idx < 0 || !CheckRange(s, idx, vec->size()))
+            if (!CheckRange(s, idx, vec->size()))
                 return 0;
 
             vec->erase(vec->begin() + idx);
@@ -909,8 +929,7 @@ namespace internal {
         int Iter(void* obj, State* s) override {
             lua_pushcfunction(s->GetLuaState(), &sIter);
             lua_pushlightuserdata(s->GetLuaState(), obj);
-            lua_pushnil(s->GetLuaState());
-            //lua_pushnumber(s->GetLuaState(), 0);
+            lua_pushnumber(s->GetLuaState(), 0);
             return 3;
         }
 
@@ -932,11 +951,11 @@ namespace internal {
             }
 
             int idx = s->Get<int>(2);
-            if (idx < 0) {
+            if (idx < 1) {
                 luaL_error(s->GetLuaState(), "vector index must greater than '0'");
                 return -1;
             }
-            return idx;
+            return idx - 1;
         }
 
         inline bool CheckRange(State* s, int idx, size_t sz) {
@@ -969,9 +988,125 @@ namespace internal {
         }
     };
 
-    /* map collection processor */
+    /* list collection processor */
+    template <typename ListTy>
+    struct ListCollection : ICollection {
+        typedef ListTy list_type;
+        typedef typename ListTy::value_type value_type;
+        typedef typename SupportTraits<value_type>::supporter supporter;
+
+        const char* Name() override { return "std::list"; }
+
+        int Index(void* obj, State* s) override {
+            auto* lst = As(obj);
+            int idx = LoadIndex(s);
+            if (idx < 0 || !CheckRange(s, idx, lst->size()))
+                return 0;
+
+            s->Push(*(lst->begin() + idx));
+            return 1;
+        }
+
+        int NewIndex(void* obj, State* s) override {
+            auto* lst = As(obj);
+            int idx = LoadIndex(s);
+            if (idx < 0 || !CheckRange(s, idx, lst->size() + 1) || !CheckValue(s))
+                return 0;
+
+            if (idx == (int)lst->size())
+                lst->push_back(supporter::Load(s, 3));
+            else
+                *(lst->begin() + idx) = supporter::Load(s, 3);
+            return 0;
+        }
+
+        int Insert(void* obj, State* s) override {
+            auto* lst = As(obj);
+            int idx = LoadIndex(s);
+            if (idx < 0 || !CheckRange(s, idx, lst->size()) || !CheckValue(s))
+                return 0;
+
+            lst->insert(lst->begin() + idx, supporter::Load(s, 3));
+            s->Push(true);
+            return 1;
+        }
+
+        int Remove(void* obj, State* s) override {
+            auto* lst = As(obj);
+            int idx = LoadIndex(s);
+            if (idx < 0 || !CheckRange(s, idx, lst->size()))
+                return 0;
+
+            lst->erase(lst->begin() + idx);
+            return 0;
+        }
+
+        int Iter(void* obj, State* s) override {
+            lua_pushcfunction(s->GetLuaState(), &sIter);
+            lua_pushlightuserdata(s->GetLuaState(), obj);
+            lua_pushnil(s->GetLuaState());
+            //lua_pushnumber(s->GetLuaState(), 0);
+            return 3;
+        }
+
+        int Length(void* obj) override {
+            return (int)As(obj)->size();
+        }
+
+        void Clear(void* obj) override {
+            As(obj)->clear();
+        }
+
+    protected:
+        static inline list_type* As(void* obj) { return static_cast<list_type*>(obj); }
+
+        inline int LoadIndex(State* s) {
+            if (!lua_isnumber(s->GetLuaState(), 2)) {
+                luaL_error(s->GetLuaState(), "list only accept number index key");
+                return -1;
+            }
+
+            int idx = s->Get<int>(2);
+            if (idx < 0) {
+                luaL_error(s->GetLuaState(), "list index must greater than '0'");
+                return -1;
+            }
+            return idx;
+        }
+
+        inline bool CheckRange(State* s, int idx, size_t sz) {
+            if (idx >= 0 && idx < (int)sz)
+                return true;
+
+            luaL_error(s->GetLuaState(), "list index is out of range");
+            return false;
+        }
+
+        inline bool CheckValue(State* s) {
+            if (internal::DoCheckParam<value_type>(s, 3))
+                return true;
+
+            luaL_error(s->GetLuaState(), "list value is not allow");
+            return false;
+        }
+
+        static int sIter(lua_State* l) {
+            auto* obj = As(lua_touserdata(l, 1));
+            int idx = (int)lua_tonumber(l, 2);
+            if (idx < obj->size()) {
+                lua_pushnumber(l, idx + 1);                         // next key
+                internal::GetState(l)->Push(*(obj->begin() + idx)); // value
+            } else {
+                lua_pushnil(l);
+                lua_pushnil(l);
+            }
+            return 2;
+        }
+    };
+
+    /* map/unordered_map collection processor */
     template <typename MapTy>
-    struct MapCollection : ICollection {
+    struct MapCollectionBase : ICollection {
         typedef MapTy map_type;
         typedef typename map_type::iterator iterator;
         typedef typename map_type::key_type key_type;
@@ -979,7 +1114,7 @@ namespace internal {
         typedef typename SupportTraits<key_type>::supporter key_supporter;
         typedef typename SupportTraits<value_type>::supporter value_supporter;
 
-        const char* Name() override { return "std::map"; }
+        //const char* Name() override { return "std::map"; }
 
         int Index(void* obj, State* s) override {
             if (!CheckKey(s))
@@ -1084,28 +1219,64 @@ namespace internal {
             return 2;
         }
     };
+
+    template <class MapTy>
+    struct MapColl : MapCollectionBase<MapTy> {
+        const char* Name() override { return "std::map"; }
+    };
+
+    template <class MapTy>
+    struct UnorderedMapColl : MapCollectionBase<MapTy> {
+        const char* Name() override { return "std::unordered_map"; }
+    };
 } // namespace internal
 
+/* std::vector */
 template <typename Ty, typename Alloc>
 struct Support<std::vector<Ty, Alloc>>
     : internal::CollectionSupport<std::vector<Ty, Alloc>, internal::VectorCollection<std::vector<Ty, Alloc>>> {
 };
-
+/* std::vector* */
 template <typename Ty, typename Alloc>
 struct Support<std::vector<Ty, Alloc>*>
     : internal::CollectionSupport<std::vector<Ty, Alloc>*, internal::VectorCollection<std::vector<Ty, Alloc>>> {
 };
 
-template <typename KeyType, typename ValueType, typename PrTy, typename Alloc>
-struct Support<std::map<KeyType, ValueType, PrTy, Alloc>>
-    : internal::CollectionSupport<std::map<KeyType, ValueType, PrTy, Alloc>,
-        internal::MapCollection<std::map<KeyType, ValueType, PrTy, Alloc>>> {
+/* std::list */
+template <typename Ty, typename Alloc>
+struct Support<std::list<Ty, Alloc>>
+    : internal::CollectionSupport<std::list<Ty, Alloc>, internal::ListCollection<std::list<Ty, Alloc>>> {
+};
+/* std::list* */
+template <typename Ty, typename Alloc>
+struct Support<std::list<Ty, Alloc>*>
+    : internal::CollectionSupport<std::list<Ty, Alloc>*, internal::ListCollection<std::list<Ty, Alloc>>> {
 };
 
-template <typename KeyType, typename ValueType, typename PrTy, typename Alloc>
-struct Support<std::map<KeyType, ValueType, PrTy, Alloc>*>
-    : internal::CollectionSupport<std::map<KeyType, ValueType, PrTy, Alloc>*,
-        internal::MapCollection<std::map<KeyType, ValueType, PrTy, Alloc>>> {
+/* std::map */
+template <typename KeyType, typename ValueType, typename Compare, typename Alloc>
+struct Support<std::map<KeyType, ValueType, Compare, Alloc>>
+    : internal::CollectionSupport<std::map<KeyType, ValueType, Compare, Alloc>,
+        internal::MapColl<std::map<KeyType, ValueType, Compare, Alloc>>> {
+};
+/* std::map* */
+template <typename KeyType, typename ValueType, typename Compare, typename Alloc>
+struct Support<std::map<KeyType, ValueType, Compare, Alloc>*>
+    : internal::CollectionSupport<std::map<KeyType, ValueType, Compare, Alloc>*,
+        internal::MapColl<std::map<KeyType, ValueType, Compare, Alloc>>> {
+};
+
+/* std::unordered_map */
+template <typename KeyType, typename ValueType, typename Hash, typename KeyEqual, typename Alloc>
+struct Support<std::unordered_map<KeyType, ValueType, Hash, KeyEqual, Alloc>>
+    : internal::CollectionSupport<std::unordered_map<KeyType, ValueType, Hash, KeyEqual, Alloc>,
+    internal::UnorderedMapColl<std::unordered_map<KeyType, ValueType, Hash, KeyEqual, Alloc>>> {
+};
+/* std::unordered_map* */
+template <typename KeyType, typename ValueType, typename Hash, typename KeyEqual, typename Alloc>
+struct Support<std::unordered_map<KeyType, ValueType, Hash, KeyEqual, Alloc>*>
+    : internal::CollectionSupport<std::unordered_map<KeyType, ValueType, Hash, KeyEqual, Alloc>*,
+    internal::UnorderedMapColl<std::unordered_map<KeyType, ValueType, Hash, KeyEqual, Alloc>>> {
 };
 
 XLUA_NAMESPACE_END

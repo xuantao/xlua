@@ -208,6 +208,7 @@ XLUA_VARIATE(TestMember::export_val)
 //XLUA_VARIATE(TestMember::none_export_va)  // error, not export
 XLUA_VARIATE(TestMember::vector_val)
 XLUA_VARIATE(TestMember::map_val)
+XLUA_VARIATE(TestMember::m_lua_name__)
 XLUA_VARIATE(TestMember::s_boolean_val)
 XLUA_VARIATE(TestMember::s_int_val)
 XLUA_VARIATE(TestMember::s_long_val)

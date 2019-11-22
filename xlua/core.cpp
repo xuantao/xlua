@@ -221,6 +221,17 @@ namespace internal {
         return (cache_desc && IsBaseOf(desc, cache_desc));
     }
 
+    void* UnpackLightUd(LightUd ld) {
+        const auto& info = g_env.declared.lud_list[ld.lud_index];
+        if (info.type == LudType::Type::kWeakObj) {
+            auto* cache_desc = GetWeakObjDesc(ld.weak_index, ld.ref_index);
+            return cache_desc->weak_proc.getter(ld.ToWeakRef());
+        } else if (info.type == LudType::Type::kPtr) {
+            return ld.ToObj();
+        }
+        return nullptr;
+    }
+
     void* UnpackLightUd(LightUd ld, const TypeDesc* desc) {
         const auto& info = g_env.declared.lud_list[ld.lud_index];
         if (info.type == LudType::Type::kWeakObj) {
@@ -673,6 +684,7 @@ namespace internal {
         lua_pushcfunction(s->GetLuaState(), &meta::__pairs_collection);
         lua_setfield(s->GetLuaState(), -2, "__pairs");
 
+        //TODO: why not ipairs is effected?
         lua_pushcfunction(s->GetLuaState(), &meta::__pairs_collection);
         lua_setfield(s->GetLuaState(), -2, "__ipairs");
 
@@ -1067,7 +1079,8 @@ namespace internal {
 
         const char* AllocStr(const char* s, size_t len) {
             char* buf = (char*)g_env.allocator.Alloc(len + 1);
-            ::memcpy(buf, s, len + 1);
+            ::memcpy(buf, s, len);
+            buf[len] = 0;
             return buf;
         }
 

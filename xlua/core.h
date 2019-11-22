@@ -303,6 +303,7 @@ namespace internal {
 
     const TypeDesc* GetLightUdDesc(LightUd);
     bool CheckLightUd(LightUd ld, const TypeDesc* desc);
+    void* UnpackLightUd(LightUd ld);
     void* UnpackLightUd(LightUd ld, const TypeDesc* desc);
     LightUd PackLightUd(void* obj, const TypeDesc* desc);
 
@@ -414,6 +415,9 @@ namespace internal {
         // remove prefix: "m_"
         if (name[0] == 'm' && name[1] == '_')
             name += 2;
+        // remove prefix: '_'
+        while (name[0] && name[0] == '_')
+            ++name;
         // remove prefix: "lua"
         if ((name[0] == 'l' || name[0] == 'L') &&
             (name[1] == 'u' || name[1] == 'U') &&
@@ -561,8 +565,8 @@ namespace internal {
         size_t GetCallStack(char* buff, size_t size) {
             lua_Debug dbg;
             int level = 1;
-            int sz = (int)sz;
-            int len = snprintf(buff, size, "stack taceback:");
+            int sz = (int)size;
+            int len = 0;// snprintf(buff, size, "stack taceback:");
             if (len < 0 || len > sz)
                 return sz;
             sz -= len;
@@ -697,7 +701,7 @@ namespace internal {
         // collection value
         template <typename Ty>
         inline void PushUd(Ty&& obj, ICollection* collection) {
-            auto* ud = NewValueUd(std::forward<Ty>(obj), collection);
+            auto* ud = NewValueUd<Ty>(collection, std::forward<Ty>(obj));
             SetMetatable(collection);
 
             auto* data = static_cast<AliasUd*>(ud)->As<ValueData>();
@@ -707,7 +711,7 @@ namespace internal {
         // declared type value
         template <typename Ty>
         inline void PushUd(Ty&& obj, const TypeDesc* desc) {
-            auto* ud = NewValueUd(std::forward<Ty>(obj), desc);
+            auto* ud = NewValueUd<Ty>(desc, std::forward<Ty>(obj));
             SetMetatable(desc);
 
             auto* data = static_cast<AliasUd*>(ud)->As<ValueData>();
@@ -865,10 +869,10 @@ namespace internal {
             return new (d) FullUd(args...);
         }
 
-        template <typename Ty, typename Dy>
-        inline FullUd* NewValueUd(Ty&& v, Dy info) {
+        template <typename Ty, typename Dy, typename... Args>
+        inline FullUd* NewValueUd(Dy info, Args&&... args) {
             void* m = (void*)lua_newuserdata(l_, sizeof(ValueUd<Ty>));
-            return new (m) ValueUd<Ty>(info, std::forward<Ty>(v));
+            return new (m) ValueUd<Ty>(info, std::forward<Args>(args)...);
         }
 
         template <typename Ty, typename Dy, typename Sy>

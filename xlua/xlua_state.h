@@ -145,8 +145,12 @@ public:
 
         PushMul(std::forward<Args>(args)...);
         ret = lua_pcall(state_.l_, (int)sizeof...(Args), LUA_MULTRET, 0);
-        if (LUA_OK != ret)
+        if (LUA_OK != ret) {
+            char stack[1024];
+            GetCallStack(stack, 1024);
+            printf("call failed: %s\n%s\n", lua_tostring(state_.l_, -1), stack);
             return guard;
+        }
 
         guard.ok_ = true;
         return guard;
@@ -194,7 +198,7 @@ public:
     }
 
     template <typename Ky>
-    VarType LoadField(int index, const Ky& key) {
+    inline VarType LoadField(int index, const Ky& key) {
         int ty = lua_type(state_.l_, index);
         if (!_IS_TABLE_TYPE(ty)) {
             PushNil();
@@ -208,7 +212,7 @@ public:
     }
 
     template <typename Ky, typename Ty>
-    bool SetField(int index, const Ky& key, Ty&& val) {
+    inline bool SetField(int index, const Ky& key, Ty&& val) {
         int ty = lua_type(state_.l_, index);
         if (!_IS_TABLE_TYPE(ty))
             return false;
@@ -221,14 +225,14 @@ public:
     }
 
     template <typename Ty, typename Ky>
-    Ty GetField(int index, const Ky& key) {
+    inline Ty GetField(int index, const Ky& key) {
         StackGuard guard(this);
         LoadField(index, key);
         return Get<Ty>(-1);
     }
 
     template <typename Ty>
-    auto Get(int index) -> typename SupportTraits<Ty>::value_type {
+    inline auto Get(int index) -> typename SupportTraits<Ty>::value_type {
         using traits = SupportTraits<Ty>;
         using supporter = typename traits::supporter;
         static_assert(traits::is_support, "not support type");
@@ -237,7 +241,7 @@ public:
     }
 
     template <typename Ty>
-    void Push(Ty&& val) {
+    inline void Push(Ty&& val) {
         using traits = SupportTraits<Ty>;
         using supporter = typename traits::supporter;
         static_assert(traits::is_support, "not support type");
@@ -245,7 +249,7 @@ public:
     }
 
     template <typename Fy>
-    void PushLambda(Fy&& f) {
+    inline void PushLambda(Fy&& f) {
         using type = typename PurifyType<Fy>::type;
         Support<internal::Lambda<type>>::Push(this, internal::Lambda<type>(std::forward<Fy>(f)));
     }
@@ -286,6 +290,10 @@ public:
         if (lua_pcall(state_.l_, sizeof...(Args), sizeof...(Rys), 0) == LUA_OK) {
             GetMul(top, std::move(ret));
             guard.ok_ = true;
+        } else {
+            char stack[1024];
+            GetCallStack(stack, 1024);
+            printf("call failed: %s\n%s\n", lua_tostring(state_.l_, -1), stack);
         }
         return guard;
     }
@@ -694,7 +702,7 @@ public:
     template <typename Ty>
     inline Ty As() const {
         assert(IsValid());
-
+        /* if the type is shared_ptr, only can be load by supporter */
         StackGuard guard(state_);
         state_->Push(*this);
         return state_->Get<Ty>(-1);
@@ -753,6 +761,23 @@ public:
 
         state_->PopTop(1);
         return CallGuard();
+    }
+
+    inline void* ToPtr() const {
+        if (!IsValid())
+            return nullptr;
+
+#if XLUA_ENABLE_LUD_OPTIMIZE
+        if (IsLud())
+            return internal::UnpackLightUd(ToLud());
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+
+        auto* ud = static_cast<internal::FullUd*>(ptr_);
+        if (ud->major != internal::UdMajor::kDeclaredType || ud->minor != internal::UdMinor::kPtr)
+            return ud->ptr;
+        if (ud->desc->weak_index)
+            return ud->desc->weak_proc.getter(ud->ref);
+        return ud->ptr;
     }
 
 #if XLUA_ENABLE_LUD_OPTIMIZE

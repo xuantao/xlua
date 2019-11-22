@@ -36,8 +36,6 @@ TEST(xlua, PushLoadNormal) {
     _TEST_CHECK_VAL(short, -1);
     _TEST_CHECK_VAL(short, std::numeric_limits<short>::min());
     _TEST_CHECK_VAL(short, std::numeric_limits<short>::max());
-    //_TEST_CHECK_VAL(short, std::numeric_limits<short>::signaling_NaN());
-    //_TEST_CHECK_VAL(short, std::numeric_limits<short>::quiet_NaN());
 
     _TEST_CHECK_VAL(unsigned short, 1);
     _TEST_CHECK_VAL(unsigned short, (unsigned short)-1);
@@ -48,8 +46,6 @@ TEST(xlua, PushLoadNormal) {
     _TEST_CHECK_VAL(int, (int)-1);
     _TEST_CHECK_VAL(int, std::numeric_limits<int>::min());
     _TEST_CHECK_VAL(int, std::numeric_limits<int>::max());
-    //_TEST_CHECK_VAL(int, std::numeric_limits<int>::signaling_NaN());
-    //_TEST_CHECK_VAL(int, std::numeric_limits<int>::quiet_NaN());
 
     _TEST_CHECK_VAL(unsigned int, 1);
     _TEST_CHECK_VAL(unsigned int, (unsigned int)-1);
@@ -60,8 +56,6 @@ TEST(xlua, PushLoadNormal) {
     _TEST_CHECK_VAL(long, -1);
     _TEST_CHECK_VAL(long, std::numeric_limits<long>::min());
     _TEST_CHECK_VAL(long, std::numeric_limits<long>::max());
-    //_TEST_CHECK_VAL(long, std::numeric_limits<long>::signaling_NaN());
-    //_TEST_CHECK_VAL(long, std::numeric_limits<long>::quiet_NaN());
 
     _TEST_CHECK_VAL(unsigned long, 1);
     _TEST_CHECK_VAL(unsigned long, -1);
@@ -72,8 +66,6 @@ TEST(xlua, PushLoadNormal) {
     _TEST_CHECK_VAL(long long, -1);
     _TEST_CHECK_VAL(long long, std::numeric_limits<long long>::min());
     _TEST_CHECK_VAL(long long, std::numeric_limits<long long>::max());
-    //_TEST_CHECK_VAL(long long, std::numeric_limits<long long>::signaling_NaN());
-    //_TEST_CHECK_VAL(long long, std::numeric_limits<long long>::quiet_NaN());
 
     _TEST_CHECK_VAL(unsigned long long, 1);
     _TEST_CHECK_VAL(unsigned long long, -1);
@@ -315,6 +307,7 @@ TEST(xlua, TestUserData) {
 
         auto ud = s->Get<xlua::UserData>(-1);
         s->PopTop(1);
+        ASSERT_EQ(vec, ud.ToPtr());
 
         ASSERT_EQ(s->GetTop(), 0);
         ASSERT_TRUE(ud.IsValid());
@@ -334,10 +327,154 @@ TEST(xlua, TestUserData) {
         auto* vec3 = s->Get<std::vector<int>*>(-1);
         s->PopTop(1);
         ASSERT_EQ(vec, vec3);
+
+        ud = nullptr;
     }
 
+    {
+        s->Push(TestMember());
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+        s->Gc();
+        ASSERT_TRUE(ud.IsValid());  // ud will cache the lua object
 
+        xlua::Function get_var;
+        XCALL_SUCC(s->DoString("return function (obj, name) print(name) return obj[name] end", "GetVar")) {
+            get_var = s->Get<xlua::Function>(-1);
+            ASSERT_TRUE(ud.IsValid());
+        }
+        ASSERT_TRUE(get_var.IsValid());
+        ASSERT_EQ(s->GetTop(), 0);
 
+        xlua::UserData ud_map;
+        ASSERT_TRUE(get_var(std::tie(ud_map), ud, "map_val"));
+
+        auto* ptr = ud.As<TestMember*>();
+        auto* mem = ud_map.As<std::map<std::string, TestMember*>*>();
+        ASSERT_EQ(&ptr->map_val, mem);  // ud's object member will pass as pointer
+
+        ud_map.SetField("first", ud);
+        ASSERT_EQ(ptr->map_val["first"], ptr);
+
+        ud_map.SetField("first", nullptr);
+        ASSERT_TRUE(ptr->map_val.empty());
+
+        ptr->m_lua_name__ = 1001;
+        int val = ud.GetField<int>("m_lua_name__");
+        ASSERT_NE(val, 1001);
+
+        // lua member name has purified
+        val = ud.GetField<int>(xlua::internal::PurifyMemberName("m_lua_name__"));
+        ASSERT_EQ(val, 1001);
+
+        ud = nullptr;
+        s->Gc();
+        // after gc, ud_map is an ilegal value, we must carefull about the life time
+    }
+
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
+}
+
+/* vector list map unordered_map */
+TEST(xlua, TestCollection) {
+    xlua::State* s = xlua::Create(nullptr);
+    constexpr const char* script_op = R"(
+return function (op, obj, ...)
+    print(op, obj, xlua[op])
+    return xlua[op](obj, ...)
+end
+)";
+
+constexpr const char* script_pair = R"(
+return function (obj)
+    local total_1 = 0
+    for k, v in pairs(obj) do
+        print(k, v)
+        total_1 = total_1 + v
+    end
+    return total_1
+end
+)";
+
+constexpr const char* script_ipair = R"(
+return function (obj)
+    local total_2 = 0;
+    for k, v in ipairs(obj) do
+        print(k, v)
+        total_2 = total_2 + v
+    end
+    return total_2
+end
+)";
+
+constexpr const char* script_init = R"(
+return function (obj)
+    for i = 1, 10 do
+        obj[#obj + 1] = #obj + 1
+    end
+end
+)";
+
+    xlua::Function func_op;
+    XCALL_SUCC(s->DoString(script_op, "op")) {
+        func_op = s->Get<xlua::Function>(-1);
+    }
+
+    xlua::Function func_pair;
+    XCALL_SUCC(s->DoString(script_pair, "pair")) {
+        func_pair = s->Get<xlua::Function>(-1);
+    }
+
+    xlua::Function func_ipair;
+    XCALL_SUCC(s->DoString(script_ipair, "ipair")) {
+        func_ipair = s->Get<xlua::Function>(-1);
+    }
+
+    xlua::Function func_init;
+    XCALL_SUCC(s->DoString(script_init, "init")) {
+        func_init = s->Get<xlua::Function>(-1);
+    }
+
+    //vector
+    {
+        s->Push(std::vector<int>());
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+
+        auto* ptr = ud.As<std::vector<int>*>();
+        // equal push_back
+        for (int i = 0; i < 10; ++i)
+            ud.SetField(ptr->size(), ptr->size());
+
+        ASSERT_EQ(ptr->size(), 10);
+        func_op(std::tie(), "Remove", ud, 0);
+        ASSERT_EQ(ptr->size(), 9);
+        ASSERT_EQ(ptr->at(0), 1);
+        func_op(std::tie(), "Remove", ud, ptr->size() - 1);
+        ASSERT_EQ(ptr->size(), 8);
+        ASSERT_EQ(ptr->at(7), 8);
+
+        int total = 0;
+        for (int v : *ptr)
+            total += v;
+
+        int total_1 = 0;
+        func_pair(std::tie(total_1), ptr);
+        ASSERT_EQ(total, total_1);
+
+        func_ipair(std::tie(total_1), ptr);
+        EXPECT_EQ(total, total_1);
+
+        func_op(std::tie(), "Clear", ud);
+        ASSERT_EQ(ptr->size(), 0);
+
+        func_init(std::tie(), ud);
+        ASSERT_EQ(ptr->size(), 10);
+    }
+
+    func_pair = nullptr;
+    func_op = nullptr;
     ASSERT_EQ(s->GetTop(), 0);
     s->Release();
 }
