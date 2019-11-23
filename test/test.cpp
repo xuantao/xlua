@@ -421,88 +421,6 @@ TEST(xlua, TestTable) {
     s->Release();
 }
 
-TEST(xlua, TestUserData) {
-    xlua::State* s = xlua::Create(nullptr);
-
-    {
-        // load static value
-        //auto* vec = s->GetGlobal<std::vector<int>*>("TestMember.s_vector_val");
-        //ASSERT_NE(vec, nullptr);
-        //vec->push_back(2);
-        //vec->push_back(3);
-        //s->Push(vec);
-
-        //auto ud = s->Get<xlua::UserData>(-1);
-        //s->PopTop(1);
-        //ASSERT_EQ(vec, ud.ToPtr());
-
-        //ASSERT_EQ(s->GetTop(), 0);
-        //ASSERT_TRUE(ud.IsValid());
-
-        //ud.SetField(1, 100);
-        //ASSERT_EQ(ud.GetField<int>(1), 100);
-
-        //s->Push(101);
-        //ud.SetField(2); // will pop the top value
-        //ASSERT_EQ(s->GetTop(), 0);
-        //ASSERT_EQ(ud.GetField<int>(2), 101);
-
-        //auto* vec2 = ud.As<std::vector<int>*>();
-        //ASSERT_EQ(vec, vec2);
-
-        //s->Push(ud);
-        //auto* vec3 = s->Get<std::vector<int>*>(-1);
-        //s->PopTop(1);
-        //ASSERT_EQ(vec, vec3);
-
-        //ud = nullptr;
-    }
-
-    {
-        s->Push(TestMember());
-        auto ud = s->Get<xlua::UserData>(-1);
-        s->PopTop(1);
-        s->Gc();
-        ASSERT_TRUE(ud.IsValid());  // ud will cache the lua object
-
-        xlua::Function get_var;
-        XCALL_SUCC(s->DoString("return function (obj, name) print(name) return obj[name] end", "GetVar")) {
-            get_var = s->Get<xlua::Function>(-1);
-            ASSERT_TRUE(ud.IsValid());
-        }
-        ASSERT_TRUE(get_var.IsValid());
-        ASSERT_EQ(s->GetTop(), 0);
-
-        xlua::UserData ud_map;
-        ASSERT_TRUE(get_var(std::tie(ud_map), ud, "map_val"));
-
-        auto* ptr = ud.As<TestMember*>();
-        auto* mem = ud_map.As<std::map<std::string, TestMember*>*>();
-        ASSERT_EQ(&ptr->map_val, mem);  // ud's object member will pass as pointer
-
-        ud_map.SetField("first", ud);
-        ASSERT_EQ(ptr->map_val["first"], ptr);
-
-        ud_map.SetField("first", nullptr);
-        ASSERT_TRUE(ptr->map_val.empty());
-
-        ptr->m_lua_name__ = 1001;
-        int val = ud.GetField<int>("m_lua_name__");
-        ASSERT_NE(val, 1001);
-
-        // lua member name has purified
-        val = ud.GetField<int>(xlua::internal::PurifyMemberName("m_lua_name__"));
-        ASSERT_EQ(val, 1001);
-
-        ud = nullptr;
-        s->Gc();
-        // after gc, ud_map is an ilegal value, we must carefull about the life time
-    }
-
-    ASSERT_EQ(s->GetTop(), 0);
-    s->Release();
-}
-
 /* vector list map unordered_map */
 TEST(xlua, TestCollection) {
     xlua::State* s = xlua::Create(nullptr);
@@ -806,6 +724,88 @@ TEST(xlua, TestCollection) {
     }
 
     ops.Clear();
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
+}
+
+TEST(xlua, TestUserData) {
+    xlua::State* s = xlua::Create(nullptr);
+
+    {
+        // load static value
+        //auto* vec = s->GetGlobal<std::vector<int>*>("TestMember.s_vector_val");
+        //ASSERT_NE(vec, nullptr);
+        //vec->push_back(2);
+        //vec->push_back(3);
+        //s->Push(vec);
+
+        //auto ud = s->Get<xlua::UserData>(-1);
+        //s->PopTop(1);
+        //ASSERT_EQ(vec, ud.ToPtr());
+
+        //ASSERT_EQ(s->GetTop(), 0);
+        //ASSERT_TRUE(ud.IsValid());
+
+        //ud.SetField(1, 100);
+        //ASSERT_EQ(ud.GetField<int>(1), 100);
+
+        //s->Push(101);
+        //ud.SetField(2); // will pop the top value
+        //ASSERT_EQ(s->GetTop(), 0);
+        //ASSERT_EQ(ud.GetField<int>(2), 101);
+
+        //auto* vec2 = ud.As<std::vector<int>*>();
+        //ASSERT_EQ(vec, vec2);
+
+        //s->Push(ud);
+        //auto* vec3 = s->Get<std::vector<int>*>(-1);
+        //s->PopTop(1);
+        //ASSERT_EQ(vec, vec3);
+
+        //ud = nullptr;
+    }
+
+    {
+        s->Push(TestMember());
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+        s->Gc();
+        ASSERT_TRUE(ud.IsValid());  // ud will cache the lua object
+
+        xlua::Function get_var;
+        XCALL_SUCC(s->DoString("return function (obj, name) print(name) return obj[name] end", "GetVar")) {
+            get_var = s->Get<xlua::Function>(-1);
+            ASSERT_TRUE(ud.IsValid());
+        }
+        ASSERT_TRUE(get_var.IsValid());
+        ASSERT_EQ(s->GetTop(), 0);
+
+        xlua::UserData ud_map;
+        ASSERT_TRUE(get_var(std::tie(ud_map), ud, "map_val"));
+
+        auto* ptr = ud.As<TestMember*>();
+        auto* mem = ud_map.As<std::map<std::string, TestMember*>*>();
+        ASSERT_EQ(&ptr->map_val, mem);  // ud's object member will pass as pointer
+
+        ud_map.SetField("first", ud);
+        ASSERT_EQ(ptr->map_val["first"], ptr);
+
+        ud_map.SetField("first", nullptr);
+        ASSERT_TRUE(ptr->map_val.empty());
+
+        ptr->m_lua_name__ = 1001;
+        int val = ud.GetField<int>("m_lua_name__");
+        ASSERT_NE(val, 1001);
+
+        // lua member name has purified
+        val = ud.GetField<int>(xlua::internal::PurifyMemberName("m_lua_name__"));
+        ASSERT_EQ(val, 1001);
+
+        ud = nullptr;
+        s->Gc();
+        // after gc, ud_map is an ilegal value, we must carefull about the life time
+    }
+
     ASSERT_EQ(s->GetTop(), 0);
     s->Release();
 }
