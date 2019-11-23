@@ -536,7 +536,7 @@ namespace utility {
             return 0;
         }
 
-        return info.collection->Index(info.obj, internal::GetState(l));
+        return info.collection->Insert(info.obj, internal::GetState(l));
     }
 
     /* collection operate, remove element */

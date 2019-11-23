@@ -873,7 +873,9 @@ size_t Support<std::shared_ptr<Ty>>::tag_ = typeid(std_shared_ptr_tag).hash_code
 //};
 
 namespace internal {
-    /* vector collection processor */
+    /* vector collection processor
+     * index begin from 1, like lua style
+    */
     template <typename VecTy>
     struct VectorCollection : ICollection {
         typedef VecTy vector_type;
@@ -884,8 +886,8 @@ namespace internal {
 
         int Index(void* obj, State* s) override {
             auto* vec = As(obj);
-            int idx = LoadIndex(s);
-            if (idx < 0 || idx >= (int)vec->size())
+            int idx = LoadIndex(s, (int)vec->size());
+            if (idx == -1)
                 return 0;
 
             s->Push(vec->at(idx));
@@ -894,8 +896,8 @@ namespace internal {
 
         int NewIndex(void* obj, State* s) override {
             auto* vec = As(obj);
-            int idx = LoadIndex(s);
-            if (!CheckRange(s, idx, vec->size() + 1) || !CheckValue(s))
+            int idx = LoadIndex(s, (int)vec->size() + 1);
+            if (idx == -1 || !CheckValue(s))
                 return 0;
 
             if (idx == (int)vec->size())
@@ -907,8 +909,8 @@ namespace internal {
 
         int Insert(void* obj, State* s) override {
             auto* vec = As(obj);
-            int idx = LoadIndex(s);
-            if (!CheckRange(s, idx, vec->size()) || !CheckValue(s))
+            int idx = LoadIndex(s, (int)vec->size() + 1);
+            if (idx == -1 || !CheckValue(s))
                 return 0;
 
             vec->insert(vec->begin() + idx, supporter::Load(s, 3));
@@ -918,8 +920,8 @@ namespace internal {
 
         int Remove(void* obj, State* s) override {
             auto* vec = As(obj);
-            int idx = LoadIndex(s);
-            if (!CheckRange(s, idx, vec->size()))
+            int idx = LoadIndex(s, (int)vec->size() + 1);
+            if (idx == -1)
                 return 0;
 
             vec->erase(vec->begin() + idx);
@@ -944,33 +946,31 @@ namespace internal {
     protected:
         static inline vector_type* As(void* obj) { return static_cast<vector_type*>(obj); }
 
-        inline int LoadIndex(State* s) {
+        inline int LoadIndex(State* s, int ms) {
             if (!lua_isnumber(s->GetLuaState(), 2)) {
-                luaL_error(s->GetLuaState(), "vector only accept number index key");
+                luaL_error(s->GetLuaState(), "std::vector index must be number ");
                 return -1;
             }
 
-            int idx = s->Get<int>(2);
-            if (idx < 1) {
-                luaL_error(s->GetLuaState(), "vector index must greater than '0'");
+            int idx = s->Get<int>(2) - 1;
+            if (idx < 0) {
+                luaL_error(s->GetLuaState(), "std::vector index must greater than '0'");
                 return -1;
             }
-            return idx - 1;
-        }
 
-        inline bool CheckRange(State* s, int idx, size_t sz) {
-            if (idx >= 0 && idx < (int)sz)
-                return true;
+            if (idx >= ms) {
+                luaL_error(s->GetLuaState(), "std::vector index is out of range");
+                return -1;
+            }
 
-            luaL_error(s->GetLuaState(), "vector index is out of range");
-            return false;
+            return idx;
         }
 
         inline bool CheckValue(State* s) {
             if (internal::DoCheckParam<value_type>(s, 3))
                 return true;
 
-            luaL_error(s->GetLuaState(), "vector value is not allow");
+            luaL_error(s->GetLuaState(), "std::vector value is not allow");
             return false;
         }
 
@@ -978,7 +978,7 @@ namespace internal {
             auto* obj = As(lua_touserdata(l, 1));
             int idx = (int)lua_tonumber(l, 2);
             if (idx < obj->size()) {
-                lua_pushnumber(l, idx + 1);                 // next key
+                lua_pushnumber(l, idx + 1);                 // key
                 internal::GetState(l)->Push(obj->at(idx));  // value
             } else {
                 lua_pushnil(l);
@@ -988,64 +988,68 @@ namespace internal {
         }
     };
 
-    /* list collection processor */
+    /* list collection processor
+     * index begin from 1, like lua style
+     * list paris as vector, every step move the iterator from beginning.
+     * the efficiency is not very good
+    */
     template <typename ListTy>
     struct ListCollection : ICollection {
         typedef ListTy list_type;
         typedef typename ListTy::value_type value_type;
+        typedef typename ListTy::iterator iterator;
         typedef typename SupportTraits<value_type>::supporter supporter;
 
         const char* Name() override { return "std::list"; }
 
         int Index(void* obj, State* s) override {
             auto* lst = As(obj);
-            int idx = LoadIndex(s);
-            if (idx < 0 || !CheckRange(s, idx, lst->size()))
+            int idx = LoadIndex(s, (int)lst->size());
+            if (idx == -1)
                 return 0;
 
-            s->Push(*(lst->begin() + idx));
+            s->Push(*MoveIter(lst->begin(), idx));
             return 1;
         }
 
         int NewIndex(void* obj, State* s) override {
             auto* lst = As(obj);
-            int idx = LoadIndex(s);
-            if (idx < 0 || !CheckRange(s, idx, lst->size() + 1) || !CheckValue(s))
+            int idx = LoadIndex(s, (int)lst->size() + 1);
+            if (idx == -1 || !CheckValue(s))
                 return 0;
 
             if (idx == (int)lst->size())
                 lst->push_back(supporter::Load(s, 3));
             else
-                *(lst->begin() + idx) = supporter::Load(s, 3);
+                *MoveIter(lst->begin(), idx) = supporter::Load(s, 3);
             return 0;
         }
 
         int Insert(void* obj, State* s) override {
             auto* lst = As(obj);
-            int idx = LoadIndex(s);
-            if (idx < 0 || !CheckRange(s, idx, lst->size()) || !CheckValue(s))
+            int idx = LoadIndex(s, (int)lst->size() + 1);
+            if (idx == -1 || !CheckValue(s))
                 return 0;
 
-            lst->insert(lst->begin() + idx, supporter::Load(s, 3));
+            lst->insert(MoveIter(lst->begin(), idx), supporter::Load(s, 3));
             s->Push(true);
             return 1;
         }
 
         int Remove(void* obj, State* s) override {
             auto* lst = As(obj);
-            int idx = LoadIndex(s);
-            if (idx < 0 || !CheckRange(s, idx, lst->size()))
+            int idx = LoadIndex(s, (int)lst->size());
+            if (idx == -1)
                 return 0;
 
-            lst->erase(lst->begin() + idx);
+            lst->erase(MoveIter(lst->begin(), idx));
             return 0;
         }
 
         int Iter(void* obj, State* s) override {
             lua_pushcfunction(s->GetLuaState(), &sIter);
             lua_pushlightuserdata(s->GetLuaState(), obj);
-            lua_pushnil(s->GetLuaState());
-            //lua_pushnumber(s->GetLuaState(), 0);
+            lua_pushnumber(s->GetLuaState(), 0);
             return 3;
         }
 
@@ -1060,42 +1064,47 @@ namespace internal {
     protected:
         static inline list_type* As(void* obj) { return static_cast<list_type*>(obj); }
 
-        inline int LoadIndex(State* s) {
+        inline int LoadIndex(State* s, int ms) {
             if (!lua_isnumber(s->GetLuaState(), 2)) {
-                luaL_error(s->GetLuaState(), "list only accept number index key");
+                luaL_error(s->GetLuaState(), "std::list index must be number");
                 return -1;
             }
 
-            int idx = s->Get<int>(2);
+            int idx = s->Get<int>(2) - 1;
             if (idx < 0) {
-                luaL_error(s->GetLuaState(), "list index must greater than '0'");
+                luaL_error(s->GetLuaState(), "std::list index must greater than '0'");
                 return -1;
             }
+            if (idx >= ms) {
+                luaL_error(s->GetLuaState(), "std::list index must greater than '0'");
+                return -1;
+            }
+
             return idx;
-        }
-
-        inline bool CheckRange(State* s, int idx, size_t sz) {
-            if (idx >= 0 && idx < (int)sz)
-                return true;
-
-            luaL_error(s->GetLuaState(), "list index is out of range");
-            return false;
         }
 
         inline bool CheckValue(State* s) {
             if (internal::DoCheckParam<value_type>(s, 3))
                 return true;
 
-            luaL_error(s->GetLuaState(), "list value is not allow");
+            luaL_error(s->GetLuaState(), "std::list value is not allow");
             return false;
+        }
+
+        static iterator MoveIter(iterator it, int step) {
+            while (step) {
+                ++it;
+                --step;
+            }
+            return it;
         }
 
         static int sIter(lua_State* l) {
             auto* obj = As(lua_touserdata(l, 1));
             int idx = (int)lua_tonumber(l, 2);
             if (idx < obj->size()) {
-                lua_pushnumber(l, idx + 1);                         // next key
-                internal::GetState(l)->Push(*(obj->begin() + idx)); // value
+                lua_pushnumber(l, idx + 1);                                 // key
+                internal::GetState(l)->Push(*MoveIter(obj->begin(),idx));   // value
             } else {
                 lua_pushnil(l);
                 lua_pushnil(l);
@@ -1114,7 +1123,12 @@ namespace internal {
         typedef typename SupportTraits<key_type>::supporter key_supporter;
         typedef typename SupportTraits<value_type>::supporter value_supporter;
 
-        //const char* Name() override { return "std::map"; }
+        struct IterData {
+            IterData(map_type* p, iterator it) : ptr(p), iter(it) {}
+
+            map_type* ptr;
+            iterator iter;
+        };
 
         int Index(void* obj, State* s) override {
             if (!CheckKey(s))
@@ -1174,10 +1188,11 @@ namespace internal {
         }
 
         int Iter(void* obj, State* s) override {
+            auto* map = As(obj);
             lua_pushcfunction(s->GetLuaState(), &sIter);
-            lua_pushlightuserdata(s->GetLuaState(), obj);
-            s->state_.NewAloneUd<iterator>(As(obj)->begin());
-            return 0;
+            s->state_.NewAloneUd<IterData>(map, map->begin());
+            s->PushNil();
+            return 3;
         }
 
         int Length(void* obj) override {
@@ -1194,24 +1209,24 @@ namespace internal {
         inline bool CheckKey(State* s) {
             if (key_supporter::Check(s, 2))
                 return true;
-            luaL_error(s->GetLuaState(), "vector index is out of range");
+            luaL_error(s->GetLuaState(), "%s index is out of range", Name());
             return false;
         }
 
         inline bool CheckValue(State* s) {
             if (internal::DoCheckParam<value_type>(s, 3))
                 return true;
-            luaL_error(s->GetLuaState(), "vector value is not allow");
+            luaL_error(s->GetLuaState(), "%s value is not allow", Name());
             return false;
         }
 
         static int sIter(lua_State* l) {
-            auto* obj = As(lua_touserdata(l, 1));
-            auto* data = static_cast<internal::AloneData<iterator>*>(lua_touserdata(l, 2));
-            if (data->obj != obj->end()) {
-                lua_pushvalue(l, 1);
-                value_supporter::Push(internal::GetState(l), data->obj->second);
-                ++ data->obj;   // move iterator
+            auto* data = static_cast<internal::AloneData<IterData>*>(lua_touserdata(l, 1));
+            if (data->obj.iter != data->obj.ptr->end()) {
+                auto* s = internal::GetState(l);
+                key_supporter::Push(s, data->obj.iter->first);      // key
+                value_supporter::Push(s, data->obj.iter->second);   // value
+                ++ data->obj.iter;                                  // move iterator
             } else {
                 lua_pushnil(l);
                 lua_pushnil(l);

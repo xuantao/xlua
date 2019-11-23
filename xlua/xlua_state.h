@@ -474,8 +474,24 @@ public:
     inline const std::string& ToString() const {
         return (type_ == VarType::kString) ? str_ : std::string();
     }
+    /* light user data */
     inline void* ToPtr() const {
         return (type_ == VarType::kLightUserData) ? ptr_ : nullptr;
+    }
+    /* user data */
+    template <class Ty, typename std::enable_if<std::is_pointer<Ty>::value, int>::type = 0>
+    inline Ty ToObj() const {
+        if (type_ != VarType::kUserData)
+            return nullptr;
+
+        StackGuard guard(obj_.state_);
+#if XLUA_ENABLE_LUD_OPTIMIZE
+        if (obj_.index_ == 0)
+            lua_pushlightuserdata(obj_.state_->GetLuaState(), ptr_);
+        else
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+            obj_.Push();
+        return obj_.state_->Get<Ty>(-1);
     }
 
     inline Table ToTable() const;

@@ -4,6 +4,102 @@
 
 static constexpr const char* kCheckFunc = "function Check(...) return ... end";
 
+struct ScriptOps {
+    static constexpr const char* script_xlua_op = R"(
+return function (op, obj, ...)
+    return xlua[op](obj, ...)
+end
+)";
+
+    static constexpr const char* script_check = R"(
+return function (...)
+    return ...
+end
+)";
+
+    static constexpr const char* script_pair = R"(
+return function (obj)
+    local total_1 = 0
+    for k, v in pairs(obj) do
+        print(k, v)
+        total_1 = total_1 + v
+    end
+    return total_1
+end
+)";
+
+    static constexpr const char* script_ipair = R"(
+return function (obj)
+    local total_2 = 0;
+    for k, v in ipairs(obj) do
+        print(k, v)
+        total_2 = total_2 + v
+    end
+    return total_2
+end
+)";
+
+    static constexpr const char* script_set_field = R"(
+return function (obj, key, value)
+    obj[key] = value
+end
+)";
+
+    static constexpr const char* script_get_field = R"(
+return function (obj, key)
+    return obj[key]
+end
+)";
+
+    void Startup(xlua::State* s) {
+        XCALL_SUCC(s->DoString(script_xlua_op, "op")) {
+            op = s->Get<xlua::Function>(-1);
+        }
+        assert(op.IsValid());
+
+        XCALL_SUCC(s->DoString(script_check, "check")) {
+            check = s->Get<xlua::Function>(-1);
+        }
+        assert(check.IsValid());
+
+        XCALL_SUCC(s->DoString(script_pair, "pairs")) {
+            pairs = s->Get<xlua::Function>(-1);
+        }
+        assert(pairs.IsValid());
+
+        XCALL_SUCC(s->DoString(script_ipair, "ipairs")) {
+            ipairs = s->Get<xlua::Function>(-1);
+        }
+        assert(ipairs.IsValid());
+
+        XCALL_SUCC(s->DoString(script_set_field, "set_field")) {
+            set_field = s->Get<xlua::Function>(-1);
+        }
+        assert(set_field.IsValid());
+
+        XCALL_SUCC(s->DoString(script_get_field, "get_field")) {
+            get_field = s->Get<xlua::Function>(-1);
+        }
+        assert(get_field.IsValid());
+    }
+
+    void Clear() {
+        op = nullptr;
+        check = nullptr;
+        pairs = nullptr;
+        ipairs = nullptr;
+        set_field = nullptr;
+        get_field = nullptr;
+    }
+
+    xlua::Function op;
+    xlua::Function check;
+    xlua::Function pairs;
+    xlua::Function ipairs;
+    xlua::Function set_field;
+    xlua::Function get_field;
+};
+
 #define _TEST_CHECK_VAL(Type, Val)                          \
     {                                                       \
         Type v;                                             \
@@ -236,6 +332,7 @@ TEST(xlua, LuaCallGuard) {
 
 TEST(xlua, TestTable) {
     xlua::State* s = xlua::Create(nullptr);
+
     {
         xlua::Table table;
         ASSERT_EQ(table.begin(), table.end());
@@ -272,6 +369,35 @@ TEST(xlua, TestTable) {
         ASSERT_EQ(s->GetTop(), 0);
         ASSERT_EQ(table.begin(), table.end());
 
+        TestMember member;
+        s->Push(member);
+        table.SetField("obj_value");
+        ASSERT_EQ(s->GetTop(), 0);
+
+        auto var_obj_value = table.GetField<xlua::Variant>("obj_value");
+        auto* obj_value_ptr = table.GetField<TestMember*>("obj_value");
+        ASSERT_EQ(obj_value_ptr, var_obj_value.ToObj<TestMember*>());
+        ASSERT_EQ(s->GetTop(), 0);
+
+        table.LoadField("obj_value");
+        ASSERT_EQ(obj_value_ptr, s->Get<TestMember*>(-1));
+        s->PopTop(1);
+        ASSERT_EQ(s->GetTop(), 0);
+
+        table.SetField("obj_ptr", &member);
+        ASSERT_EQ(s->GetTop(), 0);
+
+        auto obj_ptr_var = table.GetField<xlua::Variant>("obj_ptr");
+        auto* obj_ptr_ptr = table.GetField<TestMember*>("obj_ptr");
+        ASSERT_EQ(obj_ptr_ptr, obj_ptr_var.ToObj<TestMember*>());
+        ASSERT_EQ(obj_ptr_ptr, &member);
+        ASSERT_EQ(s->GetTop(), 0);
+
+        table.LoadField("obj_ptr");
+        ASSERT_EQ(obj_ptr_ptr, s->Get<TestMember*>(-1));
+        s->PopTop(1);
+        ASSERT_EQ(s->GetTop(), 0);
+
         XCALL_SUCC(s->DoString("return function (...) return ... end", "")) {
             ASSERT_EQ(s->GetTop(), 1);
             table.SetField("Check");
@@ -290,6 +416,7 @@ TEST(xlua, TestTable) {
         ASSERT_EQ(table, ret);
         //ASSERT_NE(table, ret);  // here is a new table ref to the same table
     }
+
     ASSERT_EQ(s->GetTop(), 0);
     s->Release();
 }
@@ -299,36 +426,36 @@ TEST(xlua, TestUserData) {
 
     {
         // load static value
-        auto* vec = s->GetGlobal<std::vector<int>*>("TestMember.s_vector_val");
-        ASSERT_NE(vec, nullptr);
-        vec->push_back(2);
-        vec->push_back(3);
-        s->Push(vec);
+        //auto* vec = s->GetGlobal<std::vector<int>*>("TestMember.s_vector_val");
+        //ASSERT_NE(vec, nullptr);
+        //vec->push_back(2);
+        //vec->push_back(3);
+        //s->Push(vec);
 
-        auto ud = s->Get<xlua::UserData>(-1);
-        s->PopTop(1);
-        ASSERT_EQ(vec, ud.ToPtr());
+        //auto ud = s->Get<xlua::UserData>(-1);
+        //s->PopTop(1);
+        //ASSERT_EQ(vec, ud.ToPtr());
 
-        ASSERT_EQ(s->GetTop(), 0);
-        ASSERT_TRUE(ud.IsValid());
+        //ASSERT_EQ(s->GetTop(), 0);
+        //ASSERT_TRUE(ud.IsValid());
 
-        ud.SetField(1, 100);
-        ASSERT_EQ(ud.GetField<int>(1), 100);
+        //ud.SetField(1, 100);
+        //ASSERT_EQ(ud.GetField<int>(1), 100);
 
-        s->Push(101);
-        ud.SetField(2); // will pop the top value
-        ASSERT_EQ(s->GetTop(), 0);
-        ASSERT_EQ(ud.GetField<int>(2), 101);
+        //s->Push(101);
+        //ud.SetField(2); // will pop the top value
+        //ASSERT_EQ(s->GetTop(), 0);
+        //ASSERT_EQ(ud.GetField<int>(2), 101);
 
-        auto* vec2 = ud.As<std::vector<int>*>();
-        ASSERT_EQ(vec, vec2);
+        //auto* vec2 = ud.As<std::vector<int>*>();
+        //ASSERT_EQ(vec, vec2);
 
-        s->Push(ud);
-        auto* vec3 = s->Get<std::vector<int>*>(-1);
-        s->PopTop(1);
-        ASSERT_EQ(vec, vec3);
+        //s->Push(ud);
+        //auto* vec3 = s->Get<std::vector<int>*>(-1);
+        //s->PopTop(1);
+        //ASSERT_EQ(vec, vec3);
 
-        ud = nullptr;
+        //ud = nullptr;
     }
 
     {
@@ -379,62 +506,9 @@ TEST(xlua, TestUserData) {
 /* vector list map unordered_map */
 TEST(xlua, TestCollection) {
     xlua::State* s = xlua::Create(nullptr);
-    constexpr const char* script_op = R"(
-return function (op, obj, ...)
-    print(op, obj, xlua[op])
-    return xlua[op](obj, ...)
-end
-)";
 
-constexpr const char* script_pair = R"(
-return function (obj)
-    local total_1 = 0
-    for k, v in pairs(obj) do
-        print(k, v)
-        total_1 = total_1 + v
-    end
-    return total_1
-end
-)";
-
-constexpr const char* script_ipair = R"(
-return function (obj)
-    local total_2 = 0;
-    for k, v in ipairs(obj) do
-        print(k, v)
-        total_2 = total_2 + v
-    end
-    return total_2
-end
-)";
-
-constexpr const char* script_init = R"(
-return function (obj)
-    for i = 1, 10 do
-        obj[#obj + 1] = #obj + 1
-    end
-end
-)";
-
-    xlua::Function func_op;
-    XCALL_SUCC(s->DoString(script_op, "op")) {
-        func_op = s->Get<xlua::Function>(-1);
-    }
-
-    xlua::Function func_pair;
-    XCALL_SUCC(s->DoString(script_pair, "pair")) {
-        func_pair = s->Get<xlua::Function>(-1);
-    }
-
-    xlua::Function func_ipair;
-    XCALL_SUCC(s->DoString(script_ipair, "ipair")) {
-        func_ipair = s->Get<xlua::Function>(-1);
-    }
-
-    xlua::Function func_init;
-    XCALL_SUCC(s->DoString(script_init, "init")) {
-        func_init = s->Get<xlua::Function>(-1);
-    }
+    ScriptOps ops;
+    ops.Startup(s);
 
     //vector
     {
@@ -443,38 +517,295 @@ end
         s->PopTop(1);
 
         auto* ptr = ud.As<std::vector<int>*>();
-        // equal push_back
-        for (int i = 1; i <= 10; ++i)
-            ud.SetField(ptr->size()+1, ptr->size());
 
-        ASSERT_EQ(ptr->size(), 10);
-        func_op(std::tie(), "Remove", ud, 0);
-        ASSERT_EQ(ptr->size(), 9);
-        ASSERT_EQ(ptr->at(0), 1);
-        func_op(std::tie(), "Remove", ud, ptr->size() - 1);
-        ASSERT_EQ(ptr->size(), 8);
-        ASSERT_EQ(ptr->at(7), 8);
+        // invalid set key
+        //ud.SetField("str", 1);    // this call will crash, will directly trigger lua_error
+                                    // invalid key
+        printf("set field, invalid key\n");
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "str", 1));
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "-1", 1));
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "0", 1));
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "2", 1));
 
-        int total = 0;
-        for (int v : *ptr)
-            total += v;
+        // push back key
+        ud.SetField(ptr->size() + 1, 1);    // index == size + 1, equal push_back
+        ASSERT_EQ(ptr->size(), 1);
 
-        int total_1 = 0;
-        func_pair(std::tie(total_1), ptr);
-        ASSERT_EQ(total, total_1);
+        int ret = ud.GetField<int>(1);
+        ASSERT_EQ(ret, 1);
 
-        func_ipair(std::tie(total_1), ptr);
-        EXPECT_EQ(total, total_1);
+        // invalid value
+        printf("set field, invalid value\n");
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, 1, false));
+        // invalid get key
+        printf("get field, invalid key\n");
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, "str"));
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, "-1"));
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, "0"));
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, "2"));
 
-        func_op(std::tie(), "Clear", ud);
+        EXPECT_TRUE(ops.op(std::tie(), "Clear", ud));
         ASSERT_EQ(ptr->size(), 0);
 
-        func_init(std::tie(), ud);
-        ASSERT_EQ(ptr->size(), 10);
+        EXPECT_TRUE(ops.op(std::tie(), "Insert", ptr, 1, 100));
+        EXPECT_TRUE(ops.op(std::tie(), "Insert", ptr, 2, 200));
+        ASSERT_EQ(ptr->size(), 2);
+        ASSERT_EQ(ptr->at(0), 100);
+        ASSERT_EQ(ptr->at(1), 200);
+
+        printf("xlua.Insert, invalid key\n");
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, "str", 200));
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, 0, 100));
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, 4, 200));
+        printf("insert, invalid value\n");
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, 3, true));
+
+        printf("xlua.Remove, invalid key\n");
+        EXPECT_FALSE(ops.op(std::tie(), "Remove", ud, "str"));
+        EXPECT_FALSE(ops.op(std::tie(), "Remove", ud, 0));
+        EXPECT_FALSE(ops.op(std::tie(), "Remove", ud, 4));
+
+        EXPECT_TRUE(ops.op(std::tie(), "Remove", ud, 1));
+        EXPECT_TRUE(ops.op(std::tie(), "Remove", ud, 1));
+        ASSERT_EQ(ptr->size(), 0);
+
+        ud.SetField(ptr->size() + 1, 1);
+        ud.SetField(ptr->size() + 1, 1);
+        ud.SetField(ptr->size() + 1, 1);
+
+        ret = 0;
+        EXPECT_TRUE(ops.pairs(std::tie(ret), ud));
+        EXPECT_EQ(ret, 3);
+
+        // userdata can not override ipairs, what a pity?
+        //ret = 0;
+        //EXPECT_TRUE(ops.ipairs(std::tie(ret), ud));
+        //EXPECT_EQ(ret, 3);
     }
 
-    func_pair = nullptr;
-    func_op = nullptr;
+    //list
+    {
+        s->Push(std::list<int>());
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+
+        auto* ptr = ud.As<std::list<int>*>();
+
+        // invalid set key
+        //ud.SetField("str", 1);    // this call will crash, will directly trigger lua_error
+                                    // invalid key
+        printf("set field, invalid key\n");
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "str", 1));
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "-1", 1));
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "0", 1));
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "2", 1));
+
+        // push back key
+        ud.SetField(ptr->size() + 1, 1);    // index == size + 1, equal push_back
+        ASSERT_EQ(ptr->size(), 1);
+
+        int ret = ud.GetField<int>(1);
+        ASSERT_EQ(ret, 1);
+
+        // invalid value
+        printf("set field, invalid value\n");
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, 1, false));
+        // invalid get key
+        printf("get field, invalid key\n");
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, "str"));
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, "-1"));
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, "0"));
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, "2"));
+
+        EXPECT_TRUE(ops.op(std::tie(), "Clear", ud));
+        ASSERT_EQ(ptr->size(), 0);
+
+        EXPECT_TRUE(ops.op(std::tie(), "Insert", ptr, 1, 100));
+        EXPECT_TRUE(ops.op(std::tie(), "Insert", ptr, 2, 200));
+        ASSERT_EQ(ptr->size(), 2);
+        ASSERT_EQ(ptr->front(), 100);
+        ASSERT_EQ(ptr->back(), 200);
+
+        printf("xlua.Insert, invalid key\n");
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, "str", 200));
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, 0, 100));
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, 4, 200));
+        printf("insert, invalid value\n");
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, 3, true));
+
+        printf("xlua.Remove, invalid key\n");
+        EXPECT_FALSE(ops.op(std::tie(), "Remove", ud, "str"));
+        EXPECT_FALSE(ops.op(std::tie(), "Remove", ud, 0));
+        EXPECT_FALSE(ops.op(std::tie(), "Remove", ud, 4));
+
+        EXPECT_TRUE(ops.op(std::tie(), "Remove", ud, 1));
+        EXPECT_TRUE(ops.op(std::tie(), "Remove", ud, 1));
+        ASSERT_EQ(ptr->size(), 0);
+
+        ud.SetField(ptr->size() + 1, 1);
+        ud.SetField(ptr->size() + 1, 1);
+        ud.SetField(ptr->size() + 1, 1);
+
+        ret = 0;
+        EXPECT_TRUE(ops.pairs(std::tie(ret), ud));
+        EXPECT_EQ(ret, 3);
+
+        // userdata can not override ipairs, what a pity?
+        //ret = 0;
+        //EXPECT_TRUE(ops.ipairs(std::tie(ret), ud));
+        //EXPECT_EQ(ret, 3);
+    }
+
+    // map
+    {
+        s->Push(std::map<std::string, int>());
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+        ASSERT_EQ(s->GetTop(), 0);
+        ASSERT_TRUE(ud.IsValid());
+
+        auto* ptr = ud.As<std::map<std::string, int>*>();
+        ASSERT_TRUE(ptr);
+
+        printf("set field, invalid key\n");
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, false, 1));
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, 1, 1));
+
+        printf("set field, invalid value\n");
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "one", "1"));
+
+        s->Push(1);
+        ud.SetField("one");
+        ud.SetField("two", 2);
+        ASSERT_EQ(ptr->size(), 2);
+        ASSERT_EQ(s->GetTop(), 0);
+
+        int ret = 0;
+        printf("get field, invalid key\n");
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, false));
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, 1));
+
+        EXPECT_TRUE(ops.get_field(std::tie(ret), ptr, "two"));
+        ASSERT_EQ(ret, 2);
+
+        EXPECT_TRUE(ops.get_field(std::tie(ret), ptr, "one"));
+        ASSERT_EQ(ret, 1);
+
+        ret = ud.GetField<int>("one");
+        ASSERT_EQ(ret, 1);
+        ret = ud.GetField<int>("two");
+        ASSERT_EQ(ret, 2);
+
+        ud.LoadField("one");
+        ASSERT_EQ(s->Get<int>(-1), 1);
+        ud.LoadField("two");
+        ASSERT_EQ(s->Get<int>(-1), 2);
+        ud.LoadField("three");
+        ASSERT_TRUE(s->IsNil(-1));
+        s->PopTop(3);
+
+        printf("xlua.Insert, invalid key");
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, false, 1));
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, 1, 1));
+
+        printf("xlua.Insert, invalid value");
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, "three", "three"));
+
+        EXPECT_TRUE(ops.op(std::tie(), "Insert", ud, "three", 3));
+        ASSERT_EQ(ptr->find("three")->second, 3);
+        ASSERT_EQ(ptr->size(), 3);
+
+        printf("xlua.Remove, invalid key");
+        EXPECT_FALSE(ops.op(std::tie(ret), "Remove", ud, false));
+        EXPECT_FALSE(ops.op(std::tie(ret), "Remove", ud, 1));
+
+        ret = 0;
+        EXPECT_TRUE(ops.pairs(std::tie(ret), ud));
+        ASSERT_EQ(ret, 6);
+
+        EXPECT_TRUE(ops.op(std::tie(ret), "Remove", ud, "one"));
+        EXPECT_TRUE(ops.op(std::tie(ret), "Remove", ud, "two"));
+        EXPECT_TRUE(ops.op(std::tie(ret), "Remove", ud, "three"));
+
+        ASSERT_EQ(ptr->size(), 0);
+    }
+
+    // unordered_map
+    {
+        s->Push(std::unordered_map<std::string, int>());
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+        ASSERT_EQ(s->GetTop(), 0);
+        ASSERT_TRUE(ud.IsValid());
+
+        auto* ptr = ud.As<std::unordered_map<std::string, int>*>();
+        ASSERT_TRUE(ptr);
+
+        printf("set field, invalid key\n");
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, false, 1));
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, 1, 1));
+
+        printf("set field, invalid value\n");
+        EXPECT_FALSE(ops.set_field(std::tie(), ud, "one", "1"));
+
+        s->Push(1);
+        ud.SetField("one");
+        ud.SetField("two", 2);
+        ASSERT_EQ(ptr->size(), 2);
+        ASSERT_EQ(s->GetTop(), 0);
+
+        int ret = 0;
+        printf("get field, invalid key\n");
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, false));
+        EXPECT_FALSE(ops.get_field(std::tie(ret), ud, 1));
+
+        EXPECT_TRUE(ops.get_field(std::tie(ret), ptr, "two"));
+        ASSERT_EQ(ret, 2);
+
+        EXPECT_TRUE(ops.get_field(std::tie(ret), ptr, "one"));
+        ASSERT_EQ(ret, 1);
+
+        ret = ud.GetField<int>("one");
+        ASSERT_EQ(ret, 1);
+
+        ret = ud.GetField<int>("two");
+        ASSERT_EQ(ret, 2);
+
+        ud.LoadField("one");
+        ASSERT_EQ(s->Get<int>(-1), 1);
+        ud.LoadField("two");
+        ASSERT_EQ(s->Get<int>(-1), 2);
+        ud.LoadField("three");
+        ASSERT_TRUE(s->IsNil(-1));
+        s->PopTop(3);
+
+        printf("xlua.Insert, invalid key");
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, false, 1));
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, 1, 1));
+
+        printf("xlua.Insert, invalid value");
+        EXPECT_FALSE(ops.op(std::tie(), "Insert", ud, "three", "three"));
+
+        EXPECT_TRUE(ops.op(std::tie(), "Insert", ud, "three", 3));
+        ASSERT_EQ(ptr->find("three")->second, 3);
+        ASSERT_EQ(ptr->size(), 3);
+
+        printf("xlua.Remove, invalid key");
+        EXPECT_FALSE(ops.op(std::tie(ret), "Remove", ud, false));
+        EXPECT_FALSE(ops.op(std::tie(ret), "Remove", ud, 1));
+
+        ret = 0;
+        EXPECT_TRUE(ops.pairs(std::tie(ret), ud));
+        ASSERT_EQ(ret, 6);
+
+        EXPECT_TRUE(ops.op(std::tie(ret), "Remove", ud, "one"));
+        EXPECT_TRUE(ops.op(std::tie(ret), "Remove", ud, "two"));
+        EXPECT_TRUE(ops.op(std::tie(ret), "Remove", ud, "three"));
+
+        ASSERT_EQ(ptr->size(), 0);
+    }
+
+    ops.Clear();
     ASSERT_EQ(s->GetTop(), 0);
     s->Release();
 }

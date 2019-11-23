@@ -153,8 +153,8 @@ namespace internal {
 
     template <typename Ty>
     struct AloneData : IObjData {
-        AloneData(const Ty& o) : obj(o) {}
-        AloneData(Ty&& o) : obj(std::move(o)) {}
+        template <typename... Args>
+        AloneData(Args&&... args) : obj(std::forward<Args>(args)...) {}
 
         virtual ~AloneData() {}
         Ty obj;
