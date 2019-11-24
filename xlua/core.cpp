@@ -125,6 +125,13 @@ namespace internal {
 
     static constexpr int kMaxLudIndex = 0xff;
 
+#if XLUA_ENABLE_LUD_OPTIMIZE
+    struct LudWeakData {
+        const TypeDesc* desc;
+        int serial;
+    };
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
+
     /* xlua env data */
     struct Env{
         Env() = default;
@@ -133,11 +140,11 @@ namespace internal {
 
         struct {
             std::vector<TypeData*> desc_list{nullptr};
-            // for light userdata weak obj refernce data cache
-            std::vector<size_t> weak_tags{0};
+            std::vector<size_t> weak_tags{0};           // used order weak object types
+
 #if XLUA_ENABLE_LUD_OPTIMIZE
             std::array<const TypeDesc*, 256> lud_list;
-            std::array<std::vector<const TypeDesc*>, 256> weak_data_list;
+            std::array<std::vector<LudWeakData>, 256> lua_weak_data_list;
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
         } declared;
 
@@ -145,7 +152,7 @@ namespace internal {
             int serial_gener = 0;
             int empty_slot = 0;
             std::vector<ArrayObj> objs{ArrayObj()};
-        } obj_ary;
+        } weak_obj_ary;
 
         SerialAlloc allocator{8*1024};
         std::vector<std::pair<lua_State*, State*>> state_list;
@@ -188,24 +195,24 @@ namespace internal {
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
     static const TypeDesc* GetWeakObjDesc(int weak_index, int obj_index) {
-        auto& caches = g_env.declared.weak_data_list[weak_index];
+        auto& caches = g_env.declared.lua_weak_data_list[weak_index];
         if (caches.size() > obj_index)
-            return caches[obj_index];
+            return caches[obj_index].desc;
         return nullptr;
     }
 
-    static void SetWeakObjDesc(int weak_idnex, int obj_index, const TypeDesc* desc) {
+    static void SetWeakObjDesc(int weak_idnex, int obj_index, int obj_serial, const TypeDesc* desc) {
         assert(weak_idnex > 0 && weak_idnex <= kMaxLudIndex);
-        if (weak_idnex <= 0)
-            return;
-
-        auto& caches = g_env.declared.weak_data_list[weak_idnex];
-        if (obj_index >= (int)caches.size())
-            caches.resize((obj_index / XLUA_CONTAINER_INCREMENTAL + 1) * XLUA_CONTAINER_INCREMENTAL, nullptr);
+        auto& caches = g_env.declared.lua_weak_data_list[weak_idnex];
+        if (obj_index >= (int)caches.size()) {
+            caches.resize(
+                (obj_index / XLUA_CONTAINER_INCREMENTAL + 1) * XLUA_CONTAINER_INCREMENTAL,
+                LudWeakData{nullptr, 0});
+        }
 
         auto d = caches[obj_index];
-        if (d == nullptr || IsBaseOf(d, desc))
-            caches[obj_index] = desc;
+        if (d.serial != obj_serial || IsBaseOf(d.desc, desc))
+            caches[obj_index] = LudWeakData{desc, obj_serial};
     }
 
     const TypeDesc* GetLightUdDesc(LightUd ld) {
@@ -257,8 +264,8 @@ namespace internal {
         assert(desc->lud_index);
         if (desc->weak_index) {
             WeakObjRef ref = desc->weak_proc.maker(obj);
-            if (ref.index <= kMaxLudObjIndex) {
-                SetWeakObjDesc(desc->weak_index, ref.index, desc);
+            if (ref.index >= 0 && ref.index <= kMaxLudObjIndex) {
+                SetWeakObjDesc(desc->weak_index, ref.index, ref.serial, desc);
                 return LightUd::Make(desc->lud_index, ref.index, ref.serial);
             }
         } else {
@@ -639,7 +646,7 @@ namespace internal {
 
     /* xlua weak obj reference support */
     WeakObjRef MakeWeakObjRef(void* ptr, ObjectIndex& index) {
-        auto& ary = g_env.obj_ary;
+        auto& ary = g_env.weak_obj_ary;
 
         // already cached the object
         if (index.index_)
@@ -674,7 +681,7 @@ namespace internal {
         if (index.index_ <= 0)
             return;
 
-        auto& ary = internal::g_env.obj_ary;
+        auto& ary = g_env.weak_obj_ary;
         assert(index.index_ < (int)ary.objs.size());
         if (index.index_ >= (int)ary.objs.size())
             return;
@@ -688,7 +695,7 @@ namespace internal {
     }
 
     void* GetWeakObjPtr(WeakObjRef ref) {
-        auto& ary = g_env.obj_ary;
+        auto& ary = g_env.weak_obj_ary;
         if (ref.index <= 0 && ary.objs.size() <= ref.index)
             return nullptr;
 

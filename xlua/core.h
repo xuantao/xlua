@@ -748,7 +748,7 @@ namespace internal {
 
         // delcared type ptr
         template <typename Ty>
-        inline void PushUd(Ty* ptr, const TypeDesc* desc) {
+        void PushUd(Ty* ptr, const TypeDesc* desc) {
             if (ptr == nullptr) {
                 lua_pushnil(l_);
                 return;
@@ -1006,6 +1006,7 @@ namespace internal {
                     if (ud->ptr) {  // need check the user data whether is discard
                         if (ud->desc->weak_index) {
                             ref = GetWeakCache(ud->desc->weak_index, ud->ref.index).ref;
+                            SetWeakCache(ud->desc->weak_index, ud->ref.index, LUA_NOREF, nullptr);
                         } else {
                             auto it = declared_ptr_uds_.find(_XLUA_TO_SUPER_PTR(ud->ptr, ud->desc, nullptr));
                             ref = it->second.ref;

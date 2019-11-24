@@ -931,6 +931,11 @@ TEST(xlua, TestXluaWeakObj) {
         ASSERT_TRUE(ops.check(std::tie(character_ud_2), &character));
         ASSERT_TRUE(character_ud_2.IsValid());
 
+        ASSERT_TRUE(ops.check(std::tie(doodad_ud_2), static_cast<Object*>(&doodad)));
+        ASSERT_TRUE(doodad_ud_2.IsValid());
+        ASSERT_TRUE(ops.check(std::tie(character_ud_2), static_cast<Object*>(&character)));
+        ASSERT_TRUE(character_ud_2.IsValid());
+
         ASSERT_NE(doodad_ud, doodad_ud_2);
         ASSERT_NE(character_ud, character_ud_2);
 
@@ -939,8 +944,8 @@ TEST(xlua, TestXluaWeakObj) {
         ASSERT_TRUE(ops.call(std::tie(int_ret), character_ud_2, "Update", 3));
         ASSERT_EQ(int_ret, 3);
 
-        ASSERT_EQ(nullptr, doodad_ud_2.As<Doodad*>());
-        ASSERT_EQ(nullptr, character_ud_2.As<Character*>());
+        ASSERT_EQ(doodad_ptr, doodad_ud_2.As<Doodad*>());
+        ASSERT_EQ(chatacter_ptr, character_ud_2.As<Character*>());
 
         ASSERT_FALSE(ops.pairs_print(std::tie(), doodad_ud));
         ASSERT_FALSE(ops.pairs_print(std::tie(), character_ud));
@@ -954,3 +959,148 @@ TEST(xlua, TestXluaWeakObj) {
     ASSERT_EQ(s->GetTop(), 0);
     s->Release();
 }
+
+TEST(xlua, TestExtWeakObj) {
+    xlua::State* s = xlua::Create(nullptr);
+    ScriptOps ops;
+    ops.Startup(s);
+
+    /* some ud feature */
+    {
+        CircleCollider circle;
+        CapsuleCollider capsule;
+
+        s->Push(&capsule);
+        EXPECT_STREQ(s->GetTypeName(-1), "CapsuleCollider");
+        s->PopTop(1);
+
+        WeakObjArray::Instance().FreeIndex(&capsule);
+
+        s->Push(&circle);
+        EXPECT_STREQ(s->GetTypeName(-1), "CircleCollider");
+        s->PopTop(1);
+        WeakObjArray::Instance().FreeIndex(&circle);
+
+        /* push same weak object again, the env will update the weak object type info */
+        s->Push(static_cast<Collider*>(&capsule));
+        EXPECT_STREQ(s->GetTypeName(-1), "Collider");
+        s->Push(static_cast<CircleCollider*>(&capsule));
+        s->PopTop(1);
+        EXPECT_STREQ(s->GetTypeName(-1), "CircleCollider");
+        s->Push(static_cast<CapsuleCollider*>(&capsule));
+        s->PopTop(1);
+        EXPECT_STREQ(s->GetTypeName(-1), "CapsuleCollider");
+        s->PopTop(1);
+        WeakObjArray::Instance().FreeIndex(&capsule);
+
+        /* push same weak object, the env will record the derived weak object type info */
+        s->Push(static_cast<CapsuleCollider*>(&capsule));
+        EXPECT_STREQ(s->GetTypeName(-1), "CapsuleCollider");
+        s->Push(static_cast<CircleCollider*>(&capsule));
+        EXPECT_STREQ(s->GetTypeName(-1), "CapsuleCollider");
+        s->Push(static_cast<Collider*>(&capsule));
+        EXPECT_STREQ(s->GetTypeName(-1), "CapsuleCollider");
+        s->PopTop(1);
+        s->PopTop(1);
+        s->PopTop(1);
+    }
+
+    {
+        BoxCollider box;
+        CircleCollider circle;
+        Collider* box_ptr = &box;
+        Collider* circle_ptr = &circle;
+
+        xlua::UserData box_ud;
+        xlua::UserData circle_ud;
+        ASSERT_TRUE(ops.check(std::tie(box_ud), &box));
+        ASSERT_TRUE(box_ud.IsValid());
+        ASSERT_TRUE(ops.check(std::tie(circle_ud), &circle));
+        ASSERT_TRUE(circle_ud.IsValid());
+
+        bool boolean_ret = false;
+        ASSERT_TRUE(ops.call(std::tie(boolean_ret), static_cast<Collider*>(&box), "RayCast", Ray()));
+        ASSERT_EQ(boolean_ret, true);
+        ASSERT_TRUE(ops.call(std::tie(boolean_ret), static_cast<Collider*>(&circle), "RayCast", Ray()));
+        ASSERT_EQ(boolean_ret, true);
+
+        // dot call a object member function will failed
+        EXPECT_FALSE(ops.dot_call(std::tie(boolean_ret), static_cast<Collider*>(&box), "RayCast", Ray()));
+        EXPECT_FALSE(ops.dot_call(std::tie(boolean_ret), static_cast<Collider*>(&circle), "RayCast", Ray()));
+
+        // the box & circle has push to lua before
+        // the lua env has reacord the obj' type info
+        const char* str_val = nullptr;
+        ASSERT_TRUE(ops.op(std::tie(str_val), "Type", static_cast<Collider*>(&box)));
+        EXPECT_STREQ(str_val, "BoxCollider");
+        ASSERT_TRUE(ops.op(std::tie(str_val), "Type", static_cast<Collider*>(&circle)));
+        EXPECT_STREQ(str_val, "CircleCollider");
+
+        EXPECT_TRUE(ops.op(std::tie(boolean_ret), "IsValid", box_ud));
+        ASSERT_TRUE(boolean_ret);
+        EXPECT_TRUE(ops.op(std::tie(boolean_ret), "IsValid", circle_ud));
+        ASSERT_TRUE(boolean_ret);
+
+        ASSERT_EQ(box_ptr, box_ud.As<Collider*>());
+        ASSERT_EQ(circle_ptr, circle_ud.As<Collider*>());
+
+        WeakObjArray::Instance().FreeIndex(box_ptr);
+        WeakObjArray::Instance().FreeIndex(circle_ptr);
+
+        /* the user data is still valid, but the reference object is not valid */
+        EXPECT_TRUE(box_ud.IsValid());
+        EXPECT_TRUE(circle_ud.IsValid());
+
+        boolean_ret = false;
+        EXPECT_TRUE(ops.op(std::tie(boolean_ret), "IsValid", box_ud));
+        ASSERT_FALSE(boolean_ret);
+        EXPECT_TRUE(ops.op(std::tie(boolean_ret), "IsValid", circle_ud));
+        ASSERT_FALSE(boolean_ret);
+
+        ASSERT_FALSE(ops.call(std::tie(boolean_ret), box_ud, "RayCast", Ray()));
+        ASSERT_FALSE(ops.call(std::tie(boolean_ret), circle_ud, "RayCast", Ray()));
+
+        ASSERT_EQ(nullptr, box_ud.As<Collider*>());
+        ASSERT_EQ(nullptr, circle_ud.As<Collider*>());
+
+        xlua::UserData box_ud_2;
+        xlua::UserData circle_ud_2;
+        ASSERT_TRUE(ops.check(std::tie(box_ud_2), box_ptr));
+        ASSERT_TRUE(box_ud_2.IsValid());
+        ASSERT_NE(box_ud, box_ud_2);
+
+        ASSERT_TRUE(ops.check(std::tie(circle_ud_2), circle_ptr));
+        ASSERT_TRUE(circle_ud_2.IsValid());
+        ASSERT_NE(circle_ud, circle_ud_2);
+
+        ASSERT_TRUE(ops.call(std::tie(boolean_ret), box_ud_2, "RayCast", Ray()));
+        ASSERT_TRUE(ops.call(std::tie(boolean_ret), circle_ud_2, "RayCast", Ray()));
+
+        ASSERT_EQ(box_ptr, box_ud_2.As<Collider*>());
+        ASSERT_EQ(circle_ptr, circle_ud_2.As<Collider*>());
+
+        ASSERT_FALSE(ops.pairs_print(std::tie(), box_ud));
+        ASSERT_TRUE(ops.pairs_print(std::tie(), box_ud_2));
+
+        ASSERT_FALSE(ops.pairs_print(std::tie(), circle_ud));
+        ASSERT_TRUE(ops.pairs_print(std::tie(), circle_ud_2));
+
+        WeakObjArray::Instance().FreeIndex(box_ptr);
+        WeakObjArray::Instance().FreeIndex(circle_ptr);
+
+        WeakObjPtr<BoxCollider> weak_ref_1 = &box;
+        WeakObjPtr<CircleCollider> weak_ref_2 = &circle;
+        ASSERT_TRUE(ops.pairs_print(std::tie(), weak_ref_1));
+        ASSERT_TRUE(ops.pairs_print(std::tie(), weak_ref_2));
+
+        weak_ref_1 = nullptr;
+        weak_ref_2 = nullptr;
+        ASSERT_FALSE(ops.pairs_print(std::tie(), weak_ref_1));
+        ASSERT_FALSE(ops.pairs_print(std::tie(), weak_ref_2));
+    }
+
+    ops.Clear();
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
+}
+

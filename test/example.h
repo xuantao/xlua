@@ -392,10 +392,9 @@ struct WeakObj {
     ~WeakObj();
 
 private:
-//    friend struct WeakObjPtrBase;
     friend class WeakObjArray;
 
-    int index_;
+    int index_ = 0;
 };
 
 struct WeakObjPtrBase {
@@ -473,7 +472,7 @@ public:
 public:
     int AllocIndex(WeakObj* ptr) {
         if (ptr->index_)
-            return objs_[ptr->index_].serial;
+            return ptr->index_;
 
         if (empty_slots_.empty()) {
             size_t b = objs_.size();
@@ -608,6 +607,9 @@ struct CircleCollider : Collider {
 
 private:
     bool enable_;
+};
+
+struct CapsuleCollider : CircleCollider {
 };
 
 /* multi inherit test */
