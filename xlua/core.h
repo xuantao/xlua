@@ -256,7 +256,7 @@ namespace internal {
             struct {
                 int64_t ref_index : 24;
                 int64_t ref_serial : 32;
-                int64_t weak_index : 8;     // same as lud_index
+                int64_t _ : 8;              // same as lud_index
             };
             // none
             struct {
@@ -276,7 +276,7 @@ namespace internal {
 
         static inline LightUd Make(int8_t weak_index, int32_t ref_index, int32_t ref_serial) {
             LightUd ld;
-            ld.weak_index = weak_index;
+            ld.lud_index = weak_index;
             ld.ref_index = ref_index;
             ld.ref_serial = ref_serial;
             return ld;
@@ -566,10 +566,9 @@ namespace internal {
             lua_Debug dbg;
             int level = 1;
             int sz = (int)size;
-            int len = 0;// snprintf(buff, size, "stack taceback:");
+            int len = 0;
             if (len < 0 || len > sz)
                 return sz;
-            sz -= len;
 
             while (sz && lua_getstack(l_, level, &dbg)) {
                 lua_getinfo(l_, "nSl", &dbg);

@@ -136,24 +136,24 @@ public:
         }
     }
 
-    template <typename... Args>
-    CallGuard DoString(const char* script, const char* chunk, Args&&... args) {
-        CallGuard guard(this);
+    inline bool LoadString(const char* script, const char* chunk) {
         int ret = luaL_loadbuffer(state_.l_, script, std::char_traits<char>::length(script), chunk);
-        if (LUA_OK != ret)
-            return guard;
-
-        PushMul(std::forward<Args>(args)...);
-        ret = lua_pcall(state_.l_, (int)sizeof...(Args), LUA_MULTRET, 0);
         if (LUA_OK != ret) {
-            char stack[1024];
-            GetCallStack(stack, 1024);
-            printf("call failed: %s\n%s\n", lua_tostring(state_.l_, -1), stack);
-            return guard;
+            printf("load chunk faile:%s\n", lua_tostring(state_.l_, -1));
+            return false;
         }
+        return true;
+    }
 
-        guard.ok_ = true;
-        return guard;
+    inline bool DoString(const char* script, const char* chunk) {
+        return (bool)DoString(script, chunk, std::tie());
+    }
+
+    template <typename... Rtys, typename... Args>
+    inline CallGuard DoString(const char* script, const char* chunk, std::tuple<Rtys&...>&& rets, Args&&... args) {
+        if (!LoadString(script, chunk))
+            return CallGuard(this, -1);
+        return Call(std::move(rets), std::forward<Args>(args)...);
     }
 
     inline size_t GetCallStack(char* buff, size_t size) {

@@ -11,3 +11,5 @@ ExportObj TestMember::s_export_val;
 NoneExportObj TestMember::s_none_export_va;
 std::vector<int> TestMember::s_vector_val;
 std::map<std::string, TestMember*> TestMember::s_map_val;
+int TestMember::s_lua_name__ = 0;
+int TestMember::s_read_only = 1;

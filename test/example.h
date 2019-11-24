@@ -212,6 +212,11 @@ struct TestMember {
     std::vector<int> vector_val;
     std::map<std::string, TestMember*> map_val;
     int m_lua_name__;
+    int read_only;
+
+    void Test(const char* name) {
+        printf("TestMember.Test called %s\n", name);
+    }
 
     static bool s_boolean_val;
     static int s_int_val;
@@ -221,6 +226,12 @@ struct TestMember {
     static NoneExportObj s_none_export_va;
     static std::vector<int> s_vector_val;
     static std::map<std::string, TestMember*> s_map_val;
+    static int s_lua_name__;
+    static int s_read_only;
+
+    static void sTest(const char* name) {
+        printf("TestMember.sTest called %s\n", name);
+    }
 };
 
 /* overlaod functions */
@@ -352,13 +363,28 @@ struct Object {
         strcpy_s(name, 64, "destructed");
     }
 
+    virtual int Update(int delta) = 0;
+
+    int id_;
     char name[64]{0};
 };
 
 struct Character : Object {
+    int Update(int delta) override {
+        printf("Character.Update(%d)\n", delta);
+        return delta;
+    }
+
+    int hp;
 };
 
 struct Doodad : Object {
+    int Update(int delta) override {
+        printf("Doodad.Update(%d)\n", delta);
+        return delta;
+    }
+
+    int drop_id;
 };
 
 /* other weak object ptr */

@@ -153,7 +153,7 @@ namespace internal {
             return true;
 
         char buff[1024];
-        luaL_error(s->GetLuaState(), "attemp to set var[%s.%s] failed, paramenter is not accpeted,\nparams{%s}",
+        luaL_error(s->GetLuaState(), "attemp to set var [%s.%s] failed, paramenter is not accpeted,\nparams{%s}",
             desc->name, StringCache<>(name).Str(), GetParameterNames<Ty>(buff, 1024, s, index));
         return false;
     }
@@ -164,7 +164,7 @@ namespace internal {
             return true;
 
         char buff[1024];
-        luaL_error(s->GetLuaState(), "attemp to call fcuntion[%s.%s] failed, paramenter is not accpeted,\nparams{%s}",
+        luaL_error(s->GetLuaState(), "attemp to call fcuntion [%s.%s] failed, paramenter is not accpeted,\nparams{%s}",
             desc->name, StringCache<>(name).Str(), GetParameterNames<Args...>(buff, 1024, s, index));
         return false;
     }
@@ -495,7 +495,7 @@ namespace internal {
         static inline int Call(State* s, const TypeDesc* desc, StringView name, Fy f) {
             Ty* obj = s->Get<Ty*>(1);
             if (obj == nullptr) {
-                luaL_error(s->GetLuaState(), "attempt call function[%s.%s] failed, obj is nil\n%s", desc->name, "");
+                luaL_error(s->GetLuaState(), "attempt call function [%s.%s] failed, obj is nil", desc->name, StringCache<>(name).Str());
                 return 0;
             }
 

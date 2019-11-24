@@ -132,11 +132,13 @@ namespace internal {
         void operator = (const Env&) = delete;
 
         struct {
-            std::array<LudType, 256> lud_list;
             std::vector<TypeData*> desc_list{nullptr};
             // for light userdata weak obj refernce data cache
             std::vector<size_t> weak_tags{0};
+#if XLUA_ENABLE_LUD_OPTIMIZE
+            std::array<const TypeDesc*, 256> lud_list;
             std::array<std::vector<const TypeDesc*>, 256> weak_data_list;
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
         } declared;
 
         struct {
@@ -207,13 +209,10 @@ namespace internal {
     }
 
     const TypeDesc* GetLightUdDesc(LightUd ld) {
-        const auto& info = g_env.declared.lud_list[ld.lud_index];
-        if (info.type == LudType::Type::kWeakObj) {
-            return GetWeakObjDesc(ld.weak_index, ld.ref_index);
-        } else if (info.type == LudType::Type::kPtr) {
-            return info.desc;
-        }
-        return nullptr;
+        const TypeDesc* src_desc = g_env.declared.lud_list[ld.lud_index];
+        if (src_desc && src_desc->weak_index)
+            return GetWeakObjDesc(src_desc->weak_index, ld.ref_index);
+        return src_desc;
     }
 
     bool CheckLightUd(LightUd ld, const TypeDesc* desc) {
@@ -222,43 +221,44 @@ namespace internal {
     }
 
     void* UnpackLightUd(LightUd ld) {
-        const auto& info = g_env.declared.lud_list[ld.lud_index];
-        if (info.type == LudType::Type::kWeakObj) {
-            auto* cache_desc = GetWeakObjDesc(ld.weak_index, ld.ref_index);
-            return cache_desc->weak_proc.getter(ld.ToWeakRef());
-        } else if (info.type == LudType::Type::kPtr) {
+        const TypeDesc* src_desc = g_env.declared.lud_list[ld.lud_index];
+        if (src_desc == nullptr)
+            return nullptr;
+
+        if (src_desc->weak_index) {
+            src_desc = GetWeakObjDesc(src_desc->weak_index, ld.ref_index);
+            return src_desc->weak_proc.getter(ld.ToWeakRef());
+        } else {
             return ld.ToObj();
         }
-        return nullptr;
     }
 
     void* UnpackLightUd(LightUd ld, const TypeDesc* desc) {
-        const auto& info = g_env.declared.lud_list[ld.lud_index];
-        if (info.type == LudType::Type::kWeakObj) {
-            auto* cache_desc = GetWeakObjDesc(ld.weak_index, ld.ref_index);
-            if (!IsBaseOf(desc, cache_desc))
-                return nullptr;
+        const TypeDesc* src_desc = g_env.declared.lud_list[ld.lud_index];
+        if (src_desc == nullptr)
+            return nullptr;
 
-            void* ptr = cache_desc->weak_proc.getter(ld.ToWeakRef());
+        if (src_desc->weak_index) {
+            src_desc = GetWeakObjDesc(src_desc->weak_index, ld.ref_index);
+            if (!IsBaseOf(desc, src_desc))
+                return nullptr;
+            void* ptr = src_desc->weak_proc.getter(ld.ToWeakRef());
             if (ptr == nullptr)
                 return nullptr;
-            return _XLUA_TO_SUPER_PTR(ptr, cache_desc, desc);
-        } else if (info.type == LudType::Type::kPtr) {
-            if (!IsBaseOf(desc, info.desc))
+            return _XLUA_TO_SUPER_PTR(ptr, src_desc, desc);
+        } else {
+            if (!IsBaseOf(desc, src_desc))
                 return nullptr;
-            return _XLUA_TO_SUPER_PTR(ld.ToObj(), info.desc, desc);
+            return _XLUA_TO_SUPER_PTR(ld.ToObj(), src_desc, desc);
         }
-        return nullptr;
     }
 
     LightUd PackLightUd(void* obj, const TypeDesc* desc) {
-        if (desc->lud_index == 0)
-            return LightUd::Make(nullptr);
-
+        assert(desc->lud_index);
         if (desc->weak_index) {
             WeakObjRef ref = desc->weak_proc.maker(obj);
             if (ref.index <= kMaxLudObjIndex) {
-                SetWeakObjDesc(ref.index, ref.serial, desc);
+                SetWeakObjDesc(desc->weak_index, ref.index, desc);
                 return LightUd::Make(desc->lud_index, ref.index, ref.serial);
             }
         } else {
@@ -319,21 +319,37 @@ namespace meta {
         return indexer(state, ud->ptr, ud->desc);
     }
 
+    static int __to_string_member(lua_State* l) {
+        char buf[64];
+        auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
+        if (ud == nullptr) {
+            snprintf(buf, 64, "nullptr");
+        } else if (ud->IsValid()) {
+            if (ud->ptr)
+                snprintf(buf, 64, "%p", ud->ptr);
+            else
+                snprintf(buf, 64, "nullptr");
+        } else {
+            snprintf(buf, 64, "unknown");
+        }
+        lua_pushstring(l, buf);
+        return 1;
+    }
+
 #if XLUA_ENABLE_LUD_OPTIMIZE
     // unpack lud ptr, return (id, obj_ptr, type_desc)
     static int __unpack_lud(lua_State* l) {
         auto lud = LightUd::Make(lua_touserdata(l, 1));
         void* ptr = nullptr;
-        const TypeDesc* desc = nullptr;
-        auto& lty = g_env.declared.lud_list[lud.lud_index];
-        if (lty.type == LudType::Type::kWeakObj) {
-            desc = GetWeakObjDesc(lud.lud_index, lud.ref_index);
+        const TypeDesc* desc = g_env.declared.lud_list[lud.lud_index];
+
+        if (desc && desc->weak_index) {
+            desc = GetWeakObjDesc(desc->weak_index, lud.ref_index);
             ptr = desc->weak_proc.getter(lud.ToWeakRef());
             if (ptr == nullptr)
                 desc = nullptr;
-        } else if (lty.type == LudType::Type::kPtr) {
+        } else {
             ptr = lud.ToObj();
-            desc = lty.desc;
         }
 
         lua_pushnumber(l, desc ? desc->id : 0);
@@ -350,6 +366,39 @@ namespace meta {
         auto* desc = (const TypeDesc*)(lua_touserdata(l, 5));   // type desc
         lua_settop(l, 1);                                       // pop all not uesed any alue
         return indexer(state, ptr, desc);
+    }
+
+    static int __to_string_lud(lua_State* l) {
+        if (lua_isnil(l, 1)) {
+            lua_pushstring(l, "nil");
+        } else if (LightUd lud = LightUd::Make(lua_touserdata(l, 1))) {
+            char buf[128];
+            const TypeDesc* desc = g_env.declared.lud_list[lud.lud_index];
+            if (desc) {
+                if (desc->weak_index) {
+                    desc = GetWeakObjDesc(desc->weak_index, lud.ref_index);
+                    auto* p = desc->weak_proc.getter(lud.ToWeakRef());
+                    if (p)
+                        snprintf(buf, 128, "%s(%p)", desc->name, p);
+                    else
+                        snprintf(buf, 64, "%s(nullptr)", desc->name);
+                } else {
+                    snprintf(buf, 128, "%s(%p)", desc->name, lud.ToObj());
+                }
+            } else {
+                snprintf(buf, 128, "unknown(%p)", lud.ToObj());
+            }
+            lua_pushstring(l, buf);
+        } else {
+            auto* ptr = lua_touserdata(l, 1);
+            char buf[64];
+            if (ptr)
+                snprintf(buf, 64, "unknown(%p)", ptr);
+            else
+                snprintf(buf, 64, "nullptr");
+            lua_pushstring(l, buf);
+        }
+        return 1;
     }
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
@@ -591,6 +640,11 @@ namespace internal {
     /* xlua weak obj reference support */
     WeakObjRef MakeWeakObjRef(void* ptr, ObjectIndex& index) {
         auto& ary = g_env.obj_ary;
+
+        // already cached the object
+        if (index.index_)
+            return WeakObjRef{index.index_, ary.objs[index.index_].serial};
+
         // alloc obj slots
         if (ary.empty_slot == 0) {
             size_t sz = ary.objs.size();
@@ -613,6 +667,24 @@ namespace internal {
         obj.ptr = ptr;
         obj.serial = ++ary.serial_gener;
         return WeakObjRef{idx, obj.serial};
+    }
+
+    /* free xlua object index */
+    void FreeObjectIndex(ObjectIndex& index) {
+        if (index.index_ <= 0)
+            return;
+
+        auto& ary = internal::g_env.obj_ary;
+        assert(index.index_ < (int)ary.objs.size());
+        if (index.index_ >= (int)ary.objs.size())
+            return;
+
+        auto& ob = ary.objs[index.index_];
+        ob.serial = 0;
+        ob.next = ary.empty_slot;
+        ary.empty_slot = index.index_;
+
+        index.index_ = 0;
     }
 
     void* GetWeakObjPtr(WeakObjRef ref) {
@@ -724,8 +796,9 @@ namespace internal {
         lua_pushlightuserdata(s->GetLuaState(), s);                         // push state
         lua_pushcfunction(s->GetLuaState(), &meta::__unpack_lud);           // push unpack_ptr
         lua_pushcfunction(s->GetLuaState(), &meta::__index_lud);            // push indexer
+        lua_pushcfunction(s->GetLuaState(), &meta::__to_string_lud);        // push to_string
         lua_geti(s->GetLuaState(), LUA_REGISTRYINDEX, s->state_.desc_ref_); // push desc_table_list
-        lua_pcall(s->GetLuaState(), 4, 1, 0);                               // create metatable
+        lua_pcall(s->GetLuaState(), 5, 1, 0);                               // create metatable
         lua_setmetatable(s->GetLuaState(), -2);                             // set lightuserdata metatable
         lua_pop(s->GetLuaState(), 1);                                       // pop nil lightuserdata
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
@@ -883,10 +956,11 @@ namespace internal {
             ::strlen(script::kFudMetatable), "declared_metatable");
         lua_pushlightuserdata(s->GetLuaState(), s);
         lua_pushcfunction(s->GetLuaState(), &meta::__index_member);
+        lua_pushcfunction(s->GetLuaState(), &meta::__to_string_member);
         lua_pushstring(s->GetLuaState(), td.name);
         lua_pushvalue(s->GetLuaState(), f_index);
         lua_pushvalue(s->GetLuaState(), v_index);
-        lua_pcall(s->GetLuaState(), 5, 1, 0);
+        lua_pcall(s->GetLuaState(), 6, 1, 0);
         lua_pushcfunction(s->GetLuaState(), &meta::__gc);
         lua_setfield(s->GetLuaState(), -2, "__gc");
 
@@ -957,23 +1031,6 @@ State* Attach(lua_State* l, const char* mod) {
     return s;
 }
 
-void FreeObjectIndex(ObjectIndex& index) {
-    if (index.index_ <= 0)
-        return;
-
-    auto& ary = internal::g_env.obj_ary;
-    assert(index.index_ < (int)ary.objs.size());
-    if (index.index_ >= (int)ary.objs.size())
-        return;
-
-    auto& ob = ary.objs[index.index_];
-    ob.serial = 0;
-    ob.next = ary.empty_slot;
-    ary.empty_slot = index.index_;
-
-    index.index_ = 0;
-}
-
 namespace internal {
     struct TypeCreator : public ITypeFactory {
         TypeCreator(const char* name, bool global, const TypeDesc* super)
@@ -1027,8 +1084,10 @@ namespace internal {
             g_env.declared.desc_list.push_back(data);
 
             data->name = type_name;
-            data->lud_index = GetLudIndex(data);
             data->weak_index = GetWeakIndex();
+#if XLUA_ENABLE_LUD_OPTIMIZE
+            data->lud_index = GetLudIndex(data);
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
             data->weak_proc = weak_proc;
             data->caster = caster;
             data->super = super;
@@ -1117,33 +1176,33 @@ namespace internal {
             return (int)(it - tags.begin());
         }
 
+#if XLUA_ENABLE_LUD_OPTIMIZE
         uint8_t GetLudIndex(TypeDesc* desc) const {
             if (is_global)
                 return 0;
 
             if (weak_proc.tag) {
                 for (int i = 1; i <= kMaxLudIndex; ++i) {
-                    auto& info = g_env.declared.lud_list[i];
-                    if (info.type == LudType::Type::kNone) {
-                        info.type = LudType::Type::kWeakObj;
-                        info.tag = weak_proc.tag;
-                        return (uint8_t)i;
-                    } else if (info.type == LudType::Type::kWeakObj && info.tag == weak_proc.tag) {
-                        return (uint8_t)i;
+                    auto* tmp = g_env.declared.lud_list[i];
+                    if (tmp == nullptr) {
+                        g_env.declared.lud_list[i] = desc;
+                        return i;
+                    } else if (tmp->weak_proc.tag == weak_proc.tag) {
+                        return i;
                     }
                 }
             } else {
                 for (int i = 1; i <= kMaxLudIndex; ++i) {
-                    auto& info = g_env.declared.lud_list[i];
-                    if (info.type == LudType::Type::kNone) {
-                        info.type = LudType::Type::kPtr;
-                        info.desc = desc;
-                        return (uint8_t)i;
+                    auto* tmp = g_env.declared.lud_list[i];
+                    if (tmp == nullptr) {
+                        g_env.declared.lud_list[i] = desc;
+                        return i;
                     }
                 }
             }
             return 0;
         }
+#endif // XLUA_ENABLE_LUD_OPTIMIZE
 
         void SetMultiInherit(TypeDesc* desc) {
             if (desc == nullptr)

@@ -25,9 +25,6 @@ class ObjectIndex;
 State* Create(const char* mod);
 State* Attach(lua_State* l, const char* mod);
 
-/* manul release object */
-void FreeObjectIndex(ObjectIndex& index);
-
 /* type identify */
 template <typename Ty>
 struct Identity { typedef Ty type; };
@@ -94,10 +91,10 @@ struct WeakObjProc {
 struct TypeDesc {
     int id;
     const char* name;
+    int weak_index;             // weak object reference index(for quick index weak obj info)
 #if XLUA_ENABLE_LUD_OPTIMIZE
     uint8_t lud_index;          // lightuserdata index
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
-    int weak_index;             // weak object reference index(for quick index weak obj info)
     const TypeDesc* super;
     const TypeDesc* child;
     const TypeDesc* brother;
@@ -149,17 +146,18 @@ class ObjectIndex;
 namespace internal {
     /* xlua weak obj reference support */
     WeakObjRef MakeWeakObjRef(void* obj, ObjectIndex& index);
+    void FreeObjectIndex(ObjectIndex&);
     void* GetWeakObjPtr(WeakObjRef index_);
 }
 
 /* xlua weak object reference index */
 class ObjectIndex {
-    friend void FreeObjectIndex(ObjectIndex&);
+    friend void internal::FreeObjectIndex(ObjectIndex&);
     friend WeakObjRef internal::MakeWeakObjRef(void*, ObjectIndex&);
 
 public:
     ObjectIndex() = default;
-    ~ObjectIndex() { if (index_ > 0) FreeObjectIndex(*this); }
+    ~ObjectIndex() { if (index_ > 0) internal::FreeObjectIndex(*this); }
 
 public:
     ObjectIndex(const ObjectIndex&) { }
@@ -220,6 +218,16 @@ public:
     static constexpr bool value = std::is_same<decltype(Check<Ty>(0)), ObjectIndex>::value;
 };
 
+template <class Ty, typename std::enable_if<IsWeakObj<Ty>::value, int>::type = 0>
+inline void FreeIndex(Ty& obj) {
+    internal::FreeObjectIndex(obj.xlua_obj_index_);
+}
+
+template <class Ty, typename std::enable_if<IsWeakObj<Ty>::value, int>::type = 0>
+inline void FreeIndex(Ty* ptr) {
+    internal::FreeObjectIndex(ptr->xlua_obj_index_);
+}
+
 /* xlua weak object reference support tag */
 struct weak_obj_tag {};
 
@@ -227,14 +235,14 @@ template <typename Ty>
 struct WeakObjTraits {
 private:
     /* detect the class dealcre the xlua_obj_index_ member var */
-    template <typename C> static C Query(ObjectIndex C::*);
-    typedef typename decltype(Query(&Ty::xlua_obj_index_)) class_type;
+    template <typename C> static C* Query(xlua::ObjectIndex C::*) { return nullptr; }
+    typedef typename decltype(Query(&Ty::xlua_obj_index_)) class_type_ptr;
 
     static WeakObjRef Make(void* obj) {
-        return internal::MakeWeakObjRef(static_cast<class_type*>(obj), static_cast<Ty*>(obj)->xlua_obj_index_);
+        return internal::MakeWeakObjRef(static_cast<class_type_ptr>(obj), static_cast<Ty*>(obj)->xlua_obj_index_);
     }
     static void* Get(WeakObjRef ref) {
-        return static_cast<Ty*>(static_cast<class_type*>(internal::GetWeakObjPtr(ref)));
+        return static_cast<Ty*>(static_cast<class_type_ptr>(internal::GetWeakObjPtr(ref)));
     }
 
 public:

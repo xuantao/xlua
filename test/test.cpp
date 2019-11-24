@@ -39,6 +39,14 @@ return function (obj)
 end
 )";
 
+    static constexpr const char* script_pair_print = R"(
+return function (obj)
+    for k, v in pairs(obj) do
+        print(k, v)
+    end
+end
+)";
+
     static constexpr const char* script_set_field = R"(
 return function (obj, key, value)
     obj[key] = value
@@ -51,36 +59,28 @@ return function (obj, key)
 end
 )";
 
+    static constexpr const char* script_call = R"(
+return function (obj, key, ...)
+    return obj[key](obj, ...)
+end
+)";
+
+    static constexpr const char* script_dot_call = R"(
+return function (obj, key, ...)
+    return obj[key](...)
+end
+)";
+
     void Startup(xlua::State* s) {
-        XCALL_SUCC(s->DoString(script_xlua_op, "op")) {
-            op = s->Get<xlua::Function>(-1);
-        }
-        assert(op.IsValid());
-
-        XCALL_SUCC(s->DoString(script_check, "check")) {
-            check = s->Get<xlua::Function>(-1);
-        }
-        assert(check.IsValid());
-
-        XCALL_SUCC(s->DoString(script_pair, "pairs")) {
-            pairs = s->Get<xlua::Function>(-1);
-        }
-        assert(pairs.IsValid());
-
-        XCALL_SUCC(s->DoString(script_ipair, "ipairs")) {
-            ipairs = s->Get<xlua::Function>(-1);
-        }
-        assert(ipairs.IsValid());
-
-        XCALL_SUCC(s->DoString(script_set_field, "set_field")) {
-            set_field = s->Get<xlua::Function>(-1);
-        }
-        assert(set_field.IsValid());
-
-        XCALL_SUCC(s->DoString(script_get_field, "get_field")) {
-            get_field = s->Get<xlua::Function>(-1);
-        }
-        assert(get_field.IsValid());
+        EXPECT_TRUE(s->DoString(script_xlua_op, "op", std::tie(op)));
+        EXPECT_TRUE(s->DoString(script_check, "check", std::tie(check)));
+        EXPECT_TRUE(s->DoString(script_pair, "pairs", std::tie(pairs)));
+        EXPECT_TRUE(s->DoString(script_ipair, "ipairs", std::tie(ipairs)));
+        EXPECT_TRUE(s->DoString(script_pair_print, "pairs_print", std::tie(pairs_print)));
+        EXPECT_TRUE(s->DoString(script_set_field, "set_field", std::tie(set_field)));
+        EXPECT_TRUE(s->DoString(script_get_field, "get_field", std::tie(get_field)));
+        EXPECT_TRUE(s->DoString(script_call, "call", std::tie(call)));
+        EXPECT_TRUE(s->DoString(script_dot_call, "dot_call", std::tie(dot_call)));
     }
 
     void Clear() {
@@ -88,16 +88,22 @@ end
         check = nullptr;
         pairs = nullptr;
         ipairs = nullptr;
+        pairs_print = nullptr;
         set_field = nullptr;
         get_field = nullptr;
+        call = nullptr;
+        dot_call = nullptr;
     }
 
     xlua::Function op;
     xlua::Function check;
     xlua::Function pairs;
     xlua::Function ipairs;
+    xlua::Function pairs_print;
     xlua::Function set_field;
     xlua::Function get_field;
+    xlua::Function call;
+    xlua::Function dot_call;
 };
 
 #define _TEST_CHECK_VAL(Type, Val)                          \
@@ -284,7 +290,7 @@ TEST(xlua, LuaCallGuard) {
 
     /* need guard */
     Object* ptr = nullptr;
-    Object obj;
+    Doodad obj;
     strcpy_s(obj.name, 64, "hello world");
 
     ASSERT_TRUE(s->Call("Check", std::tie(ptr), obj));
@@ -316,12 +322,12 @@ TEST(xlua, LuaCallGuard) {
         ASSERT_EQ(s->GetTop(), 2);
     }
 
-    if (auto guard = s->DoString("return ...", "guard", true, "hello world")) {
+    if (auto guard = s->DoString("return ...", "guard", std::tie(boolean_val, str_val), true, "hello world")) {
         ASSERT_EQ(s->GetTop(), 2);
     }
 
     /* if add '== false' experise, the guard will destrct immediately */
-    if (auto guard = s->DoString("return ...", "guard", true, "hello world") == false) {
+    if (auto guard = s->DoString("return ...", "guard", std::tie(boolean_val, str_val), true, "hello world") == false) {
     } else {
         EXPECT_EQ(s->GetTop(), 0);
     }
@@ -398,13 +404,12 @@ TEST(xlua, TestTable) {
         s->PopTop(1);
         ASSERT_EQ(s->GetTop(), 0);
 
-        XCALL_SUCC(s->DoString("return function (...) return ... end", "")) {
+        xlua::Function func;
+        XCALL_SUCC(s->DoString("return function (...) return ... end", "", std::tie(func))) {
             ASSERT_EQ(s->GetTop(), 1);
             table.SetField("Check");
             ASSERT_EQ(s->GetTop(), 0);  // will set the top value as table field and remove ths stack value
         }
-
-        auto func = table.GetField<xlua::Function>("Check");
         ASSERT_TRUE(func.IsValid());
 
         int i = 0;
@@ -728,84 +733,224 @@ TEST(xlua, TestCollection) {
     s->Release();
 }
 
+static void DoTestUserData(xlua::State* s, xlua::UserData ud, ScriptOps& ops) {
+    bool b_val;
+    int i_val;
+    long l_val;
+    const char* str_val;
+
+    // set field
+    ASSERT_TRUE(ops.set_field(std::tie(), ud, "boolean_val", true));
+    ASSERT_TRUE(ops.set_field(std::tie(), ud, "int_val", 10001));
+    ASSERT_TRUE(ops.set_field(std::tie(), ud, "long_val", 10002));
+    ASSERT_TRUE(ops.set_field(std::tie(), ud, "name_val", "TestMember"));
+    ASSERT_TRUE(ops.set_field(std::tie(), ud,
+        xlua::internal::PurifyMemberName("m_lua_name__"), 10003));
+
+    // member name has been purified
+    ASSERT_FALSE(ops.set_field(std::tie(), ud, "m_lua_name__", 10003));
+    // member is read only
+    ASSERT_FALSE(ops.set_field(std::tie(), ud, "read_only", 2005));
+
+    // get field
+    ASSERT_TRUE(ops.get_field(std::tie(b_val), ud, "boolean_val"));
+    EXPECT_EQ(b_val, true);
+    ASSERT_TRUE(ops.get_field(std::tie(i_val), ud, "int_val"));
+    EXPECT_EQ(i_val, 10001);
+    ASSERT_TRUE(ops.get_field(std::tie(l_val), ud, "long_val"));
+    EXPECT_EQ(l_val, 10002);
+    ASSERT_TRUE(ops.get_field(std::tie(str_val), ud, "name_val"));
+    EXPECT_STREQ(str_val, "TestMember");
+    ASSERT_TRUE(ops.get_field(std::tie(i_val), ud, xlua::internal::PurifyMemberName("m_lua_name__")));
+    EXPECT_EQ(i_val, 10003);
+    ASSERT_TRUE(ops.get_field(std::tie(i_val), ud, "read_only"));
+    EXPECT_EQ(i_val, 1111);
+    // member name has been purified
+    ASSERT_FALSE(ops.get_field(std::tie(i_val), ud, "m_lua_name__"));
+
+    ASSERT_TRUE(ops.call(std::tie(), ud, "Test", "test_call"));
+    ASSERT_FALSE(ops.dot_call(std::tie(), ud, "Test", "test_call"));
+
+    ASSERT_TRUE(ops.pairs_print(std::tie(), ud));
+}
+
 TEST(xlua, TestUserData) {
     xlua::State* s = xlua::Create(nullptr);
 
+    ScriptOps ops;
+    ops.Startup(s);
     {
-        // load static value
-        //auto* vec = s->GetGlobal<std::vector<int>*>("TestMember.s_vector_val");
-        //ASSERT_NE(vec, nullptr);
-        //vec->push_back(2);
-        //vec->push_back(3);
-        //s->Push(vec);
-
-        //auto ud = s->Get<xlua::UserData>(-1);
-        //s->PopTop(1);
-        //ASSERT_EQ(vec, ud.ToPtr());
-
-        //ASSERT_EQ(s->GetTop(), 0);
-        //ASSERT_TRUE(ud.IsValid());
-
-        //ud.SetField(1, 100);
-        //ASSERT_EQ(ud.GetField<int>(1), 100);
-
-        //s->Push(101);
-        //ud.SetField(2); // will pop the top value
-        //ASSERT_EQ(s->GetTop(), 0);
-        //ASSERT_EQ(ud.GetField<int>(2), 101);
-
-        //auto* vec2 = ud.As<std::vector<int>*>();
-        //ASSERT_EQ(vec, vec2);
-
-        //s->Push(ud);
-        //auto* vec3 = s->Get<std::vector<int>*>(-1);
-        //s->PopTop(1);
-        //ASSERT_EQ(vec, vec3);
-
-        //ud = nullptr;
-    }
-
-    {
-        s->Push(TestMember());
+        TestMember obj;
+        obj.read_only = 1111;
+        s->Push(obj);
         auto ud = s->Get<xlua::UserData>(-1);
         s->PopTop(1);
-        s->Gc();
-        ASSERT_TRUE(ud.IsValid());  // ud will cache the lua object
 
-        xlua::Function get_var;
-        XCALL_SUCC(s->DoString("return function (obj, name) print(name) return obj[name] end", "GetVar")) {
-            get_var = s->Get<xlua::Function>(-1);
-            ASSERT_TRUE(ud.IsValid());
-        }
-        ASSERT_TRUE(get_var.IsValid());
-        ASSERT_EQ(s->GetTop(), 0);
-
-        xlua::UserData ud_map;
-        ASSERT_TRUE(get_var(std::tie(ud_map), ud, "map_val"));
-
-        auto* ptr = ud.As<TestMember*>();
-        auto* mem = ud_map.As<std::map<std::string, TestMember*>*>();
-        ASSERT_EQ(&ptr->map_val, mem);  // ud's object member will pass as pointer
-
-        ud_map.SetField("first", ud);
-        ASSERT_EQ(ptr->map_val["first"], ptr);
-
-        ud_map.SetField("first", nullptr);
-        ASSERT_TRUE(ptr->map_val.empty());
-
-        ptr->m_lua_name__ = 1001;
-        int val = ud.GetField<int>("m_lua_name__");
-        ASSERT_NE(val, 1001);
-
-        // lua member name has purified
-        val = ud.GetField<int>(xlua::internal::PurifyMemberName("m_lua_name__"));
-        ASSERT_EQ(val, 1001);
-
-        ud = nullptr;
-        s->Gc();
-        // after gc, ud_map is an ilegal value, we must carefull about the life time
+        DoTestUserData(s, ud, ops);
     }
 
+    {
+        TestMember obj;
+        obj.read_only = 1111;
+        s->Push(&obj);
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+
+        DoTestUserData(s, ud, ops);
+    }
+
+    ops.Clear();
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
+}
+
+TEST(xlua, TestStaticMember) {
+    xlua::State* s = xlua::Create(nullptr);
+    ScriptOps ops;
+    ops.Startup(s);
+
+    {
+        auto table = s->GetGlobal<xlua::Table>("TestMember");
+        TestMember::s_read_only = 1111;
+        bool b_val;
+        int i_val;
+        long l_val;
+        const char* str_val;
+
+        // set field
+        ASSERT_TRUE(ops.set_field(std::tie(), table, "s_boolean_val", true));
+        ASSERT_TRUE(ops.set_field(std::tie(), table, "s_int_val", 10001));
+        ASSERT_TRUE(ops.set_field(std::tie(), table, "s_long_val", 10002));
+        ASSERT_TRUE(ops.set_field(std::tie(), table, "s_name_val", "TestMember"));
+        ASSERT_TRUE(ops.set_field(std::tie(), table,
+            xlua::internal::PurifyMemberName("s_lua_name__"), 10003));
+
+        // member name has been purified
+        ASSERT_FALSE(ops.set_field(std::tie(), table, "s_lua_name__", 10003));
+        // member is read only
+        ASSERT_FALSE(ops.set_field(std::tie(), table, "s_read_only", 2005));
+
+        // get field
+        ASSERT_TRUE(ops.get_field(std::tie(b_val), table, "s_boolean_val"));
+        EXPECT_EQ(b_val, true);
+        ASSERT_TRUE(ops.get_field(std::tie(i_val), table, "s_int_val"));
+        EXPECT_EQ(i_val, 10001);
+        ASSERT_TRUE(ops.get_field(std::tie(l_val), table, "s_long_val"));
+        EXPECT_EQ(l_val, 10002);
+        ASSERT_TRUE(ops.get_field(std::tie(str_val), table, "s_name_val"));
+        EXPECT_STREQ(str_val, "TestMember");
+        ASSERT_TRUE(ops.get_field(std::tie(i_val), table, xlua::internal::PurifyMemberName("s_lua_name__")));
+        EXPECT_EQ(i_val, 10003);
+        ASSERT_TRUE(ops.get_field(std::tie(i_val), table, "s_read_only"));
+        EXPECT_EQ(i_val, 1111);
+        // member name has been purified
+        ASSERT_FALSE(ops.get_field(std::tie(i_val), table, "s_lua_name__"));
+
+        ASSERT_FALSE(ops.call(std::tie(), table, "sTest", "test_call"));
+        ASSERT_TRUE(ops.dot_call(std::tie(), table, "sTest", "test_call"));
+
+        ASSERT_TRUE(ops.pairs_print(std::tie(), table));
+    }
+
+    ops.Clear();
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
+}
+
+TEST(xlua, TestXluaWeakObj) {
+    xlua::State* s = xlua::Create(nullptr);
+    ScriptOps ops;
+    ops.Startup(s);
+
+    {
+        Doodad doodad;
+        Character character;
+        Object* doodad_ptr = &doodad;
+        Object* chatacter_ptr = &character;
+
+        doodad.id_ = 1;
+        doodad.drop_id = 1001;
+        character.id_ = 2;
+        character.hp = 1000;
+
+        xlua::UserData doodad_ud;
+        xlua::UserData character_ud;
+        ASSERT_TRUE(ops.check(std::tie(doodad_ud), &doodad));
+        ASSERT_TRUE(doodad_ud.IsValid());
+        ASSERT_TRUE(ops.check(std::tie(character_ud), &character));
+        ASSERT_TRUE(character_ud.IsValid());
+
+        int int_ret;
+        ASSERT_TRUE(ops.call(std::tie(int_ret), static_cast<Object*>(&doodad), "Update", 2));
+        ASSERT_EQ(int_ret, 2);
+        ASSERT_TRUE(ops.call(std::tie(int_ret), static_cast<Object*>(&character), "Update", 3));
+        ASSERT_EQ(int_ret, 3);
+
+        // dot call a object member function will failed
+        EXPECT_FALSE(ops.dot_call(std::tie(int_ret), static_cast<Object*>(&doodad), "Update", 2));
+        EXPECT_FALSE(ops.dot_call(std::tie(int_ret), static_cast<Object*>(&character), "Update", 3));
+
+        bool boolean_ret = false;
+        EXPECT_TRUE(ops.op(std::tie(boolean_ret), "IsValid", doodad_ud));
+        ASSERT_TRUE(boolean_ret);
+
+        boolean_ret = false;
+        EXPECT_TRUE(ops.op(std::tie(boolean_ret), "IsValid", character_ud));
+        ASSERT_TRUE(boolean_ret);
+
+        ASSERT_EQ(doodad_ptr, doodad_ud.As<Doodad*>());
+        ASSERT_EQ(chatacter_ptr, character_ud.As<Character*>());
+
+        xlua::FreeIndex(doodad);
+        xlua::FreeIndex(character);
+        xlua::FreeIndex(&doodad);
+        xlua::FreeIndex(&character);
+
+        /* the user data is still valid, but the reference object is not valid */
+        EXPECT_TRUE(doodad_ud.IsValid());
+        EXPECT_TRUE(character_ud.IsValid());
+
+        boolean_ret = false;
+        EXPECT_TRUE(ops.op(std::tie(boolean_ret), "IsValid", doodad_ud));
+        ASSERT_FALSE(boolean_ret);
+
+        boolean_ret = false;
+        EXPECT_TRUE(ops.op(std::tie(boolean_ret), "IsValid", character_ud));
+        ASSERT_FALSE(boolean_ret);
+
+        ASSERT_FALSE(ops.call(std::tie(int_ret), doodad_ud, "Update", 2));
+        ASSERT_FALSE(ops.call(std::tie(int_ret), character_ud, "Update", 3));
+
+        ASSERT_EQ(nullptr, doodad_ud.As<Doodad*>());
+        ASSERT_EQ(nullptr, character_ud.As<Character*>());
+
+        xlua::UserData doodad_ud_2;
+        xlua::UserData character_ud_2;
+        ASSERT_TRUE(ops.check(std::tie(doodad_ud_2), &doodad));
+        ASSERT_TRUE(doodad_ud_2.IsValid());
+        ASSERT_TRUE(ops.check(std::tie(character_ud_2), &character));
+        ASSERT_TRUE(character_ud_2.IsValid());
+
+        ASSERT_NE(doodad_ud, doodad_ud_2);
+        ASSERT_NE(character_ud, character_ud_2);
+
+        ASSERT_TRUE(ops.call(std::tie(int_ret), doodad_ud_2, "Update", 2));
+        ASSERT_EQ(int_ret, 2);
+        ASSERT_TRUE(ops.call(std::tie(int_ret), character_ud_2, "Update", 3));
+        ASSERT_EQ(int_ret, 3);
+
+        ASSERT_EQ(nullptr, doodad_ud_2.As<Doodad*>());
+        ASSERT_EQ(nullptr, character_ud_2.As<Character*>());
+
+        ASSERT_FALSE(ops.pairs_print(std::tie(), doodad_ud));
+        ASSERT_FALSE(ops.pairs_print(std::tie(), character_ud));
+        ASSERT_TRUE(ops.pairs_print(std::tie(), doodad_ud_2));
+        ASSERT_TRUE(ops.pairs_print(std::tie(), character_ud_2));
+        ASSERT_TRUE(ops.pairs_print(std::tie(), doodad));
+        ASSERT_TRUE(ops.pairs_print(std::tie(), character));
+    }
+
+    ops.Clear();
     ASSERT_EQ(s->GetTop(), 0);
     s->Release();
 }
