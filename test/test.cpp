@@ -1104,3 +1104,10 @@ TEST(xlua, TestExtWeakObj) {
     s->Release();
 }
 
+TEST(xlua, TestMultiInheritance) {
+    //TODO:
+}
+
+TEST(xlua, TestExportTemplate) {
+    //TODO:
+}

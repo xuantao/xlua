@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "example.h"
 #include <vector>
+#include <stack>
 #include <xlua_state.h>
 
 XLUA_DECLARE_CLASS(ShapeBase);
@@ -111,6 +112,43 @@ struct Support<WeakObjPtr<Ty>> : ValueCategory<WeakObjPtr<Ty>, true> {
     }
     static inline void Push(State* s, const WeakObjPtr<Ty>& ptr) {
         supporter::Push(s, ptr.GetPtr());
+    }
+};
+
+template <typename Ty>
+struct Support<std::stack<Ty>> : ObjectCategory<std::stack<Ty>> {
+    typedef typename SupportTraits<Ty>::supporter value_supporter;
+
+    static inline const char* Name() { return "std::stack"; }
+    static inline bool Check(State* s, int index) {
+        return s->state_.IsUd<std::stack<Ty>>(index, TypeInfo());
+    }
+    static inline ObjectWrapper<std::stack<Ty>> Load(State* s, int index) {
+        return ObjectWrapper<std::stack<Ty>>(nullptr);
+    }
+    static inline void Push(State* s, const std::stack<Ty>& var) {
+        s->state_.PushUd(var, TypeInfo());
+    }
+    static inline void Push(State* s, std::stack<Ty>&& var) {
+        s->state_.PushUd(std::move(var), TypeInfo());
+    }
+
+    /* if function has static local variant,
+     * then functoin can not be inline
+    */
+    static const TypeDesc* TypeInfo() {
+        static auto desc = []() -> const TypeDesc* {
+            using meta = internal::Meta<std::stack<Ty>>;
+            using StringView = internal::StringView;
+            auto* factory = CreateFactory<std::stack<Ty>>("stack");
+            factory->AddMember(false, "top", [](lua_State* l) {
+                constexpr StringView view("top");
+                return meta::Call(internal::GetState(l), desc, Name, &std::stack<Ty>::top);
+            });
+
+            return factory.Finalize();
+        }();
+        return desc;
     }
 };
 
