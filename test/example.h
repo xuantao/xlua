@@ -301,10 +301,44 @@ enum class WidgetType {
 
 struct Widget {
 protected:
-    Widget(WidgetType type) : type_(type), parent(nullptr) {}
+    Widget(WidgetType type) : type_(type) {}
 
 public:
     WidgetType GetType() const { return type_; }
+
+    void AddChild(Widget* widget) {
+        if (child == nullptr) {
+            child = widget;
+            return;
+        }
+
+        auto* node = child;
+        while (node->brother)
+            node = node->brother;
+        node->brother = widget;
+        widget->parent = this;
+    }
+
+    void Alone() {
+        if (parent == nullptr)
+            return;
+
+        auto* node = parent->child;
+        if (node == this) {
+            parent->child = brother;
+        } else {
+            while (node->brother != this)
+                node = node->brother;
+            node->brother = brother;
+        }
+
+        parent = nullptr;
+        brother = nullptr;
+    }
+
+    void Traserve(const std::function<void(Widget*)>& func) {
+        func(this);
+    }
 
 public:
     virtual void Render(IRenderer*) = 0;
@@ -313,7 +347,9 @@ private:
     WidgetType type_;
 
 public:
-    Widget* parent;
+    Widget* parent = nullptr;
+    Widget* child = nullptr;
+    Widget* brother = nullptr;
     Color color;
     Vec2 size;
     Vec2 pos;
@@ -343,7 +379,8 @@ struct Label : Widget {
 
 struct Button : Widget {
     Button() : Widget(WidgetType::kButton) {
-        label.parent = this;
+        AddChild(&image);
+        AddChild(&label);
     }
 
     void Render(IRenderer* renderer) {
@@ -351,6 +388,7 @@ struct Button : Widget {
         label.Render(renderer);
     }
 
+    Image image;
     Label label; // index as ptr?
     std::function<void(Button*)> onclick;
 };
@@ -613,3 +651,58 @@ struct CapsuleCollider : CircleCollider {
 };
 
 /* multi inherit test */
+
+struct M_A_1 {
+    int a_1;
+    int a_2;
+};
+
+struct M_B_1 {
+    int b_1;
+    int b_2;
+};
+
+/* if only export m_c_1, the m_c_1 will nit be mark as multi_inheritence */
+struct M_C_1 : M_A_1, M_B_1 {
+    int c_1;
+    int c_2;
+};
+
+
+struct M_A_2 {
+    int a_1;
+    int a_2;
+};
+
+struct M_B_2 : M_A_2{
+    int b_1;
+    int b_2;
+};
+
+struct M_C_2 : M_A_2 {
+    int c_1;
+    int c_2;
+};
+
+struct M_D_2 {
+    int d_1;
+    int d_2;
+};
+
+struct M_E_2 : M_D_2 {
+    int e_1;
+    int e_2;
+};
+
+struct M_F_2 : M_D_2 {
+    int f_1;
+    int f_2;
+};
+
+/* if export M_G_2 and all base class
+ * the all inheritence tree will be marked as multi_inheritence
+*/
+struct M_G_2 : M_C_2, M_F_2{
+    int g_1;
+    int g_2;
+};

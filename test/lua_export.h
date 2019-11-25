@@ -29,6 +29,18 @@ XLUA_DECLARE_CLASS(CapsuleCollider);
 XLUA_DECLARE_CLASS(ExportObj);
 XLUA_DECLARE_CLASS(TestMember);
 
+// fake multi inheritence
+XLUA_DECLARE_CLASS(M_C_1);
+
+// truly muti inheritence
+XLUA_DECLARE_CLASS(M_A_2);
+XLUA_DECLARE_CLASS(M_B_2);
+XLUA_DECLARE_CLASS(M_C_2);
+XLUA_DECLARE_CLASS(M_D_2);
+XLUA_DECLARE_CLASS(M_E_2);
+XLUA_DECLARE_CLASS(M_F_2);
+XLUA_DECLARE_CLASS(M_G_2);
+
 XLUA_NAMESPACE_BEGIN
 
 template<>
@@ -116,7 +128,7 @@ struct Support<WeakObjPtr<Ty>> : ValueCategory<WeakObjPtr<Ty>, true> {
     }
 };
 
-
+/* export std::stack */
 template <typename Ty, typename Container>
 struct Support<std::stack<Ty, Container>*> : internal::ObjectSupport<std::stack<Ty, Container>*> {
     typedef std::stack<Ty, Container> stack;

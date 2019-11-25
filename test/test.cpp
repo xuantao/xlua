@@ -1029,7 +1029,7 @@ TEST(xlua, TestExtWeakObj) {
         EXPECT_FALSE(ops.dot_call(std::tie(boolean_ret), static_cast<Collider*>(&circle), "RayCast", Ray()));
 
         // the box & circle has push to lua before
-        // the lua env has reacord the obj' type info
+        // the lua env has reacord the obj's type info
         const char* str_val = nullptr;
         ASSERT_TRUE(ops.op(std::tie(str_val), "Type", static_cast<Collider*>(&box)));
         EXPECT_STREQ(str_val, "BoxCollider");
@@ -1105,7 +1105,126 @@ TEST(xlua, TestExtWeakObj) {
 }
 
 TEST(xlua, TestMultiInheritance) {
-    //TODO:
+    xlua::State* s = xlua::Create(nullptr);
+    ScriptOps ops;
+    ops.Startup(s);
+
+    ASSERT_FALSE(xLuaGetTypeDesc(xlua::Identity<M_C_1>())->caster.is_multi_inherit);
+    ASSERT_TRUE(xLuaGetTypeDesc(xlua::Identity<M_D_2>())->caster.is_multi_inherit);
+    ASSERT_TRUE(xLuaGetTypeDesc(xlua::Identity<M_E_2>())->caster.is_multi_inherit);
+    ASSERT_TRUE(xLuaGetTypeDesc(xlua::Identity<M_F_2>())->caster.is_multi_inherit);
+    ASSERT_TRUE(xLuaGetTypeDesc(xlua::Identity<M_G_2>())->caster.is_multi_inherit);
+
+    {
+        s->Push(M_C_1());
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+        auto* ptr = ud.As<M_C_1*>();
+        ASSERT_TRUE(ptr);
+        ASSERT_EQ(s->GetTop(), 0);
+
+        int int_val;
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "a_1", 1));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "a_2", 2));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "b_1", 3));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "b_2", 4));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "c_1", 5));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "c_2", 6));
+
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "a_1"));
+        EXPECT_EQ(int_val, ptr->a_1);
+        EXPECT_EQ(int_val, 1);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "a_2"));
+        EXPECT_EQ(int_val, ptr->a_2);
+        EXPECT_EQ(int_val, 2);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "b_1"));
+        EXPECT_EQ(int_val, ptr->b_1);
+        EXPECT_EQ(int_val, 3);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "b_2"));
+        EXPECT_EQ(int_val, ptr->b_2);
+        EXPECT_EQ(int_val, 4);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "c_1"));
+        EXPECT_EQ(int_val, ptr->c_1);
+        EXPECT_EQ(int_val, 5);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "c_2"));
+        EXPECT_EQ(int_val, ptr->c_2);
+        EXPECT_EQ(int_val, 6);
+    }
+
+    {
+        s->Push(M_G_2());
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+        auto* ptr = ud.As<M_G_2*>();
+        ASSERT_TRUE(ptr);
+        ASSERT_EQ(s->GetTop(), 0);
+
+        int int_val;
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "a_1", 1));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "a_2", 2));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "c_1", 3));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "c_2", 4));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "d_1", 5));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "d_2", 6));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "f_1", 7));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "f_2", 8));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "g_1", 9));
+        ASSERT_TRUE(ops.set_field(std::tie(), ud, "g_2", 10));
+
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "a_1"));
+        EXPECT_EQ(int_val, ptr->a_1);
+        EXPECT_EQ(int_val, 1);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "a_2"));
+        EXPECT_EQ(int_val, ptr->a_2);
+        EXPECT_EQ(int_val, 2);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "c_1"));
+        EXPECT_EQ(int_val, ptr->c_1);
+        EXPECT_EQ(int_val, 3);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "c_2"));
+        EXPECT_EQ(int_val, ptr->c_2);
+        EXPECT_EQ(int_val, 4);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "g_1"));
+        EXPECT_EQ(int_val, ptr->g_1);
+        EXPECT_EQ(int_val, 9);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "g_2"));
+        EXPECT_EQ(int_val, ptr->g_2);
+        EXPECT_EQ(int_val, 10);
+
+#if XLUA_ENABLE_MULTIPLE_INHERITANCE_OPTIMIZE == 0
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "d_1"));
+        EXPECT_EQ(int_val, ptr->d_1);
+        EXPECT_EQ(int_val, 5);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "d_2"));
+        EXPECT_EQ(int_val, ptr->d_2);
+        EXPECT_EQ(int_val, 6);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "f_1"));
+        EXPECT_EQ(int_val, ptr->f_1);
+        EXPECT_EQ(int_val, 7);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "f_2"));
+        EXPECT_EQ(int_val, ptr->f_2);
+        EXPECT_EQ(int_val, 8);
+#else
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "d_1"));
+        EXPECT_NE(int_val, ptr->d_1);
+        EXPECT_EQ(int_val, 5);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "d_2"));
+        EXPECT_NE(int_val, ptr->d_2);
+        EXPECT_EQ(int_val, 6);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "f_1"));
+        EXPECT_NE(int_val, ptr->f_1);
+        EXPECT_EQ(int_val, 7);
+        ASSERT_TRUE(ops.get_field(std::tie(int_val), ud, "f_2"));
+        EXPECT_NE(int_val, ptr->f_2);
+        EXPECT_EQ(int_val, 8);
+#endif
+
+        printf("a_1:%2d exp:%2d\na_2:%2d exp:%2d\nc_1:%2d exp:%2d\nc_2:%2d exp:%2d\nd_1:%2d exp:%2d\nd_2:%2d exp:%2d\nf_1:%2d exp:%2d\nf_2:%2d exp:%2d\ng_1:%2d exp:%2d\ng_2:%2d exp:%2d\n",
+            ptr->a_1, 1, ptr->a_2, 2, ptr->c_1, 3, ptr->c_2, 4, ptr->d_1, 5, ptr->d_2, 6, ptr->f_1, 7, ptr->f_2, 8, ptr->g_1, 9, ptr->g_2, 10);
+    }
+
+    ops.Clear();
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
 }
 
 TEST(xlua, TestExportTemplate) {

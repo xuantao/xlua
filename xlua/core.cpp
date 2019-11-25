@@ -1119,6 +1119,11 @@ namespace internal {
                         desc = desc->super;
                     SetMultiInherit(const_cast<TypeDesc*>(desc));
                 }
+#if XLUA_ENABLE_MULTIPLE_INHERITANCE_OPTIMIZE
+#ifndef __XLUA_DISABLE_MI_CHECK
+                assert(data->caster.offset_2_top == 0);
+#endif
+#endif // XLUA_ENABLE_MULTIPLE_INHERITANCE_OPTIMIZE
             }
 
             data->member_vars = Alloc(member_vars);
