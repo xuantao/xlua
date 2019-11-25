@@ -496,7 +496,7 @@ namespace internal {
                 typename std::tuple_element<param_idx, std::tuple<Args...>>::type>::supporter;
             int w = snprintf(buff, sz, "[%d] %s(%s), ", (int)(param_idx + 1),
                 supporter::Name(), s->GetTypeName(index));
-            if (w > 0 && w < sz)
+            if (w > 0 && w < (int)sz)
                 ParamName<Idx - 1>::template GetName<Args...>(buff + w, sz - w, s, index + 1);
         }
     };
@@ -977,7 +977,7 @@ namespace internal {
         static int sIter(lua_State* l) {
             auto* obj = As(lua_touserdata(l, 1));
             int idx = (int)lua_tonumber(l, 2);
-            if (idx < obj->size()) {
+            if (idx < (int)obj->size()) {
                 lua_pushnumber(l, idx + 1);                 // key
                 internal::GetState(l)->Push(obj->at(idx));  // value
             } else {
@@ -1102,7 +1102,7 @@ namespace internal {
         static int sIter(lua_State* l) {
             auto* obj = As(lua_touserdata(l, 1));
             int idx = (int)lua_tonumber(l, 2);
-            if (idx < obj->size()) {
+            if (idx < (int)obj->size()) {
                 lua_pushnumber(l, idx + 1);                                 // key
                 internal::GetState(l)->Push(*MoveIter(obj->begin(),idx));   // value
             } else {

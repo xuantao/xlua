@@ -974,21 +974,21 @@ namespace internal {
         }
 
         inline UdCache GetWeakCache(int weak_index, int obj_index) const {
-            if (weak_index >= weak_obj_caches_.size())
+            if (weak_index >= (int)weak_obj_caches_.size())
                 return UdCache{LUA_NOREF, nullptr};
 
             const auto& objs = weak_obj_caches_[weak_index];
-            if (obj_index >= objs.size())
+            if (obj_index >= (int)objs.size())
                 return UdCache{LUA_NOREF, nullptr};
             return objs[obj_index];
         }
 
         inline void SetWeakCache(int weak_index, int obj_index, int ref, FullUd* ud) {
-            if (weak_index >= weak_obj_caches_.size())
+            if (weak_index >= (int)weak_obj_caches_.size())
                 weak_obj_caches_.resize(weak_index + 1);
 
             auto& objs = weak_obj_caches_[weak_index];
-            if (obj_index >= objs.size())
+            if (obj_index >= (int)objs.size())
                 objs.resize((obj_index / XLUA_CONTAINER_INCREMENTAL + 1) * XLUA_CONTAINER_INCREMENTAL, UdCache{LUA_NOREF, nullptr});
 
             objs[obj_index] = UdCache{ref, ud};

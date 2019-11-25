@@ -1,4 +1,3 @@
-#include "xlua.h"
 #include "xlua_state.h"
 #include "xlua_export.h"
 
@@ -696,7 +695,7 @@ namespace internal {
 
     void* GetWeakObjPtr(WeakObjRef ref) {
         auto& ary = g_env.weak_obj_ary;
-        if (ref.index <= 0 && ary.objs.size() <= ref.index)
+        if (ref.index <= 0 && (int)ary.objs.size() <= ref.index)
             return nullptr;
 
         auto& obj = ary.objs[ref.index];

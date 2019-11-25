@@ -1,5 +1,4 @@
 #include "lua_export.h"
-#include "xlua.h"
 #include "gtest/gtest.h"
 
 static constexpr const char* kCheckFunc = "function Check(...) return ... end";
@@ -1276,3 +1275,8 @@ TEST(xlua, TestExportTemplate) {
     ASSERT_EQ(s->GetTop(), 0);
     s->Release();
 }
+
+TEST(xlua, TestProgram) {
+    //TODO:
+}
+
