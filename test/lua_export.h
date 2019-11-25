@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "example.h"
+#include "xlua_export.h"
 #include <vector>
 #include <stack>
 #include <xlua_state.h>
@@ -115,41 +116,63 @@ struct Support<WeakObjPtr<Ty>> : ValueCategory<WeakObjPtr<Ty>, true> {
     }
 };
 
-template <typename Ty>
-struct Support<std::stack<Ty>> : ObjectCategory<std::stack<Ty>> {
-    typedef typename SupportTraits<Ty>::supporter value_supporter;
+
+template <typename Ty, typename Container>
+struct Support<std::stack<Ty, Container>*> : internal::ObjectSupport<std::stack<Ty, Container>*> {
+    typedef std::stack<Ty, Container> stack;
 
     static inline const char* Name() { return "std::stack"; }
-    static inline bool Check(State* s, int index) {
-        return s->state_.IsUd<std::stack<Ty>>(index, TypeInfo());
-    }
-    static inline ObjectWrapper<std::stack<Ty>> Load(State* s, int index) {
-        return ObjectWrapper<std::stack<Ty>>(nullptr);
-    }
-    static inline void Push(State* s, const std::stack<Ty>& var) {
-        s->state_.PushUd(var, TypeInfo());
-    }
-    static inline void Push(State* s, std::stack<Ty>&& var) {
-        s->state_.PushUd(std::move(var), TypeInfo());
-    }
 
     /* if function has static local variant,
      * then functoin can not be inline
     */
     static const TypeDesc* TypeInfo() {
-        static auto desc = []() -> const TypeDesc* {
-            using meta = internal::Meta<std::stack<Ty>>;
+        static const TypeDesc* desc = []() -> const TypeDesc* {
+            using meta = internal::Meta<stack>;
             using StringView = internal::StringView;
-            auto* factory = CreateFactory<std::stack<Ty>>("stack");
+            auto* factory = CreateFactory<stack>("std::stack*");
+
             factory->AddMember(false, "top", [](lua_State* l) {
-                constexpr StringView view("top");
-                return meta::Call(internal::GetState(l), desc, Name, &std::stack<Ty>::top);
+                constexpr StringView name("top");
+                // export none const version function
+                return meta::Call(internal::GetState(l), desc, name,
+                    internal::Extractor<void>::extract(internal::conv_normal_tag(), &stack::top));
             });
 
-            return factory.Finalize();
+            factory->AddMember(false, "empty", [](lua_State* l) {
+                constexpr StringView name("empty");
+                return meta::Call(internal::GetState(l), desc, name, &stack::empty);
+            });
+
+            factory->AddMember(false, "size", [](lua_State* l) {
+                constexpr StringView name("size");
+                return meta::Call(internal::GetState(l), desc, name, &stack::size);
+            });
+
+            factory->AddMember(false, "push", [](lua_State* l) {
+                constexpr StringView name("push");
+                // export left const reference value version function
+                return meta::Call(internal::GetState(l), desc, name,
+                    internal::Extractor<const std::string&>::extract(internal::conv_normal_tag(), &stack::push));
+            });
+
+            factory->AddMember(false, "pop", [](lua_State* l) {
+                constexpr StringView name("pop");
+                return meta::Call(internal::GetState(l), desc, name, &stack::pop);
+            });
+            return factory->Finalize();
         }();
         return desc;
     }
+};
+
+template <typename Ty, typename Container>
+struct Support<std::stack<Ty, Container>> : internal::ObjectSupport<std::stack<Ty, Container>> {
+    typedef std::stack<Ty, Container> stack;
+    typedef typename SupportTraits<stack*>::supporter ptr_supporter;
+
+    static inline const char* Name() { return "std::stack"; }
+    static inline const TypeDesc* TypeInfo() { return ptr_supporter::TypeInfo(); }
 };
 
 XLUA_NAMESPACE_END

@@ -1109,5 +1109,51 @@ TEST(xlua, TestMultiInheritance) {
 }
 
 TEST(xlua, TestExportTemplate) {
-    //TODO:
+    xlua::State* s = xlua::Create(nullptr);
+    ScriptOps ops;
+    ops.Startup(s);
+
+    {
+        std::stack<std::string> stack;
+        s->Push(stack);
+        auto ud = s->Get<xlua::UserData>(-1);
+        s->PopTop(1);
+        ASSERT_EQ(s->GetTop(), 0);
+        ASSERT_TRUE(ud.IsValid());
+
+        auto* ptr = ud.As<std::stack<std::string>*>();
+        ASSERT_TRUE(ptr);
+
+        bool boolean_val;
+        int int_val;
+        std::string str_val;
+
+        EXPECT_TRUE(ops.call(std::tie(boolean_val), ud, "empty"));
+        ASSERT_EQ(boolean_val, true);
+        EXPECT_TRUE(ops.call(std::tie(), ud, "push", "one"));
+        EXPECT_TRUE(ops.call(std::tie(boolean_val), ud, "empty"));
+        ASSERT_EQ(boolean_val, false);
+        EXPECT_TRUE(ops.call(std::tie(int_val), ud, "size"));
+        ASSERT_EQ(int_val, (int)ptr->size());
+        EXPECT_TRUE(ops.call(std::tie(str_val), ud, "top"));
+        ASSERT_EQ(str_val, ptr->top());
+        EXPECT_TRUE(ops.call(std::tie(), ud, "pop"));
+        ASSERT_EQ(0, (int)ptr->size());
+
+        EXPECT_TRUE(ops.call(std::tie(boolean_val), ptr, "empty"));
+        ASSERT_EQ(boolean_val, true);
+        EXPECT_TRUE(ops.call(std::tie(), ptr, "push", "one"));
+        EXPECT_TRUE(ops.call(std::tie(boolean_val), ptr, "empty"));
+        ASSERT_EQ(boolean_val, false);
+        EXPECT_TRUE(ops.call(std::tie(int_val), ptr, "size"));
+        ASSERT_EQ(int_val, (int)ptr->size());
+        EXPECT_TRUE(ops.call(std::tie(str_val), ptr, "top"));
+        ASSERT_EQ(str_val, ptr->top());
+        EXPECT_TRUE(ops.call(std::tie(), ptr, "pop"));
+        ASSERT_EQ(0, (int)ptr->size());
+    }
+
+    ops.Clear();
+    ASSERT_EQ(s->GetTop(), 0);
+    s->Release();
 }
