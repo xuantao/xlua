@@ -118,6 +118,25 @@ namespace internal {
         Reg reg;
     };
 
+    struct Override {
+        typedef bool(*Cheker)(State* s);
+        typedef int (Caller)(State* s, const TypeDesc* desc);
+        size_t param_num;
+        const char* param_name;
+        Cheker checker;
+        Caller caller;
+
+        inline bool operator < (const Override& r) const {
+            return param_num < r.param_num;
+        }
+    };
+
+    template <typename... Args> struct ParamNumber : std::integral_constant<size_t, sizeof...(Args)> {};
+    template <> struct ParamNumber<void> : std::integral_constant<size_t, 0> {};
+    template <> struct ParamNumber<> : std::integral_constant<size_t, 0> {};
+
+    template <bool> struct BoolConv : std::integral_constant<size_t, 1> {};
+    template <> struct BoolConv<false> : std::integral_constant<size_t, 0> {};
 
     template <typename Dty, typename Bty, bool>
     struct CasterDerived {
@@ -815,3 +834,17 @@ XLUA_NAMESPACE_END
     namespace {                                                                         \
         xlua::internal::ScriptNode _XLUA_ANONYMOUS(Name, Str);                          \
     }
+
+
+#define XLUA_OVERRIDE(Func, ...)    \
+    xlua::internal::Override {  \
+        xlua::internal::ParamNumber<__VA_ARGS__>::value + xlua::internal::BoolConv<false>::value,   \
+        #__VA_ARGS__,   \
+        [](xlua::State* s)->bool {  \
+            return xlua::internal::CheckParameters<__VA_ARGS__>(s, 1 + xlua::internal::BoolConv<false>::value); \
+        },  \
+        [](xlua::State* s, const TypeDesc* desc)->int { \
+            constexpr xlua::internal::StringView name = xlua::internal::PurifyMemberName(#Func);    \
+            return meta::Call(s, desc, name, Func); \
+        }   \
+    },
