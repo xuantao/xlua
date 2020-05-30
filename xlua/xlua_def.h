@@ -25,6 +25,9 @@ class ObjectIndex;
 State* Create(const char* mod);
 State* Attach(lua_State* l, const char* mod);
 
+/* get xlua state object from raw lua_State */
+State* GetState(lua_State* l);
+
 /* type identify */
 template <typename Ty>
 struct Identity { typedef Ty type; };
@@ -284,8 +287,7 @@ struct ObjectWrapper<void> {
 };
 
 namespace internal {
-    State* GetState(lua_State* l);
-    void Destory(State* l);
+    State* DoGetState(lua_State* l);
 }
 
 /* traits supporter information */

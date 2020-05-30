@@ -147,30 +147,30 @@ struct Support<std::stack<Ty, Container>*> : internal::ObjectSupport<std::stack<
             factory->AddMember(false, "top", [](lua_State* l) {
                 constexpr StringView name("top");
                 // export none const version function
-                return meta::Call(internal::GetState(l), desc, name,
+                return meta::Call(internal::DoGetState(l), desc, name,
                     internal::Extractor<void>::extract(internal::conv_normal_tag(), &stack::top));
             });
 
             factory->AddMember(false, "empty", [](lua_State* l) {
                 constexpr StringView name("empty");
-                return meta::Call(internal::GetState(l), desc, name, &stack::empty);
+                return meta::Call(internal::DoGetState(l), desc, name, &stack::empty);
             });
 
             factory->AddMember(false, "size", [](lua_State* l) {
                 constexpr StringView name("size");
-                return meta::Call(internal::GetState(l), desc, name, &stack::size);
+                return meta::Call(internal::DoGetState(l), desc, name, &stack::size);
             });
 
             factory->AddMember(false, "push", [](lua_State* l) {
                 constexpr StringView name("push");
                 // export left const reference value version function
-                return meta::Call(internal::GetState(l), desc, name,
+                return meta::Call(internal::DoGetState(l), desc, name,
                     internal::Extractor<const std::string&>::extract(internal::conv_normal_tag(), &stack::push));
             });
 
             factory->AddMember(false, "pop", [](lua_State* l) {
                 constexpr StringView name("pop");
-                return meta::Call(internal::GetState(l), desc, name, &stack::pop);
+                return meta::Call(internal::DoGetState(l), desc, name, &stack::pop);
             });
             return factory->Finalize();
         }();

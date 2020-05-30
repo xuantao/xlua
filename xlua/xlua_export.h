@@ -728,7 +728,7 @@ XLUA_NAMESPACE_END
         static_assert(!xlua::internal::is_null_pointer<decltype(Func)>::value,                  \
             "can not export func:"#Name" with null pointer");                                   \
         constexpr xlua::internal::StringView name = xlua::internal::PurifyMemberName(#Name);    \
-        return meta::Call(xlua::internal::GetState(l), desc, name, Func);                       \
+        return meta::Call(xlua::internal::DoGetState(l), desc, name, Func);                     \
     });
 
 #define _XLUA_EXPORT_FUNC(Name, Func)       \

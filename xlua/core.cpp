@@ -154,32 +154,43 @@ namespace internal {
         } weak_obj_ary;
 
         SerialAlloc allocator{8*1024};
-        std::vector<std::pair<lua_State*, State*>> state_list;
+        std::vector<State*> state_list;
     };
 
     /* seperate the global export node list */
     static ExportNode* g_node_head = nullptr;
     static Env g_env;
 
-    State* GetState(lua_State* l) {
-        auto it = std::find_if(g_env.state_list.begin(), g_env.state_list.end(),
-            [l](const std::pair<lua_State*, State*>& pair) {
-            return pair.first == l;
-        });
-        return it == g_env.state_list.end() ? nullptr : it->second;
+    State* DoGetState(lua_State* l) {
+#if XLUA_STATE_USE_EXTRA_SPACE
+        return *static_cast<State**>(lua_getextraspace(l));
+#else
+        StackGuard guard(l);
+        lua_getglobal(l, XLUA_STATE_GLOBAL_NAME);
+        return static_cast<State*>(lua_touserdata(l, -1));
+#endif // XLUA_STATE_USE_EXTRA_SPACE
     }
 
-    void Destory(State* s) {
+    static void DoSetState(lua_State* l, State* s) {
+#if XLUA_STATE_USE_EXTRA_SPACE
+        *static_cast<State**>(lua_getextraspace(l)) = s;
+#else
+        if (s) lua_pushlightuserdata(l, s);
+        else lua_pushnil(l);
+        lua_setglobal(l, XLUA_STATE_GLOBAL_NAME);
+#endif // XLUA_STATE_USE_EXTRA_SPACE
+    }
+
+    void DoDestory(State* s) {
+        DoSetState(s->state_.l_, nullptr);
+
         //TODO: how to detach state
         if (!s->state_.is_attach_)
             lua_close(s->state_.l_);
 
         // remove from state list
-        auto it = std::find_if(g_env.state_list.begin(), g_env.state_list.end(),
-            [s](const std::pair<lua_State*, State*>& pair) {
-            return pair.second == s;
-        });
-        g_env.state_list.erase(it);
+        g_env.state_list.erase(std::remove(g_env.state_list.begin(), g_env.state_list.end(), s),
+            g_env.state_list.end());
 
         delete s;
     }
@@ -591,7 +602,7 @@ namespace utility {
             return 0;
         }
 
-        return info.collection->Insert(info.obj, internal::GetState(l));
+        return info.collection->Insert(info.obj, internal::DoGetState(l));
     }
 
     /* collection operate, remove element */
@@ -602,7 +613,7 @@ namespace utility {
             return 0;
         }
 
-        return info.collection->Remove(info.obj, internal::GetState(l));
+        return info.collection->Remove(info.obj, internal::DoGetState(l));
     }
 
     /* collection operate, clear all */
@@ -735,7 +746,7 @@ namespace internal {
         if (s->state_.LoadGlobal(buf) != LUA_TTABLE) {
             s->PopTop(1);                           // pop load value
             s->NewTable();                          // create table
-            lua_pushvalue(s->GetLuaState(), -1);    // copy table
+            lua_pushvalue(s->state_.l_, -1);        // copy table
             s->state_.SetGlobal(buf, true, true);   // set global & pop top
         }
 
@@ -743,92 +754,97 @@ namespace internal {
     }
 
     static bool InitState(State* s) {
+        lua_State* l = s->state_.l_;
+        assert(DoGetState(l) == nullptr);
+        DoSetState(l, s);
+
         // type desc table
-        lua_createtable(s->GetLuaState(), 0, 0);
-        s->state_.desc_ref_ = luaL_ref(s->GetLuaState(), LUA_REGISTRYINDEX);
+        lua_createtable(l, 0, 0);
+        s->state_.desc_ref_ = luaL_ref(l, LUA_REGISTRYINDEX);
 
         // type metatable list
-        lua_createtable(s->GetLuaState(), 0, 0);
-        s->state_.meta_ref_ = luaL_ref(s->GetLuaState(), LUA_REGISTRYINDEX);
+        lua_createtable(l, 0, 0);
+        s->state_.meta_ref_ = luaL_ref(l, LUA_REGISTRYINDEX);
 
         // collection metatable ref
-        lua_createtable(s->GetLuaState(), 0, 5);
-        lua_pushcfunction(s->GetLuaState(), &meta::__index_collection);
-        lua_setfield(s->GetLuaState(), -2, "__index");
+        lua_createtable(l, 0, 5);
+        lua_pushcfunction(l, &meta::__index_collection);
+        lua_setfield(l, -2, "__index");
 
-        lua_pushcfunction(s->GetLuaState(), &meta::__newindex_collection);
-        lua_setfield(s->GetLuaState(), -2, "__newindex");
+        lua_pushcfunction(l, &meta::__newindex_collection);
+        lua_setfield(l, -2, "__newindex");
 
-        lua_pushcfunction(s->GetLuaState(), &meta::__pairs_collection);
-        lua_setfield(s->GetLuaState(), -2, "__pairs");
+        lua_pushcfunction(l, &meta::__pairs_collection);
+        lua_setfield(l, -2, "__pairs");
 
         //TODO: why not ipairs is effected?
-        lua_pushcfunction(s->GetLuaState(), &meta::__pairs_collection);
-        lua_setfield(s->GetLuaState(), -2, "__ipairs");
+        lua_pushcfunction(l, &meta::__pairs_collection);
+        lua_setfield(l, -2, "__ipairs");
 
-        lua_pushcfunction(s->GetLuaState(), &meta::__len_collection);
-        lua_setfield(s->GetLuaState(), -2, "__len");
+        lua_pushcfunction(l, &meta::__len_collection);
+        lua_setfield(l, -2, "__len");
 
-        lua_pushcfunction(s->GetLuaState(), &meta::__tostring_collection);
-        lua_setfield(s->GetLuaState(), -2, "__tostring");
+        lua_pushcfunction(l, &meta::__tostring_collection);
+        lua_setfield(l, -2, "__tostring");
 
-        lua_pushcfunction(s->GetLuaState(), &meta::__gc);
-        lua_setfield(s->GetLuaState(), -2, "__gc");
-        s->state_.collection_meta_ref_ = luaL_ref(s->GetLuaState(), LUA_REGISTRYINDEX);
+        lua_pushcfunction(l, &meta::__gc);
+        lua_setfield(l, -2, "__gc");
+        s->state_.collection_meta_ref_ = luaL_ref(l, LUA_REGISTRYINDEX);
 
         // alone object metatble
-        lua_createtable(s->GetLuaState(), 0, 1);
-        lua_pushcfunction(s->GetLuaState(), &meta::__gc_alone);
-        lua_setfield(s->GetLuaState(), -2, "__gc");
-        s->state_.alone_meta_ref_ = luaL_ref(s->GetLuaState(), LUA_REGISTRYINDEX);
+        lua_createtable(l, 0, 1);
+        lua_pushcfunction(l, &meta::__gc_alone);
+        lua_setfield(l, -2, "__gc");
+        s->state_.alone_meta_ref_ = luaL_ref(l, LUA_REGISTRYINDEX);
 
         // obj cache table
-        lua_createtable(s->GetLuaState(), 0, 0);
-        s->state_.obj_ref_ = luaL_ref(s->GetLuaState(), LUA_REGISTRYINDEX);
+        lua_createtable(l, 0, 0);
+        s->state_.obj_ref_ = luaL_ref(l, LUA_REGISTRYINDEX);
 
         // lua object cache table
-        lua_createtable(s->GetLuaState(), 0, 0);
-        lua_createtable(s->GetLuaState(), 0, 1);
-        lua_pushstring(s->GetLuaState(), "v");
-        lua_setfield(s->GetLuaState(), -2, "__mode");
-        lua_setmetatable(s->GetLuaState(), -2);
-        s->state_.cache_ref_ = luaL_ref(s->GetLuaState(), LUA_REGISTRYINDEX);
+        lua_createtable(l, 0, 0);
+        lua_createtable(l, 0, 1);
+        lua_pushstring(l, "v");
+        lua_setfield(l, -2, "__mode");
+        lua_setmetatable(l, -2);
+        s->state_.cache_ref_ = luaL_ref(l, LUA_REGISTRYINDEX);
 
 #if XLUA_ENABLE_LUD_OPTIMIZE
         // set light userdata metatable
-        lua_pushlightuserdata(s->GetLuaState(), nullptr);                   // push nil lightuserdata
-        luaL_loadbuffer(s->GetLuaState(), script::kLudMetatable,
+        lua_pushlightuserdata(l, nullptr);                      // push nil lightuserdata
+        luaL_loadbuffer(l, script::kLudMetatable,
             ::strlen(script::kLudMetatable), "lightuserdata_metatable");    // load metatable function
-        lua_pushlightuserdata(s->GetLuaState(), s);                         // push state
-        lua_pushcfunction(s->GetLuaState(), &meta::__unpack_lud);           // push unpack_ptr
-        lua_pushcfunction(s->GetLuaState(), &meta::__index_lud);            // push indexer
-        lua_pushcfunction(s->GetLuaState(), &meta::__to_string_lud);        // push to_string
-        lua_geti(s->GetLuaState(), LUA_REGISTRYINDEX, s->state_.desc_ref_); // push desc_table_list
-        lua_pcall(s->GetLuaState(), 5, 1, 0);                               // create metatable
-        lua_setmetatable(s->GetLuaState(), -2);                             // set lightuserdata metatable
-        lua_pop(s->GetLuaState(), 1);                                       // pop nil lightuserdata
+        lua_pushlightuserdata(l, s);                            // push state
+        lua_pushcfunction(l, &meta::__unpack_lud);              // push unpack_ptr
+        lua_pushcfunction(l, &meta::__index_lud);               // push indexer
+        lua_pushcfunction(l, &meta::__to_string_lud);           // push to_string
+        lua_geti(l, LUA_REGISTRYINDEX, s->state_.desc_ref_);    // push desc_table_list
+        lua_pcall(l, 5, 1, 0);                                  // create metatable
+        lua_setmetatable(l, -2);                                // set lightuserdata metatable
+        lua_pop(l, 1);                                          // pop nil lightuserdata
 #endif // XLUA_ENABLE_LUD_OPTIMIZE
 
         MakeGlobal(s, "xlua");
-        lua_pushcfunction(s->GetLuaState(), &utility::__type);
-        lua_setfield(s->GetLuaState(), -2, "Type");
-        lua_pushcfunction(s->GetLuaState(), &utility::__is_valid);
-        lua_setfield(s->GetLuaState(), -2, "IsValid");
-        lua_pushcfunction(s->GetLuaState(), &utility::__cast);
-        lua_setfield(s->GetLuaState(), -2, "Cast");
-        lua_pushcfunction(s->GetLuaState(), &utility::__insert);
-        lua_setfield(s->GetLuaState(), -2, "Insert");
-        lua_pushcfunction(s->GetLuaState(), &utility::__remove);
-        lua_setfield(s->GetLuaState(), -2, "Remove");
-        lua_pushcfunction(s->GetLuaState(), &utility::__clear);
-        lua_setfield(s->GetLuaState(), -2, "Clear");
-        lua_pop(s->GetLuaState(), 1);
+        lua_pushcfunction(l, &utility::__type);
+        lua_setfield(l, -2, "Type");
+        lua_pushcfunction(l, &utility::__is_valid);
+        lua_setfield(l, -2, "IsValid");
+        lua_pushcfunction(l, &utility::__cast);
+        lua_setfield(l, -2, "Cast");
+        lua_pushcfunction(l, &utility::__insert);
+        lua_setfield(l, -2, "Insert");
+        lua_pushcfunction(l, &utility::__remove);
+        lua_setfield(l, -2, "Remove");
+        lua_pushcfunction(l, &utility::__clear);
+        lua_setfield(l, -2, "Clear");
+        lua_pop(l, 1);
 
         assert(s->GetTop() == 0);
         return true;
     }
 
     static bool RegConst(State* s, const ConstValueNode* node) {
+        lua_State* l = s->state_.l_;
         char buf[kBuffCacheSize];
         PurifyTypeName(buf, kBuffCacheSize, node->name);
         MakeGlobal(s, buf);
@@ -836,32 +852,32 @@ namespace internal {
         const auto* val = node->gen();
         while (val->type != ConstValue::Type::kNone) {
             auto view = PurifyMemberName(val->name);
-            lua_pushlstring(s->GetLuaState(), view.str, view.len);
+            lua_pushlstring(l, view.str, view.len);
 
             switch (val->type) {
             case ConstValue::Type::kFloat:
-                lua_pushnumber(s->GetLuaState(), val->float_val);
+                lua_pushnumber(l, val->float_val);
                 break;
             case ConstValue::Type::kInteger:
-                lua_pushinteger(s->GetLuaState(), val->integer_val);
+                lua_pushinteger(l, val->integer_val);
                 break;
             case ConstValue::Type::kString:
-                lua_pushstring(s->GetLuaState(), val->string_val);
+                lua_pushstring(l, val->string_val);
                 break;
             }
 
-            lua_settable(s->GetLuaState(), -3);
+            lua_settable(l, -3);
             ++val;
         }
 
         // not set golbal table metatble
         if (!buf[0] || strcmp(buf, "_G") != 0) {
-            //luaL_dostring(s->GetLuaState(), script::kConstMetatable);
-            //lua_setmetatable(s->GetLuaState(), -2);
+            //luaL_dostring(l, script::kConstMetatable);
+            //lua_setmetatable(l, -2);
         }
 
-        lua_pop(s->GetLuaState(), 1);
-        assert(s->GetTop() == 0);
+        lua_pop(l, 1);
+        assert(lua_gettop(l) == 0);
         return true;
     }
 
@@ -906,74 +922,75 @@ namespace internal {
 
     static bool RegDeclared(State* s, const TypeData& td) {
         // create global table
+        lua_State* l = s->state_.l_;
         size_t gfn = GetFuncNum(td, true);
         size_t gvn = GetVarNum(td, true);
         if (gfn || gvn) {
-            MakeGlobal(s, td.name);                                 // create global table
+            MakeGlobal(s, td.name);                             // create global table
 
             if (Is_G(td.name)) {
-                PushFuncs(s->GetLuaState(), td, true);              // _G only accept function
+                PushFuncs(l, td, true);                         // _G only accept function
             } else {
-                luaL_loadbuffer(s->state_.l_, script::kGlobalMetatable,
+                luaL_loadbuffer(l, script::kGlobalMetatable,
                     ::strlen(script::kGlobalMetatable),
-                    "global_metatable");                                // load meta function
-                lua_pushlightuserdata(s->state_.l_, s);                 // push State*
-                lua_pushlightuserdata(s->state_.l_, (TypeDesc*)&td);    // push TypeDesc*
-                lua_pushcfunction(s->state_.l_, &meta::__index_global); // push indexer
-                lua_pushstring(s->state_.l_, td.name);                  // push md_name
-                lua_createtable(s->state_.l_, 0, (int)gfn);             // create function table
-                PushFuncs(s->GetLuaState(), td, true);
-                lua_createtable(s->state_.l_, 0, (int)gvn);             // create var table
-                PushVars(s->GetLuaState(), td, true);
-                lua_pcall(s->GetLuaState(), 6, 1, 0);                   // get metatable
-                lua_setmetatable(s->GetLuaState(), -2);                 // set metatable
+                    "global_metatable");                        // load meta function
+                lua_pushlightuserdata(l, s);                    // push State*
+                lua_pushlightuserdata(l, (TypeDesc*)&td);       // push TypeDesc*
+                lua_pushcfunction(l, &meta::__index_global);    // push indexer
+                lua_pushstring(l, td.name);                     // push md_name
+                lua_createtable(l, 0, (int)gfn);                // create function table
+                PushFuncs(l, td, true);
+                lua_createtable(l, 0, (int)gvn);                // create var table
+                PushVars(l, td, true);
+                lua_pcall(l, 6, 1, 0);                          // get metatable
+                lua_setmetatable(l, -2);                        // set metatable
             }
 
-            s->PopTop(1);                                               // pop global table
+            s->PopTop(1);                                       // pop global table
             assert(s->GetTop() == 0);
         }
 
         size_t fn = GetFuncNum(td, false);
         size_t vn = GetVarNum(td, false);
         // create function table
-        lua_createtable(s->state_.l_, 0, (int)fn);
-        PushFuncs(s->state_.l_, td, false);
+        lua_createtable(l, 0, (int)fn);
+        PushFuncs(l, td, false);
         int f_index = s->GetTop();
         // create var table
-        lua_createtable(s->state_.l_, 0, (int)vn);
-        PushVars(s->state_.l_, td, false);
+        lua_createtable(l, 0, (int)vn);
+        PushVars(l, td, false);
         int v_index = s->GetTop();
 
-        lua_createtable(s->state_.l_, 0, 3);            // typedesc table
-        lua_pushstring(s->state_.l_, td.name);
-        lua_setfield(s->state_.l_, -2, "name");
-        lua_pushvalue(s->state_.l_, -3);
-        lua_setfield(s->state_.l_, -2, "funcs");
-        lua_pushvalue(s->state_.l_, -2);
-        lua_setfield(s->state_.l_, -2, "vars");
+        lua_createtable(l, 0, 3);           // typedesc table
+        lua_pushstring(l, td.name);
+        lua_setfield(l, -2, "name");
+        lua_pushvalue(l, -3);
+        lua_setfield(l, -2, "funcs");
+        lua_pushvalue(l, -2);
+        lua_setfield(l, -2, "vars");
 
-        lua_geti(s->state_.l_, LUA_REGISTRYINDEX, s->state_.desc_ref_);
-        lua_pushvalue(s->state_.l_, -2);
-        lua_seti(s->state_.l_, -2, td.id);
-        lua_pop(s->state_.l_, 2);                       // desc_list_table, desc_table
+        lua_geti(l, LUA_REGISTRYINDEX, s->state_.desc_ref_);
+        lua_pushvalue(l, -2);
+        lua_seti(l, -2, td.id);
+        lua_pop(l, 2);                      // desc_list_table, desc_table
 
         // create metatable
-        luaL_loadbuffer(s->GetLuaState(), script::kFudMetatable,
+        luaL_loadbuffer(l, script::kFudMetatable,
             ::strlen(script::kFudMetatable), "declared_metatable");
-        lua_pushlightuserdata(s->GetLuaState(), s);
-        lua_pushcfunction(s->GetLuaState(), &meta::__index_member);
-        lua_pushcfunction(s->GetLuaState(), &meta::__to_string_member);
-        lua_pushstring(s->GetLuaState(), td.name);
-        lua_pushvalue(s->GetLuaState(), f_index);
-        lua_pushvalue(s->GetLuaState(), v_index);
-        lua_pcall(s->GetLuaState(), 6, 1, 0);
-        lua_pushcfunction(s->GetLuaState(), &meta::__gc);
-        lua_setfield(s->GetLuaState(), -2, "__gc");
+        lua_pushlightuserdata(l, s);
+        lua_pushcfunction(l, &meta::__index_member);
+        lua_pushcfunction(l, &meta::__to_string_member);
+        lua_pushstring(l, td.name);
+        lua_pushvalue(l, f_index);
+        lua_pushvalue(l, v_index);
+        lua_pcall(l, 6, 1, 0);
+        lua_pushcfunction(l, &meta::__gc);
+        lua_setfield(l, -2, "__gc");
 
-        lua_geti(s->GetLuaState(), LUA_REGISTRYINDEX, s->state_.meta_ref_);
-        lua_pushvalue(s->GetLuaState(), -2);
-        lua_seti(s->GetLuaState(), -2, td.id);
-        lua_pop(s->GetLuaState(), 4);   // meta_list_table, meta_table, var_table, func_table
+        lua_geti(l, LUA_REGISTRYINDEX, s->state_.meta_ref_);
+        lua_pushvalue(l, -2);
+        lua_seti(l, -2, td.id);
+        lua_pop(l, 4);  // meta_list_table, meta_table, var_table, func_table
 
         assert(s->GetTop() == 0);
         return true;
@@ -1013,11 +1030,12 @@ State* Create(const char* mod) {
     State* s = new State();
     s->state_.l_ = l;
     s->state_.is_attach_ = false;
+    s->state_.extra_ = nullptr;
     s->state_.module_ = mod;
 
     internal::InitState(s);
     internal::Reg(s);
-    internal::g_env.state_list.push_back(std::make_pair(l, s));
+    internal::g_env.state_list.push_back(s);
 
     assert(s->GetTop() == 0);
     return s;
@@ -1027,14 +1045,19 @@ State* Attach(lua_State* l, const char* mod) {
     State* s = new State();
     s->state_.l_ = l;
     s->state_.is_attach_ = true;
+    s->state_.extra_ = nullptr;
     s->state_.module_ = mod;
 
     internal::InitState(s);
     internal::Reg(s);
-    internal::g_env.state_list.push_back(std::make_pair(l, s));
+    internal::g_env.state_list.push_back(s);
 
     assert(s->GetTop() == 0);
     return s;
+}
+
+State* GetState(lua_State* l) {
+    return internal::DoGetState(l);
 }
 
 namespace internal {
@@ -1131,8 +1154,8 @@ namespace internal {
             data->global_funcs = Alloc(global_funcs);
 
             // register to exist state
-            for (auto pair : g_env.state_list)
-                RegDeclared(pair.second, *data);
+            for (auto s : g_env.state_list)
+                RegDeclared(s, *data);
             return data;
         }
 
@@ -1240,5 +1263,57 @@ namespace internal {
     ITypeFactory* CreateFactory(bool global, const char* path, const TypeDesc* super) {
         return new TypeCreator(path, global, super);
     }
+}
+
+State* State::Get(lua_State* l) {
+    return internal::DoGetState(l);
+}
+
+State* State::Create(const char* mod) {
+    lua_State* l = luaL_newstate();
+    luaL_openlibs(l);
+
+    State* s = new State();
+    s->state_.l_ = l;
+    s->state_.is_attach_ = false;
+    s->state_.extra_ = nullptr;
+    s->state_.module_ = mod;
+
+    internal::InitState(s);
+    internal::Reg(s);
+    internal::g_env.state_list.push_back(s);
+
+    assert(s->GetTop() == 0);
+    return s;
+}
+
+State* State::Attach(lua_State* l, const char* mod) {
+    State* s = new State();
+    s->state_.l_ = l;
+    s->state_.is_attach_ = true;
+    s->state_.extra_ = nullptr;
+    s->state_.module_ = mod;
+
+    internal::InitState(s);
+    internal::Reg(s);
+    internal::g_env.state_list.push_back(s);
+
+    assert(s->GetTop() == 0);
+    return s;
+}
+
+void State::Release() {
+    internal::DoSetState(state_.l_, nullptr);
+
+    //TODO: how to detach state
+    if (!state_.is_attach_)
+        lua_close(state_.l_);
+
+    // remove from state list
+    auto& env = internal::g_env;
+    env.state_list.erase(std::remove(env.state_list.begin(), env.state_list.end(), this),
+        env.state_list.end());
+
+    delete this;
 }
 XLUA_NAMESPACE_END

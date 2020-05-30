@@ -358,7 +358,7 @@ namespace internal {
         }
     };
 
-    constexpr size_t StrLen(const char* s) {
+    inline constexpr size_t StrLen(const char* s) {
         if (s == nullptr)
             return 0;
 
@@ -370,7 +370,7 @@ namespace internal {
         return l;
     }
 
-    constexpr const char* StrStr(const char* s, const char* p) {
+    inline constexpr const char* StrStr(const char* s, const char* p) {
         size_t l = StrLen(p);
         while (*s) {
             size_t i = 0;
@@ -405,7 +405,7 @@ namespace internal {
         char cache_[S];
     };
 
-    constexpr StringView PurifyMemberName(const char* name) {
+    inline constexpr StringView PurifyMemberName(const char* name) {
         // find the last scope
         while (const char* sub = StrStr(name, "::"))
             name = sub + 2;
@@ -1049,6 +1049,7 @@ namespace internal {
         const char* module_;
         lua_State* l_;
         bool is_attach_;
+        void* extra_;
         int desc_ref_;
         int meta_ref_;
         int collection_meta_ref_;

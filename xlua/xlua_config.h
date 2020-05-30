@@ -33,3 +33,11 @@
         //TODO: setup compile error
     #endif
 #endif
+
+/* use lua extra space store the xlua object ptr
+ * otherwise store the xlua object ptr as lightuserdata in global
+*/
+#define XLUA_STATE_USE_EXTRA_SPACE  1
+#if !XLUA_STATE_USE_EXTRA_SPACE
+    #define XLUA_STATE_GLOBAL_NAME  "__xlua_state__"
+#endif

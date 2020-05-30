@@ -90,7 +90,11 @@ public:
     void operator = (const State&) = delete;
 
 public:
-    inline void Release() { internal::Destory(this); }
+    static State* Get(lua_State* l);
+    static State* Create(const char* mod);
+    static State* Attach(lua_State* l, const char* mod);
+
+    inline void Release();
 
 public:
     inline const char* GetModuleName() const { return state_.module_; }
@@ -102,7 +106,9 @@ public:
     inline void PushNil() { lua_pushnil(state_.l_); }
     inline void NewTable() { lua_newtable(state_.l_); }
     inline void Gc() { lua_gc(state_.l_, LUA_GCCOLLECT, 0); }
-    const char* GetTypeName(int index) const { return state_.GetTypeName(index); }
+    inline const char* GetTypeName(int index) const { return state_.GetTypeName(index); }
+    inline void* GetExtra() const { return state_.extra_; }
+    inline void SetExtra(void* p) { state_.extra_ = p; }
 
     template <typename... Tys>
     bool IsType(int index) const {
