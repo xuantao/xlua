@@ -19,15 +19,6 @@ class State;
 /* object index (xlua weak object reference) */
 class ObjectIndex;
 
-/* create a state
- * mod: module name, all global export element will set under the module name
-*/
-State* Create(const char* mod);
-State* Attach(lua_State* l, const char* mod);
-
-/* get xlua state object from raw lua_State */
-State* GetState(lua_State* l);
-
 /* type identify */
 template <typename Ty>
 struct Identity { typedef Ty type; };
@@ -285,10 +276,6 @@ private:
 template <>
 struct ObjectWrapper<void> {
 };
-
-namespace internal {
-    State* DoGetState(lua_State* l);
-}
 
 /* traits supporter information */
 template <typename Ty>

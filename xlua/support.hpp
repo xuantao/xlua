@@ -691,7 +691,7 @@ struct Support<int(State*)> : ValueCategory<int(State*), true>{
 private:
     static int Call(lua_State* l) {
         auto* f = static_cast<value_type>(lua_touserdata(l, lua_upvalueindex(1)));
-        return f(internal::DoGetState(l));
+        return f(Holder::Load(l));
     };
 };
 
@@ -728,7 +728,7 @@ struct Support<Ry(Args...)> : ValueCategory<Ry(Args...), true> {
 private:
     static int Call(lua_State* l) {
         auto f = static_cast<value_type>(lua_touserdata(l, lua_upvalueindex(1)));
-        return internal::DoLuaCall<value_type, Ry, Args...>(internal::DoGetState(l), f);
+        return internal::DoLuaCall<value_type, Ry, Args...>(Holder::Load(l), f);
     }
 };
 
@@ -771,7 +771,7 @@ struct Support<std::function<Ry(Args...)>> : ValueCategory<std::function<Ry(Args
 private:
     static int Call(lua_State* l) {
         auto* d = static_cast<AloneData*>(lua_touserdata(l, lua_upvalueindex(1)));
-        return internal::DoLuaCall<value_type&, Ry, Args...>(internal::DoGetState(l), d->obj);
+        return internal::DoLuaCall<value_type&, Ry, Args...>(Holder::Load(l), d->obj);
     }
 };
 
@@ -793,7 +793,7 @@ private:
     static inline void PushImpl(State* s, const Lambda& l) {
         static lua_CFunction lf = [](lua_State* l) {
             auto* d = static_cast<AloneData*>(lua_touserdata(l, lua_upvalueindex(1)));
-            return internal::DoLuaCall<Ty&, R, Args...>(internal::DoGetState(l), d->obj);
+            return internal::DoLuaCall<Ty&, R, Args...>(Holder::Load(l), d->obj);
         };
 
         s->state_.NewAloneUd<Ty>(std::move(l.lambda));
@@ -979,7 +979,7 @@ namespace internal {
             int idx = (int)lua_tonumber(l, 2);
             if (idx < (int)obj->size()) {
                 lua_pushnumber(l, idx + 1);                 // key
-                internal::DoGetState(l)->Push(obj->at(idx));  // value
+                Holder::Load(l)->Push(obj->at(idx));  // value
             } else {
                 lua_pushnil(l);
                 lua_pushnil(l);
@@ -1103,8 +1103,8 @@ namespace internal {
             auto* obj = As(lua_touserdata(l, 1));
             int idx = (int)lua_tonumber(l, 2);
             if (idx < (int)obj->size()) {
-                lua_pushnumber(l, idx + 1);                                 // key
-                internal::DoGetState(l)->Push(*MoveIter(obj->begin(),idx));   // value
+                lua_pushnumber(l, idx + 1);                         // key
+                Holder::Load(l)->Push(*MoveIter(obj->begin(),idx)); // value
             } else {
                 lua_pushnil(l);
                 lua_pushnil(l);
@@ -1223,7 +1223,7 @@ namespace internal {
         static int sIter(lua_State* l) {
             auto* data = static_cast<internal::AloneData<IterData>*>(lua_touserdata(l, 1));
             if (data->obj.iter != data->obj.ptr->end()) {
-                auto* s = internal::DoGetState(l);
+                auto s = Holder::Load(l);
                 key_supporter::Push(s, data->obj.iter->first);      // key
                 value_supporter::Push(s, data->obj.iter->second);   // value
                 ++ data->obj.iter;                                  // move iterator

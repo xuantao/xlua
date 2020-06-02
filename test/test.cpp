@@ -123,7 +123,7 @@ end
 
 TEST(xlua, PushLoadNormal) {
     const char* check_func = "function Check(...) return ... end";
-    auto* s = xlua::Create(nullptr);
+    auto* s = xlua::State::Create(nullptr);
 
     ASSERT_TRUE(s->DoString(check_func, "Check"));
 
@@ -213,7 +213,7 @@ TEST(xlua, PushLoadNormal) {
 }
 
 TEST(xlua, LifeTime) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
 
     ASSERT_EQ(LifeTime::s_counter, 0);
     {
@@ -283,7 +283,7 @@ TEST(xlua, LifeTime) {
 }
 
 TEST(xlua, LuaCallGuard) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
     const char* check_func = "function Check(...) return ... end";
     ASSERT_TRUE(s->DoString(check_func, "Check"));
 
@@ -336,7 +336,7 @@ TEST(xlua, LuaCallGuard) {
 }
 
 TEST(xlua, TestTable) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
 
     {
         xlua::Table table;
@@ -427,7 +427,7 @@ TEST(xlua, TestTable) {
 
 /* vector list map unordered_map */
 TEST(xlua, TestCollection) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
 
     ScriptOps ops;
     ops.Startup(s);
@@ -774,7 +774,7 @@ static void DoTestUserData(xlua::State* s, xlua::UserData ud, ScriptOps& ops) {
 }
 
 TEST(xlua, TestUserData) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
 
     ScriptOps ops;
     ops.Startup(s);
@@ -804,7 +804,7 @@ TEST(xlua, TestUserData) {
 }
 
 TEST(xlua, TestStaticMember) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
     ScriptOps ops;
     ops.Startup(s);
 
@@ -857,7 +857,7 @@ TEST(xlua, TestStaticMember) {
 }
 
 TEST(xlua, TestXluaWeakObj) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
     ScriptOps ops;
     ops.Startup(s);
 
@@ -960,7 +960,7 @@ TEST(xlua, TestXluaWeakObj) {
 }
 
 TEST(xlua, TestExtWeakObj) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
     ScriptOps ops;
     ops.Startup(s);
 
@@ -1104,7 +1104,7 @@ TEST(xlua, TestExtWeakObj) {
 }
 
 TEST(xlua, TestMultiInheritance) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
     ScriptOps ops;
     ops.Startup(s);
 
@@ -1227,7 +1227,7 @@ TEST(xlua, TestMultiInheritance) {
 }
 
 TEST(xlua, TestExportTemplate) {
-    xlua::State* s = xlua::Create(nullptr);
+    xlua::State* s = xlua::State::Create(nullptr);
     ScriptOps ops;
     ops.Startup(s);
 

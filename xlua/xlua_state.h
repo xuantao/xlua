@@ -85,16 +85,16 @@ public:
 */
 class State {
 public:
+    static State* Create(const char* mod);
+    static State* Attach(lua_State* l, const char* mod);
+    static State* GetState(lua_State* l);
+
+    void Release();
+
+public:
     State() = default;
     State(const State&) = delete;
     void operator = (const State&) = delete;
-
-public:
-    static State* Get(lua_State* l);
-    static State* Create(const char* mod);
-    static State* Attach(lua_State* l, const char* mod);
-
-    inline void Release();
 
 public:
     inline const char* GetModuleName() const { return state_.module_; }
@@ -874,6 +874,46 @@ inline UserData Variant::ToUserData() const {
         return UserData(ptr_, obj_);
     return UserData();
 }
+
+/* state holder
+ * support lua coroutine
+ * if call from lua coroutine, the lua_State is different from the main thread
+ * this object will push/pop the activing lua_State, make sure the operations with the right lua stack
+*/
+class Holder {
+public:
+    Holder() = default;
+    Holder(Holder&& h) : l_(h.l_), s_(h.s_) { h.s_ = nullptr; }
+    ~Holder() { if (s_) s_->state_.l_ = l_; }
+
+    Holder(const Holder& h) = delete;
+    void operator = (const Holder&) = delete;
+
+    inline void operator = (Holder&& h) {
+        l_ = h.l_;
+        s_ = h.s_;
+        h.s_ = nullptr;
+    }
+
+    inline State* Get() const { return s_; }
+    inline State* operator->() const { return s_; }
+    inline operator State*() const { return s_; }
+
+public:
+    static Holder Load(lua_State* l) {
+        Holder h;
+        h.s_ = State::GetState(l);
+        if (h.s_) {
+            h.l_ = h.s_->state_.l_;
+            h.s_->state_.l_ = l;
+        }
+        return h;
+    }
+
+private:
+    lua_State* l_ = nullptr;
+    State* s_ = nullptr;
+};
 
 XLUA_NAMESPACE_END
 

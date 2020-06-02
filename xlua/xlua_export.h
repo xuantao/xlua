@@ -311,22 +311,22 @@ namespace internal {
 
     template <typename Ty>
     inline void MetaGet(State* s, Ty* obj, int(Ty::*func)(lua_State*)) {
-        (obj->*func)(s->GetState());
+        (obj->*func)(s->GetLuaState());
     }
 
     template <typename Ty>
     inline void MetaGet(State* s, Ty* obj, int(Ty::*func)(lua_State*) const) {
-        (obj->*func)(s->GetState());
+        (obj->*func)(s->GetLuaState());
     }
 
     template <typename Ty>
     inline void MetaSet(State* s, Ty* obj, const TypeDesc* desc, StringView name, int(Ty::*func)(lua_State*)) {
-        (obj->*func)(s->GetState());
+        (obj->*func)(s->GetLuaState());
     }
 
     template <typename Ty>
     inline void MetaSet(State* s, Ty* obj, const TypeDesc* desc, StringView name, void(Ty::*func)(lua_State*)) {
-        (obj->*func)(s->GetState());
+        (obj->*func)(s->GetLuaState());
     }
 
     template <typename Ty, class Cy, typename Ry, typename... Args, size_t... Idxs>
@@ -728,7 +728,7 @@ XLUA_NAMESPACE_END
         static_assert(!xlua::internal::is_null_pointer<decltype(Func)>::value,                  \
             "can not export func:"#Name" with null pointer");                                   \
         constexpr xlua::internal::StringView name = xlua::internal::PurifyMemberName(#Name);    \
-        return meta::Call(xlua::internal::DoGetState(l), desc, name, Func);                     \
+        return meta::Call(xlua::Holder::Load(l), desc, name, Func);                             \
     });
 
 #define _XLUA_EXPORT_FUNC(Name, Func)       \

@@ -161,7 +161,8 @@ namespace internal {
     static ExportNode* g_node_head = nullptr;
     static Env g_env;
 
-    State* DoGetState(lua_State* l) {
+    inline State* DoGetState(lua_State* l) {
+        assert(l);
 #if XLUA_STATE_USE_EXTRA_SPACE
         return *static_cast<State**>(lua_getextraspace(l));
 #else
@@ -171,7 +172,8 @@ namespace internal {
 #endif // XLUA_STATE_USE_EXTRA_SPACE
     }
 
-    static void DoSetState(lua_State* l, State* s) {
+    static inline void DoSetState(lua_State* l, State* s) {
+        assert(l);
 #if XLUA_STATE_USE_EXTRA_SPACE
         *static_cast<State**>(lua_getextraspace(l)) = s;
 #else
@@ -292,7 +294,7 @@ namespace meta {
     static int __gc(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
         assert(ud && ud->IsValid());
-        GetState(l)->state_.OnGc(ud);
+        DoGetState(l)->state_.OnGc(ud);
         return 0;
     }
 
@@ -422,13 +424,13 @@ namespace meta {
     static int __index_collection(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
         assert(ud && ud->IsValid() && ud->major == internal::UdMajor::kCollection);
-        return ud->collection->Index(ud->ptr, GetState(l));
+        return ud->collection->Index(ud->ptr, xlua::Holder::Load(l));
     }
 
     static int __newindex_collection(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
         assert(ud && ud->IsValid() && ud->major == internal::UdMajor::kCollection);
-        return ud->collection->NewIndex(ud->ptr, GetState(l));
+        return ud->collection->NewIndex(ud->ptr, xlua::Holder::Load(l));
     }
 
     static int __len_collection(lua_State* l) {
@@ -441,7 +443,7 @@ namespace meta {
     static int __pairs_collection(lua_State* l) {
         auto* ud = static_cast<FullUd*>(lua_touserdata(l, 1));
         assert(ud && ud->IsValid() && ud->major == internal::UdMajor::kCollection);
-        return ud->collection->Iter(ud->ptr, GetState(l));
+        return ud->collection->Iter(ud->ptr, xlua::Holder::Load(l));
     }
 
     static int __tostring_collection(lua_State* l) {
@@ -602,7 +604,7 @@ namespace utility {
             return 0;
         }
 
-        return info.collection->Insert(info.obj, internal::DoGetState(l));
+        return info.collection->Insert(info.obj, Holder::Load(l));
     }
 
     /* collection operate, remove element */
@@ -613,7 +615,7 @@ namespace utility {
             return 0;
         }
 
-        return info.collection->Remove(info.obj, internal::DoGetState(l));
+        return info.collection->Remove(info.obj, Holder::Load(l));
     }
 
     /* collection operate, clear all */
@@ -744,7 +746,7 @@ namespace internal {
         }
 
         if (s->state_.LoadGlobal(buf) != LUA_TTABLE) {
-            s->PopTop(1);                           // pop load value
+            s->PopTop(1);                           // pop loavalue
             s->NewTable();                          // create table
             lua_pushvalue(s->state_.l_, -1);        // copy table
             s->state_.SetGlobal(buf, true, true);   // set global & pop top
@@ -755,7 +757,6 @@ namespace internal {
 
     static bool InitState(State* s) {
         lua_State* l = s->state_.l_;
-        assert(DoGetState(l) == nullptr);
         DoSetState(l, s);
 
         // type desc table
@@ -1021,46 +1022,7 @@ namespace internal {
         }
         assert(s->GetTop() == 0);
     }
-} // namespace internal
 
-State* Create(const char* mod) {
-    lua_State* l = luaL_newstate();
-    luaL_openlibs(l);
-
-    State* s = new State();
-    s->state_.l_ = l;
-    s->state_.is_attach_ = false;
-    s->state_.extra_ = nullptr;
-    s->state_.module_ = mod;
-
-    internal::InitState(s);
-    internal::Reg(s);
-    internal::g_env.state_list.push_back(s);
-
-    assert(s->GetTop() == 0);
-    return s;
-}
-
-State* Attach(lua_State* l, const char* mod) {
-    State* s = new State();
-    s->state_.l_ = l;
-    s->state_.is_attach_ = true;
-    s->state_.extra_ = nullptr;
-    s->state_.module_ = mod;
-
-    internal::InitState(s);
-    internal::Reg(s);
-    internal::g_env.state_list.push_back(s);
-
-    assert(s->GetTop() == 0);
-    return s;
-}
-
-State* GetState(lua_State* l) {
-    return internal::DoGetState(l);
-}
-
-namespace internal {
     struct TypeCreator : public ITypeFactory {
         TypeCreator(const char* name, bool global, const TypeDesc* super)
             : is_global(global), super(super) {
@@ -1265,10 +1227,6 @@ namespace internal {
     }
 }
 
-State* State::Get(lua_State* l) {
-    return internal::DoGetState(l);
-}
-
 State* State::Create(const char* mod) {
     lua_State* l = luaL_newstate();
     luaL_openlibs(l);
@@ -1302,18 +1260,24 @@ State* State::Attach(lua_State* l, const char* mod) {
     return s;
 }
 
-void State::Release() {
-    internal::DoSetState(state_.l_, nullptr);
+State* State::GetState(lua_State* l) {
+    return internal::DoGetState(l);
+}
 
-    //TODO: how to detach state
-    if (!state_.is_attach_)
+void State::Release() {
+    if (state_.is_attach_) {
+        //TODO: how to detach state, can not detach clean
+        //internal::DoSetState(state_.l_, nullptr);
+    } else {
         lua_close(state_.l_);
+    }
 
     // remove from state list
     auto& env = internal::g_env;
     env.state_list.erase(std::remove(env.state_list.begin(), env.state_list.end(), this),
         env.state_list.end());
 
-    delete this;
+    if (!state_.is_attach_)
+        delete this; // no idea
 }
 XLUA_NAMESPACE_END
